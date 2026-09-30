@@ -1,0 +1,17 @@
+# Entorno virtual (enorme y específico de la máquina; se reinstala con requirements/)
+venv/
+env/
+.venv/
+
+# Cachés de Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Checkpoints de Jupyter
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# Sistema
+.DS_Store
+Thumbs.db
