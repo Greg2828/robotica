@@ -14,9 +14,11 @@ no eran de nivel cero. Norma nueva del curso:
 - **NB00 · ¿Qué vamos a hacer y por qué es difícil?** ✅ HECHO (EXIT 0, 14 celdas, 0 código):
   el sueño, andar=inestable (palo de escoba), aprender probando, GIF del robot al azar como
   resultado ya hecho (imagen markdown), mapa de 6 piezas, por qué mundo de mentira, plan.
-- **NB01 · El cuerpo del robot** (cero código): piezas rígidas, articulaciones, motores,
-  grados de libertad; analogía con el cuerpo humano.  ← SIGUIENTE
-- **NB02 · El mundo de mentira: qué es un simulador** (cero código).
+- **NB01 · El cuerpo del robot** ✅ HECHO (EXIT 0, 13 celdas, 0 código): piezas rígidas=huesos,
+  articulaciones bisagra/rótula, grados de libertad (=nº de mandos, más=más ágil pero más
+  difícil), motores=músculos + par de giro, anatomía del humanoide (~17 motores), plano de
+  montaje tipo IKEA. Todo con analogías con el cuerpo humano y diagramas ASCII.
+- **NB02 · El mundo de mentira: qué es un simulador** (cero código).  ← SIGUIENTE
 - **NB03 · La mente y el bucle: observación, decisión, acción** (cero código).
 - **NB04 · Premios y castigos: la recompensa y sus trampas** (cero código).
 - **NB05 · Tu primer contacto con el ordenador** → aquí empieza `print("hola")` y la
