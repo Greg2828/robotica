@@ -31,6 +31,12 @@ no eran de nivel cero. Norma nueva del curso:
   ejecutar código en los notebooks conceptuales.
 - Verificar cada notebook con nbconvert `--execute` (los conceptuales pasan trivial: 0 código).
 
+## GitHub
+- Repo **privado**: https://github.com/Greg2828/robotica (cuenta Greg2828), rama `main`.
+- `venv/` y cachés van en `.gitignore` (no se suben). `_archivo/` sí se sube.
+- **Rutina:** tras terminar y verificar cada notebook (EXIT 0), `git add -A && git commit && git push`
+  para que Gregori pueda leerlo desde otro dispositivo. Los .ipynb se renderizan en la web de GitHub.
+
 ## Entorno verificado
 - Raspberry Pi 5, aarch64, Python 3.13, venv en `robotica/venv`, kernel Jupyter `robotica`.
 - MuJoCo 3.14 renderiza sin pantalla con `MUJOCO_GL=egl`. Assets reutilizables en
