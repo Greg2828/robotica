@@ -1,5 +1,13 @@
 # Progreso
 
+## ▶ PARA RETOMAR (sesión guardada 2026-09-30)
+- Hechos y subidos a GitHub: **NB00, NB01, NB02** (Parte 0, conceptuales, 0 código, EXIT 0).
+- **Siguiente: NB03 · La mente y el bucle** (observación, decisión, acción = la política).
+  Mismo estilo: conceptual, cero código, nivel "14 años", analogías + diagramas ASCII,
+  preguntas resueltas. Luego NB04 (recompensa y sus trampas) y NB05 (primer código, microdosis).
+- Para continuar, dile a Claude: **«sigamos con robótica, NB03»**.
+- Rutina activa: tras cada notebook verificado → commit + push (repo privado Greg2828/robotica).
+
 ## ⚠ GIRO DE ENFOQUE (2026-09-30)
 Gregori leyó los NB00–NB01 antiguos y le parecieron **demasiado código, demasiado pronto**:
 no eran de nivel cero. Norma nueva del curso:
