@@ -437,7 +437,7 @@ md(r"""## 11 · Resumen de la lección
 | **Matriz por vector** | Cada fila (producto escalar) por el vector: da un vector con un número por fila. |
 | **Capa lineal / densa** | Matriz × entrada + sesgos: la pieza básica de una red neuronal. |
 | **Recortar** | Limitar un número a un rango (como las acciones a ±0,4). |
-| **Notación científica** | `1.5e-236` = 1,5 × 10⁻²³⁶: forma de escribir números gigantes o minúsculos. |
+| **Notación científica** | `3.9e-236` = 3,9 × 10⁻²³⁶: forma de escribir números gigantes o minúsculos. |
 | **Lista por comprensión** | Forma corta de crear una lista: `[round(a, 2) for a in lista]`. |
 | **Red neuronal** | Varias capas, una detrás de otra (con un ingrediente extra que veremos). |
 """),
