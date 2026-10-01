@@ -18,11 +18,15 @@
 - NB16 pendientes, NB17 ascenso por gradiente, NB18 aprender imitando, NB19 redes neuronales — HECHOS, EXIT 0.
   **Parte 2 tiene ya todas las piezas matemáticas de una red** (vector → producto escalar → matriz → NumPy → pendiente →
   gradiente → regla de la cadena/retropropagación → activación ReLU).
-- **Siguiente: NB20 · RL sin maestro: policy gradient / REINFORCE desde cero** — política ESTOCÁSTICA (acción = media +
-  ruido gaussiano; explorar NB03), "hacer más probables las acciones que salieron bien", retorno como peso, línea base;
-  aplicarlo al palo de escoba con NumPy; luego PyTorch (autograd = retropropagación automática) y PPO; después MuJoCo
-  a fondo y humanoide en Colab.
-- Para continuar, dile a Claude: **«sigamos con robótica, NB20»**.
+- **PARTE 3 · PYTHON DE VERDAD (NB20–NB27) ✅ COMPLETA** (pedido del usuario 2026-10-02: "no dejes nada de python por saber,
+  quiero trabajar de esto"). pytest instalado en el venv (añadido a requirements/fase0.txt). Las prácticas con ficheros van
+  a `notebooks/practica_nb26/` y `practica_nb27/` (en .gitignore; NB27 usa el palo.py que crea NB26).
+- **Siguiente: PARTE 4 · Aprendizaje por refuerzo de verdad, desde NB28**: NB28 probabilidad desde cero (dados, media,
+  dispersión, campana de Gauss) → NB29 REINFORCE desde cero (palo de escoba, NumPy) → NB30 línea base/ventaja/crítico →
+  NB31 PyTorch (autograd) → NB32 actor-crítico → NB33 PPO desde cero → NB34 herramientas (Stable-Baselines3) → NB35 proyecto
+  Walker2d/Hopper. Luego Parte 5 física del cuerpo, 6 entrenar bípedos (Colab), 7 avanzado, 8 hardware real (ver plan
+  de ~58 NB comunicado al usuario).
+- Para continuar, dile a Claude: **«sigamos con robótica, NB28»**.
 - Rutina activa: tras cada notebook verificado → commit + push (repo privado Greg2828/robotica).
 
 ## ⚠ GIRO DE ENFOQUE (2026-09-30)
@@ -121,6 +125,32 @@ no eran de nivel cero. Norma nueva del curso:
   capas lineales apiladas = recta; ReLU = codo; 2 codos a mano = exacto; red 1→8→1 con retropropagación a mano (pendiente
   ReLU 0/1), tasa 0,003, 5000 pasos → 0; tasa 0,01 → atasco ~11 (óptimo local, NO neuronas muertas: verificado);
   aproximación universal; red de humanoide 348→256→256→17 = 159.505 pesos.
+- **── PARTE 3 · PYTHON DE VERDAD ──**
+- **NB20 · Texto** ✅ (74 celdas, 29 código): índices/porciones, inmutables, métodos, split/join, conversiones (ValueError),
+  escapes, f-strings y formato (:.2f :, :.1% :+ :>8 :05d), proyecto parsear un log → informe alineado.
+- **NB21 · Colecciones** ✅ (80/31): tuplas/desempaquetar, listas a fondo, sort vs sorted, TRAMPA DEL ALIAS (copy, is),
+  enumerate/zip, comprensiones, diccionarios (KeyError, get, items, anidados, contar), info REAL del humanoide (ingredientes
+  de la recompensa), conjuntos, any/all, key=, // y %, proyecto cuaderno de experimentos.
+- **NB22 · Flujo, errores y depuración** ✅ (57/18): while (pelota 63 pasos), límite de seguridad, continue, for-else, pass,
+  match, verdad/falsedad, excepciones y trazas (de abajo arriba), try/except/else/finally, raise (fallar pronto), inf/nan +
+  math.isfinite (vigilante: explota en el paso 16), assert, depurar (f"{x=}", %debug/breakpoint/pdb, catálogo de bichos).
+- **NB23 · Funciones a fondo** ✅ (57/21): defaults, por nombre, trampa del default mutable, *args/**kwargs, desempaquetar al
+  llamar, ámbito (UnboundLocalError), lambda, CIERRES (fábrica de políticas), decoradores (@cronometro), recursión,
+  iteradores/StopIteration, generadores (lotes; 8,4 MB vs 200 B), docstrings, type hints.
+- **NB24 · Clases (I)** ✅ (54/18): clase/objeto, __init__/self, métodos, __repr__, atributos de clase, _privado, @property,
+  PaloDeEscoba con reset/step estilo Gymnasium + random.Random propio, PoliticaLineal con __call__ (como PyTorch), mismo
+  bucle → 44,8/296,0/499,9; @dataclass + field(default_factory).
+- **NB25 · Herencia + entorno Gymnasium** ✅ (43/14): herencia, super(), polimorfismo, ABC/@abstractmethod, Vector con métodos
+  especiales (así funciona NumPy), composición; PaloDeEscobaEnv(gym.Env) con spaces.Box, acción normalizada [-1,1]×40,
+  check_env (avisos explicados), gym.register + gym.make (envoltorios TimeLimit...): nada 44,6 / solo incl 353,4 / a mano
+  499,9; nn.Module explicado.
+- **NB26 · Ficheros, módulos, scripts, terminal** ✅ (72/27): pathlib, open/with/modos, CSV (todo texto), JSON, np.save, pickle
+  (peligro), módulo palo.py + sys.path + reload, script con argparse + subprocess/sys.executable, terminal (!), venv/pip/
+  requirements, logging, Counter/defaultdict/datetime/itertools.product/statistics, proyecto barrido guardado y releído.
+- **NB27 · NumPy a fondo, tests y Git** ✅ (76/29): dtype float32, reshape/-1/.T, índices 2D, máscaras/np.where/argsort, EJES,
+  BROADCASTING (normalizar observaciones), stack, VISTAS vs copias; 1.000 palos vectorizados (solo incl ~63 % caídas; 10-20×
+  más rápido); pytest (test_palo.py, caza el fallo gravedad 10→1); Git real en repo de juguete (init/add/commit/diff/
+  switch -c/--decorate), .gitignore, historial del curso; PEP 8.
 - **NB05 · Tu primer contacto con el ordenador** → aquí empieza `print("hola")` y la
   microdosis de código, gota a gota.
 - (luego) Python desde cero, matemáticas desde cero, física desde cero, siempre al servicio
@@ -149,6 +179,7 @@ no eran de nivel cero. Norma nueva del curso:
 |---|---|---|
 | 2026-09-29 | NB00–NB03 antiguos (Fase 0) | Archivados en `_archivo/` tras el giro de enfoque |
 | 2026-09-30 | Giro a "nivel cero de verdad" + NB00 nuevo | Teoría primero, código en microdosis |
+| 2026-10-02 | NB20–NB27 → Parte 3 Python de verdad completa | Pedido: no dejar nada de Python |
 | 2026-10-02 | NB16–NB19 (pendientes, gradiente, imitación, redes) | Retropropagación escrita a mano |
 | 2026-10-01 | NB12–NB15 (Parte 2: vectores, producto escalar, matrices, NumPy) | 1.er contacto con el humanoide real |
 | 2026-10-01 | NB08–NB11 → Parte 1 completa | Proyecto palo de escoba: 1.er RL desde cero |

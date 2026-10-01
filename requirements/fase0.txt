@@ -9,3 +9,4 @@ matplotlib-inline==0.2.2
 mujoco==3.14.0
 numpy==2.5.3
 PyOpenGL==3.1.10
+pytest==9.1.1

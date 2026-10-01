@@ -485,7 +485,8 @@ Con esta lección tienes **todas las piezas matemáticas** de una red neuronal: 
 las activaciones. Y has entrenado una red escribiendo tú mismo cada línea de su aprendizaje. Eso es más de lo que entiende mucha gente que trabaja con inteligencia
 artificial.
 
-El siguiente paso es juntar las dos mitades del curso: las **redes neuronales** (lo que sabe hacer la mente) y el **aprendizaje por refuerzo** (cómo aprende sin maestro,
+Antes de seguir, haremos una parada importante: un bloque de **ocho lecciones de Python "de verdad"** (NB20-NB27), para que domines el lenguaje como un profesional
+(clases, ficheros, errores, tests, Git...), porque las herramientas que vienen están escritas con todo eso. Después, el siguiente paso será juntar las dos mitades del curso: las **redes neuronales** (lo que sabe hacer la mente) y el **aprendizaje por refuerzo** (cómo aprende sin maestro,
 solo con recompensas). La gran pregunta será: si no hay un maestro que diga "aquí había que empujar tanto", **¿de dónde sale la pérdida?** La respuesta tiene que ver
 con algo que ya intuyes desde el NB03: **hacer más probables las acciones que salieron bien**.
 """),
