@@ -1,7 +1,7 @@
 # Progreso
 
 ## ▶ PARA RETOMAR (sesión guardada 2026-10-02)
-- Hechos y subidos a GitHub: **NB00, NB01, NB02, NB03** (Parte 0, conceptuales, 0 código, EXIT 0).
+- Hechos y subidos a GitHub: **NB00–NB31** (Parte 0 conceptual, Parte 1 primeros pasos, Parte 2 matemáticas, Parte 3 Python de verdad, Parte 4 RL hasta PyTorch), todos EXIT 0.
 - 2026-10-01: NB00–NB02 **revisados y ampliados** con datos verificados del Humanoid-v5
   (17 motores reales sin tobillos, 3 ms/paso, 67 decisiones/s, cae en ~0,33 s al azar) y
   conceptos que faltaban (subactuación, centro de masas, sensores, inercia, pelota a mano,
