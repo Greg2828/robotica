@@ -612,8 +612,8 @@ política.) Resultados:
 | Política | Gasto | Comodidad | Puntos con castigo 0,5 | Puntos con castigo 10 |
 |---|---|---|---|---|
 | normal (20) | 23 | 19,95 | 188,0 | −30,5 |
-| ahorrador (19) | 21 | 18,99 | 179,38 | **−20,1** |
-| caluroso (21) | 24 | 20,88 | **196,75** | −31,2 |
+| ahorrador (19) | 21 | 18,99 | 179,38 | **−20,12** |
+| caluroso (21) | 24 | 20,88 | **196,75** | −31,25 |
 
 Con un castigo de **0,5** por minuto encendido, la comodidad pesa mucho y gana la política que más calienta (la
 calurosa). Con un castigo de **10**, gastar sale carísimo y gana la ahorradora. (Con un castigo intermedio, como 3,
