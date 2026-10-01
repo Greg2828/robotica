@@ -14,11 +14,11 @@
 - NB08 (if), NB09 (listas), NB10 (funciones), NB11 (PROYECTO palo de escoba) HECHOS → **✅ PARTE 1 COMPLETA
   (NB05–NB11)**. NB11 = entorno de RL desde cero (ficha, random+seed, paso/episodio/evaluar, 4 políticas,
   diagnóstico por trayectoria, búsqueda aleatoria de 2 ruedecillas, generalización en semillas nuevas).
-- **Siguiente: PARTE 2 · Matemáticas y herramientas para robots** (NB12+). Propuesta: NB12 flechas (vectores)
-  desde cero con la observación/acción como vectores; luego NumPy (listas a toda velocidad), pendientes
-  (derivadas intuitivas → "hacia dónde girar cada ruedecilla"), descenso por pendiente, y de ahí redes
-  neuronales. Mismo método: teoría primero, microdosis, datos verificados.
-- Para continuar, dile a Claude: **«sigamos con robótica, NB12»**.
+- **PARTE 2 en marcha:** NB12 vectores, NB13 producto escalar, NB14 matrices, NB15 NumPy + humanoide REAL — HECHOS, EXIT 0.
+- **Siguiente: NB16 · Pendientes (derivadas) desde cero** — la montaña con niebla del NB04; "si giro un poquito la ruedecilla,
+  ¿mejora o empeora?"; pendiente numérica (diferencias), luego NB17 descenso/ascenso por pendiente (ajustar 1 → muchas
+  ruedecillas; volver al palo de escoba y aprender con pendientes), → redes neuronales (activación, capas), → RL de verdad.
+- Para continuar, dile a Claude: **«sigamos con robótica, NB16»**.
 - Rutina activa: tras cada notebook verificado → commit + push (repo privado Greg2828/robotica).
 
 ## ⚠ GIRO DE ENFOQUE (2026-09-30)
@@ -89,7 +89,20 @@ no eran de nivel cero. Norma nueva del curso:
   azar 43,2, solo inclinación 296 (oscila: problema de la foto), incl+vel 499,9; ruedecillas; búsqueda
   aleatoria 20 candidatos → 499,9 y generaliza a semillas 100-109; límites: motor débil (15) nada lo salva,
   ruedecilla < 10 pierde contra la gravedad.
-- **── PARTE 2 · Matemáticas y herramientas ──**  ← SIGUIENTE (NB12)
+- **── PARTE 2 · Matemáticas y herramientas ──**
+- **NB12 · Vectores** ✅ (50 celdas, 17 código, 6 dibujos matplotlib): Hundir la flota/plano cartesiano, componentes, sumar
+  (odometría), escalar, restar (B−A), Pitágoras+raíz (** 0.5), 3D/45D (distancia entre observaciones 0,057 vs 2,24), robot hacia
+  la meta con viento (25 pasos, dibujado).
+- **NB13 · Producto escalar** ✅ (39 celdas, 12 código): media ponderada → "pesos", política del palo = pesos·obs (política lineal),
+  geometría (+/0/−), unitario/normalizar/proyección, premio por avanzar = vel·(1,0,0), a·a = longitud², NEURONA = pesos·x + sesgo,
+  perceptrón (termostato = neurona), detector de caídas que anticipa (peso 0,3 en velocidad).
+- **NB14 · Matrices** ✅ (43 celdas, 15 código): Segway 2×3 (giro con signos opuestos), lista de listas, bucle anidado, matriz×vector,
+  regla de tamaños (IndexError), capa = M·x + b, humanoide 17×45+17 = 782 (completa 5.933), recortar, 0,5**782 = 3,9e-236
+  (notación científica), capas en fila = red (avance).
+- **NB15 · NumPy + humanoide real** ✅ (76 celdas, 29 código): arrays, shape, elemento a elemento vs listas (concatena/repite), @,
+  ValueError de formas, default_rng/zeros/clip, cronometraje (~50-120× en la Pi), Gymnasium reset/step = reiniciar/paso del NB11,
+  obs (348,) con obs[0]=1,39 altura, recompensa 1.er paso 5,002; política lineal: W=0 → 198,6 (= muñeco de trapo NB04), W azar ~58,
+  mejor de 20 al azar 141,7 < 198,6 → hacen falta pendientes. E5: todo +0,4 → ~237 (tensar ayuda), todo −0,4 → ~45.
 - **NB05 · Tu primer contacto con el ordenador** → aquí empieza `print("hola")` y la
   microdosis de código, gota a gota.
 - (luego) Python desde cero, matemáticas desde cero, física desde cero, siempre al servicio
@@ -118,6 +131,7 @@ no eran de nivel cero. Norma nueva del curso:
 |---|---|---|
 | 2026-09-29 | NB00–NB03 antiguos (Fase 0) | Archivados en `_archivo/` tras el giro de enfoque |
 | 2026-09-30 | Giro a "nivel cero de verdad" + NB00 nuevo | Teoría primero, código en microdosis |
+| 2026-10-01 | NB12–NB15 (Parte 2: vectores, producto escalar, matrices, NumPy) | 1.er contacto con el humanoide real |
 | 2026-10-01 | NB08–NB11 → Parte 1 completa | Proyecto palo de escoba: 1.er RL desde cero |
 | 2026-10-01 | NB05–NB07 (Parte 1: print, variables, bucles) | Errores reales con code_err |
 | 2026-10-01 | NB04 → Parte 0 completa | Recompensa real del humanoide medida |
