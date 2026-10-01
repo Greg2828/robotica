@@ -6,10 +6,11 @@
   (17 motores reales sin tobillos, 3 ms/paso, 67 decisiones/s, cae en ~0,33 s al azar) y
   conceptos que faltaban (subactuación, centro de masas, sensores, inercia, pelota a mano,
   aleatorizar el mundo). Cada NB cierra con **Resumen + Palabras nuevas de hoy**.
-- **Siguiente: NB04 · Premios y castigos: la recompensa y sus trampas** (recompensa real del
-  Humanoid-v5: +5 por seguir de pie, +1,25 × velocidad hacia delante, −0,1 × esfuerzo² de
-  motores; trampas/reward hacking). Luego NB05 (primer código, microdosis).
-- Para continuar, dile a Claude: **«sigamos con robótica, NB04»**.
+- **NB04 HECHO** (recompensa y sus trampas) → **✅ PARTE 0 COMPLETA (NB00–NB04)**.
+- **Siguiente: NB05 · Tu primer contacto con el ordenador** (Parte 1): qué es un ordenador, un
+  programa, dónde se escribe (Jupyter: celdas de texto vs de código, ejecutar), y UNA línea:
+  `print("hola")`. Microdosis: una idea nueva por celda.
+- Para continuar, dile a Claude: **«sigamos con robótica, NB05»**.
 - Rutina activa: tras cada notebook verificado → commit + push (repo privado Greg2828/robotica).
 
 ## ⚠ GIRO DE ENFOQUE (2026-09-30)
@@ -42,7 +43,16 @@ no eran de nivel cero. Norma nueva del curso:
   Tierra) / máquina con ruedecillas = parámetros (red neuronal, solo el nombre); agente vs
   entorno (el cuerpo es entorno); paso y episodio (cae si torso < 1 m, o 1000 decisiones);
   explorar vs aprovechar (restaurantes).
-- **NB04 · Premios y castigos: la recompensa y sus trampas** (cero código).  ← SIGUIENTE
+- **NB04 · Premios y castigos: la recompensa y sus trampas** ✅ HECHO (EXIT 0, 21 celdas, 0 código):
+  recompensa = número por paso, dice qué no cómo; retorno (+pizca de descuento); asignación del
+  mérito (fútbol); escasa vs densa (frío/caliente, reward shaping); recompensa REAL Humanoid-v5
+  (+5 de pie, +1,25×vel. del CdM, −0,1×Σacción², −golpes ≤10) con el cuadrado desde cero;
+  cuentas medidas: azar ~98 (21 pasos), muñeco de trapo ~198 (40 pasos) — no hacer nada > azar;
+  quieto 5000 vs andar ~6150 → óptimo local (montaña con niebla); sin +5 → se tira en plancha;
+  reward hacking (Midas, barco CoastRunners, Tetris pausa, Lego volteado, criaturas que caen,
+  fallos del simulador), ley de Goodhart, defensas del profesional; mapa de las 4 piezas.
+- **── PARTE 1 · Primeros pasos con el ordenador ──**
+- **NB05 · Tu primer contacto con el ordenador** → `print("hola")`, microdosis.  ← SIGUIENTE
 - **NB05 · Tu primer contacto con el ordenador** → aquí empieza `print("hola")` y la
   microdosis de código, gota a gota.
 - (luego) Python desde cero, matemáticas desde cero, física desde cero, siempre al servicio
@@ -71,4 +81,5 @@ no eran de nivel cero. Norma nueva del curso:
 |---|---|---|
 | 2026-09-29 | NB00–NB03 antiguos (Fase 0) | Archivados en `_archivo/` tras el giro de enfoque |
 | 2026-09-30 | Giro a "nivel cero de verdad" + NB00 nuevo | Teoría primero, código en microdosis |
+| 2026-10-01 | NB04 → Parte 0 completa | Recompensa real del humanoide medida |
 | 2026-10-01 | NB00–NB02 ampliados + NB03 | Datos verificados; subactuación, CoM, sensores, inercia |
