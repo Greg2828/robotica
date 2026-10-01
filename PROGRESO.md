@@ -6,11 +6,15 @@
   (17 motores reales sin tobillos, 3 ms/paso, 67 decisiones/s, cae en ~0,33 s al azar) y
   conceptos que faltaban (subactuación, centro de masas, sensores, inercia, pelota a mano,
   aleatorizar el mundo). Cada NB cierra con **Resumen + Palabras nuevas de hoy**.
-- **NB04 HECHO** (recompensa y sus trampas) → **✅ PARTE 0 COMPLETA (NB00–NB04)**.
-- **Siguiente: NB05 · Tu primer contacto con el ordenador** (Parte 1): qué es un ordenador, un
-  programa, dónde se escribe (Jupyter: celdas de texto vs de código, ejecutar), y UNA línea:
-  `print("hola")`. Microdosis: una idea nueva por celda.
-- Para continuar, dile a Claude: **«sigamos con robótica, NB05»**.
+- **NB04 HECHO** → **✅ PARTE 0 COMPLETA (NB00–NB04)**.
+- **PARTE 1 en marcha:** NB05 (primer código), NB06 (variables), NB07 (bucles) HECHOS, EXIT 0.
+  `nbbuild.py` tiene ahora `code_err()` (etiqueta `raises-exception`) para enseñar errores REALES
+  sin romper la verificación. OJO: en Jupyter los NameError muestran `---->` (no `^^^^`) y no
+  sale el "Did you mean"; verificar siempre el texto contra la salida real.
+- **Siguiente: NB08 · Tomar decisiones: `if`** — la 4.ª pieza: comparaciones (<, >, ==),
+  verdadero/falso, if/else/elif; la pelota CHOCA con el suelo (y rebota con pérdida); fin de
+  episodio (torso < 1 m); el termostato del NB03 como primera política escrita a mano.
+- Para continuar, dile a Claude: **«sigamos con robótica, NB08»**.
 - Rutina activa: tras cada notebook verificado → commit + push (repo privado Greg2828/robotica).
 
 ## ⚠ GIRO DE ENFOQUE (2026-09-30)
@@ -52,7 +56,21 @@ no eran de nivel cero. Norma nueva del curso:
   reward hacking (Midas, barco CoastRunners, Tetris pausa, Lego volteado, criaturas que caen,
   fallos del simulador), ley de Goodhart, defensas del profesional; mapa de las 4 piezas.
 - **── PARTE 1 · Primeros pasos con el ordenador ──**
-- **NB05 · Tu primer contacto con el ordenador** → `print("hola")`, microdosis.  ← SIGUIENTE
+- **NB05 · Tu primer contacto con el ordenador** ✅ (EXIT 0, 42 celdas, 11 de código): ordenador
+  obediente/literal (cocinero que no sabe cocinar), programa=receta, Python, notebook/celdas/kernel,
+  cómo abrir (GitHub o `jupyter lab` en la Pi, Mayúsculas+Enter); `print("hola")` desmontado;
+  texto vs número; 3 errores REALES (NameError×2, SyntaxError) y cómo leerlos; comentarios `#`;
+  trampa de la coma decimal `print(1,25)`; recompensa del NB04 = 7.4.
+- **NB06 · Cajas con nombre: variables y números** ✅ (EXIT 0, 72 celdas, 25 de código): caja con
+  etiqueta, `=` es "guarda", reescribir, memoria del kernel/orden, NameError explicado, reglas de
+  nombres, int/float, `/` da decimal, `**`, ruido de decimales + `round`, orden de operaciones,
+  trampa `-0.4 ** 2`, `x = x + 1`; programas: recompensa con nombres (7.4 → 4.9 quieto), esfuerzo
+  de 3 motores (0.33), pelota 3 pasitos copiando celdas (→ motiva bucles).
+- **NB07 · Repetir sin cansarse: el bucle for** ✅ (EXIT 0, 48 celdas, 15 de código): for/range,
+  cuerpo y sangría (IndentationError real), contar desde 0, range(inicio, fin), acumulador
+  (retorno robot quieto 5000), Gauss 5050, pelota con bucle (tabla NB02 con ruido 0.9999…),
+  MEDIDO: paso 0.1→0.5 m, 0.01→0.725, 0.001→0.7475 (exacto 0.75): error ÷10 por paso ÷10.
+- **NB08 · Tomar decisiones: `if`** (choque con el suelo, fin de episodio, termostato).  ← SIGUIENTE
 - **NB05 · Tu primer contacto con el ordenador** → aquí empieza `print("hola")` y la
   microdosis de código, gota a gota.
 - (luego) Python desde cero, matemáticas desde cero, física desde cero, siempre al servicio
@@ -81,5 +99,6 @@ no eran de nivel cero. Norma nueva del curso:
 |---|---|---|
 | 2026-09-29 | NB00–NB03 antiguos (Fase 0) | Archivados en `_archivo/` tras el giro de enfoque |
 | 2026-09-30 | Giro a "nivel cero de verdad" + NB00 nuevo | Teoría primero, código en microdosis |
+| 2026-10-01 | NB05–NB07 (Parte 1: print, variables, bucles) | Errores reales con code_err |
 | 2026-10-01 | NB04 → Parte 0 completa | Recompensa real del humanoide medida |
 | 2026-10-01 | NB00–NB02 ampliados + NB03 | Datos verificados; subactuación, CoM, sensores, inercia |
