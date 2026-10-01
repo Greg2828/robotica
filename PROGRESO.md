@@ -11,10 +11,14 @@
   `nbbuild.py` tiene ahora `code_err()` (etiqueta `raises-exception`) para enseñar errores REALES
   sin romper la verificación. OJO: en Jupyter los NameError muestran `---->` (no `^^^^`) y no
   sale el "Did you mean"; verificar siempre el texto contra la salida real.
-- **Siguiente: NB08 · Tomar decisiones: `if`** — la 4.ª pieza: comparaciones (<, >, ==),
-  verdadero/falso, if/else/elif; la pelota CHOCA con el suelo (y rebota con pérdida); fin de
-  episodio (torso < 1 m); el termostato del NB03 como primera política escrita a mano.
-- Para continuar, dile a Claude: **«sigamos con robótica, NB08»**.
+- NB08 (if), NB09 (listas), NB10 (funciones), NB11 (PROYECTO palo de escoba) HECHOS → **✅ PARTE 1 COMPLETA
+  (NB05–NB11)**. NB11 = entorno de RL desde cero (ficha, random+seed, paso/episodio/evaluar, 4 políticas,
+  diagnóstico por trayectoria, búsqueda aleatoria de 2 ruedecillas, generalización en semillas nuevas).
+- **Siguiente: PARTE 2 · Matemáticas y herramientas para robots** (NB12+). Propuesta: NB12 flechas (vectores)
+  desde cero con la observación/acción como vectores; luego NumPy (listas a toda velocidad), pendientes
+  (derivadas intuitivas → "hacia dónde girar cada ruedecilla"), descenso por pendiente, y de ahí redes
+  neuronales. Mismo método: teoría primero, microdosis, datos verificados.
+- Para continuar, dile a Claude: **«sigamos con robótica, NB12»**.
 - Rutina activa: tras cada notebook verificado → commit + push (repo privado Greg2828/robotica).
 
 ## ⚠ GIRO DE ENFOQUE (2026-09-30)
@@ -70,7 +74,22 @@ no eran de nivel cero. Norma nueva del curso:
   cuerpo y sangría (IndentationError real), contar desde 0, range(inicio, fin), acumulador
   (retorno robot quieto 5000), Gauss 5050, pelota con bucle (tabla NB02 con ruido 0.9999…),
   MEDIDO: paso 0.1→0.5 m, 0.01→0.725, 0.001→0.7475 (exacto 0.75): error ÷10 por paso ÷10.
-- **NB08 · Tomar decisiones: `if`** (choque con el suelo, fin de episodio, termostato).  ← SIGUIENTE
+- **NB08 · Tomar decisiones: `if`** ✅ (44 celdas, 13 código): comparaciones/bool, = vs == (SyntaxError
+  real), if/else/elif, and/or, +5 del humanoide como if, termostato (1.ª política, 0,5/0,25 sin ruido), pelota
+  que REBOTA (coef. restitución 0,8: botes en pasos 63/163/242), break = fin de episodio (terminado/truncado).
+- **NB09 · Listas** ✅ (63 celdas, 20 código): índice desde 0, IndexError, -1, cambiar, for sobre lista,
+  esfuerzo de 17 motores (0,67), sum/max/min/media, append (método), trayectoria de la pelota grabada (300
+  fotos, bote paso 63 = índice 62, rebota a 1,24 m, 89 fotos > 1 m), porciones, listas en paralelo.
+- **NB10 · Funciones** ✅ (63 celdas, 23 código): def/llamar, parámetros/argumentos, return vs print, None,
+  TypeError, recompensa y esfuerzo como funciones, variables locales, devolver 2 valores (paso_pelota = step),
+  POLÍTICA = función, ENTORNO = función, simular(politica) intercambiable, termostatos comparados (23 min/19,95
+  vs 21 min/18,99) → diseño de recompensa.
+- **NB11 · PROYECTO palo de escoba** ✅ (63 celdas, 22 código): ficha del entorno (obs 2, acción 1 ±40,
+  recompensa 1−(i/30)², cae >30°, 500 pasos), import random/uniform/seed, constantes MAYÚSCULAS; nada 44,8,
+  azar 43,2, solo inclinación 296 (oscila: problema de la foto), incl+vel 499,9; ruedecillas; búsqueda
+  aleatoria 20 candidatos → 499,9 y generaliza a semillas 100-109; límites: motor débil (15) nada lo salva,
+  ruedecilla < 10 pierde contra la gravedad.
+- **── PARTE 2 · Matemáticas y herramientas ──**  ← SIGUIENTE (NB12)
 - **NB05 · Tu primer contacto con el ordenador** → aquí empieza `print("hola")` y la
   microdosis de código, gota a gota.
 - (luego) Python desde cero, matemáticas desde cero, física desde cero, siempre al servicio
@@ -99,6 +118,7 @@ no eran de nivel cero. Norma nueva del curso:
 |---|---|---|
 | 2026-09-29 | NB00–NB03 antiguos (Fase 0) | Archivados en `_archivo/` tras el giro de enfoque |
 | 2026-09-30 | Giro a "nivel cero de verdad" + NB00 nuevo | Teoría primero, código en microdosis |
+| 2026-10-01 | NB08–NB11 → Parte 1 completa | Proyecto palo de escoba: 1.er RL desde cero |
 | 2026-10-01 | NB05–NB07 (Parte 1: print, variables, bucles) | Errores reales con code_err |
 | 2026-10-01 | NB04 → Parte 0 completa | Recompensa real del humanoide medida |
 | 2026-10-01 | NB00–NB02 ampliados + NB03 | Datos verificados; subactuación, CoM, sensores, inercia |
