@@ -10,3 +10,4 @@ mujoco==3.14.0
 numpy==2.5.3
 PyOpenGL==3.1.10
 pytest==9.1.1
+torch==2.14.1  # versión CPU: pip install torch --index-url https://download.pytorch.org/whl/cpu

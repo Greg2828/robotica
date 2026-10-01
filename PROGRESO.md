@@ -21,12 +21,12 @@
 - **PARTE 3 · PYTHON DE VERDAD (NB20–NB27) ✅ COMPLETA** (pedido del usuario 2026-10-02: "no dejes nada de python por saber,
   quiero trabajar de esto"). pytest instalado en el venv (añadido a requirements/fase0.txt). Las prácticas con ficheros van
   a `notebooks/practica_nb26/` y `practica_nb27/` (en .gitignore; NB27 usa el palo.py que crea NB26).
-- **Siguiente: PARTE 4 · Aprendizaje por refuerzo de verdad, desde NB28**: NB28 probabilidad desde cero (dados, media,
-  dispersión, campana de Gauss) → NB29 REINFORCE desde cero (palo de escoba, NumPy) → NB30 línea base/ventaja/crítico →
-  NB31 PyTorch (autograd) → NB32 actor-crítico → NB33 PPO desde cero → NB34 herramientas (Stable-Baselines3) → NB35 proyecto
-  Walker2d/Hopper. Luego Parte 5 física del cuerpo, 6 entrenar bípedos (Colab), 7 avanzado, 8 hardware real (ver plan
-  de ~58 NB comunicado al usuario).
-- Para continuar, dile a Claude: **«sigamos con robótica, NB28»**.
+- **PARTE 4 · RL de verdad, en marcha**: NB28 probabilidad, NB29 REINFORCE, NB30 ruido/crítico/descuento, NB31 PyTorch — HECHOS,
+  EXIT 0. **PyTorch 2.14.1+cpu instalado en el venv** (anotado en requirements/fase0.txt).
+- **Siguiente: NB32 · Actor-crítico con redes de PyTorch** sobre el entorno Gymnasium propio (PaloDeEscoba-v0 del NB25):
+  actor = red que da la media (y σ aprendible), crítico = red V(s), ventaja con bootstrap paso a paso (TD), entrenamiento con
+  Adam; luego NB33 PPO desde cero (recorte, varias épocas por lote, GAE), NB34 Stable-Baselines3, NB35 proyecto Walker2d/Hopper.
+- Para continuar, dile a Claude: **«sigamos con robótica, NB32»**.
 - Rutina activa: tras cada notebook verificado → commit + push (repo privado Greg2828/robotica).
 
 ## ⚠ GIRO DE ENFOQUE (2026-09-30)
@@ -151,6 +151,21 @@ no eran de nivel cero. Norma nueva del curso:
   BROADCASTING (normalizar observaciones), stack, VISTAS vs copias; 1.000 palos vectorizados (solo incl ~63 % caídas; 10-20×
   más rápido); pytest (test_palo.py, caza el fallo gravedad 10→1); Git real en repo de juguete (init/add/commit/diff/
   switch -c/--decorate), .gitignore, historial del curso; PEP 8.
+- **── PARTE 4 · APRENDIZAJE POR REFUERZO DE VERDAD ──**
+- **NB28 · Probabilidad** ✅ (48 celdas, 16 código): frecuencia, grandes números (dado, dibujado), distribución (dos dados),
+  valor esperado (producto escalar; el RL maximiza el retorno ESPERADO), varianza/σ (robots A y B), uniforme, histogramas,
+  campana de Gauss (TCL, 68,4/95,5/99,7, fórmula con e/exp), error típico σ/√n (5 vs 100 episodios) e intervalo de confianza,
+  política estocástica (σ: aguanta hasta 50, se desploma en 100; cruce de 400 entre σ 60 y 70), logaritmo y log-prob normal.
+- **NB29 · REINFORCE** ✅ (38/11): (a−μ)/σ² comprobada; ×obs por regla de la cadena; retorno desde cada paso γ=0,99 hacia
+  atrás; puro NO aprende (~30-45); línea base media → 499 (semilla 0 en la it. 53; 5 semillas 47-95); aprendida (−15,7; −20,1)
+  no se cae en 1.000. E5: σ=1 aprende en 6 it (pasos 25× mayores); E7 línea base global inestable (desaprende).
+- **NB30 · Ruido, crítico, descuento** ✅ (27/8, ~2 min): ruido medido (sin base desv 34/44 y media de signo erróneo; con base
+  9,5/20); normalizar ventajas; crítico lineal con rasgos [1,i²,v²,i·v,t/500] por lstsq — honesto: es tosco (predice −231,
+  ordena mal volviendo/cayendo); crítico+normalizar el mejor ([13,17,17,66,26] vs media [53,79,95,60,47]); γ 0,9 no aprende,
+  0,99 bien, 1,0 algo peor.
+- **NB31 · PyTorch** ✅ (44/16): tensores, autograd (6 en x²; 14,7596 del NB18), grafo, acumulación/zero_grad, no_grad,
+  nn.Linear/ReLU/Sequential/Module (25 params), SGD vs Adam — HONESTO: con 8 neuronas Adam se atasca (29,9) y SGD llega
+  (0,71); con 32, SGD 4/4 y Adam a veces; Normal.log_prob → gradiente = fórmula NB29; state_dict + weights_only; .to(cuda).
 - **NB05 · Tu primer contacto con el ordenador** → aquí empieza `print("hola")` y la
   microdosis de código, gota a gota.
 - (luego) Python desde cero, matemáticas desde cero, física desde cero, siempre al servicio
@@ -179,6 +194,7 @@ no eran de nivel cero. Norma nueva del curso:
 |---|---|---|
 | 2026-09-29 | NB00–NB03 antiguos (Fase 0) | Archivados en `_archivo/` tras el giro de enfoque |
 | 2026-09-30 | Giro a "nivel cero de verdad" + NB00 nuevo | Teoría primero, código en microdosis |
+| 2026-10-02 | NB28–NB31 (probabilidad, REINFORCE, crítico, PyTorch) | PyTorch instalado en la Pi |
 | 2026-10-02 | NB20–NB27 → Parte 3 Python de verdad completa | Pedido: no dejar nada de Python |
 | 2026-10-02 | NB16–NB19 (pendientes, gradiente, imitación, redes) | Retropropagación escrita a mano |
 | 2026-10-01 | NB12–NB15 (Parte 2: vectores, producto escalar, matrices, NumPy) | 1.er contacto con el humanoide real |
