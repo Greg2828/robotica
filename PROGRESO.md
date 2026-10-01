@@ -15,10 +15,14 @@
   (NB05–NB11)**. NB11 = entorno de RL desde cero (ficha, random+seed, paso/episodio/evaluar, 4 políticas,
   diagnóstico por trayectoria, búsqueda aleatoria de 2 ruedecillas, generalización en semillas nuevas).
 - **PARTE 2 en marcha:** NB12 vectores, NB13 producto escalar, NB14 matrices, NB15 NumPy + humanoide REAL — HECHOS, EXIT 0.
-- **Siguiente: NB16 · Pendientes (derivadas) desde cero** — la montaña con niebla del NB04; "si giro un poquito la ruedecilla,
-  ¿mejora o empeora?"; pendiente numérica (diferencias), luego NB17 descenso/ascenso por pendiente (ajustar 1 → muchas
-  ruedecillas; volver al palo de escoba y aprender con pendientes), → redes neuronales (activación, capas), → RL de verdad.
-- Para continuar, dile a Claude: **«sigamos con robótica, NB16»**.
+- NB16 pendientes, NB17 ascenso por gradiente, NB18 aprender imitando, NB19 redes neuronales — HECHOS, EXIT 0.
+  **Parte 2 tiene ya todas las piezas matemáticas de una red** (vector → producto escalar → matriz → NumPy → pendiente →
+  gradiente → regla de la cadena/retropropagación → activación ReLU).
+- **Siguiente: NB20 · RL sin maestro: policy gradient / REINFORCE desde cero** — política ESTOCÁSTICA (acción = media +
+  ruido gaussiano; explorar NB03), "hacer más probables las acciones que salieron bien", retorno como peso, línea base;
+  aplicarlo al palo de escoba con NumPy; luego PyTorch (autograd = retropropagación automática) y PPO; después MuJoCo
+  a fondo y humanoide en Colab.
+- Para continuar, dile a Claude: **«sigamos con robótica, NB20»**.
 - Rutina activa: tras cada notebook verificado → commit + push (repo privado Greg2828/robotica).
 
 ## ⚠ GIRO DE ENFOQUE (2026-09-30)
@@ -103,6 +107,20 @@ no eran de nivel cero. Norma nueva del curso:
   ValueError de formas, default_rng/zeros/clip, cronometraje (~50-120× en la Pi), Gymnasium reset/step = reiniciar/paso del NB11,
   obs (348,) con obs[0]=1,39 altura, recompensa 1.er paso 5,002; política lineal: W=0 → 198,6 (= muñeco de trapo NB04), W azar ~58,
   mejor de 20 al azar 141,7 < 198,6 → hacen falta pendientes. E5: todo +0,4 → ~237 (tensar ayuda), todo −0,4 → ~45.
+- **NB16 · Pendientes** ✅ (36 celdas, 10 código): función f(x)+gráfica, rampa, velocidad = pendiente de la posición, zoom
+  (curva → recta), (f(x+h)−f(x))/h → 6 en x², a los dos lados, h=1e-12 empeora vs 1e-6, derivada de x² = 2x por tabla;
+  montaña del palo con BATERÍA (coste 0,001, d=8): +27,5 en 12, ≈0 en 23,5 (cima ~462), −0,63 en 40.
+- **NB17 · Ascenso por gradiente** ✅ (31 celdas, 10 código): x += tasa·pendiente; colina 10−(x−3)²: tasas 0,01/0,1/0,5/
+  0,9/1,1 (lento/bien/de un salto/oscila/explota); 1 ruedecilla 12→25,8→~24,7; gradiente 2D = flecha; mapa contourf con
+  camino (12,2) 416 → (22,6; 6,2) ~463; óptimo local (dos colinas, valle entre 3 y 3,5); coste 2N evaluaciones/paso.
+- **NB18 · Aprender imitando (supervisado)** ✅ (37 celdas, 10 código): 300 ejemplos del maestro −30i−8v; ECM/pérdida
+  (305,6 → 0); valle; REGLA DE LA CADENA (engranajes) → 2·media(error×entrada) = numérica (14,7596); tasa 0,2 →
+  (−30; −8; 0), 0,25 aprende, 0,3 explota (6e18); alumno juega 499,9 (a medio aprender 499,8); maestro ±10 →
+  (−29,7; −8,0); desplazamiento de distribución; imitación en humanoides.
+- **NB19 · Redes neuronales** ✅ (30 celdas, 8 código): maestro que satura (clip −30i a ±40); lineal atascada 81,5;
+  capas lineales apiladas = recta; ReLU = codo; 2 codos a mano = exacto; red 1→8→1 con retropropagación a mano (pendiente
+  ReLU 0/1), tasa 0,003, 5000 pasos → 0; tasa 0,01 → atasco ~11 (óptimo local, NO neuronas muertas: verificado);
+  aproximación universal; red de humanoide 348→256→256→17 = 159.505 pesos.
 - **NB05 · Tu primer contacto con el ordenador** → aquí empieza `print("hola")` y la
   microdosis de código, gota a gota.
 - (luego) Python desde cero, matemáticas desde cero, física desde cero, siempre al servicio
@@ -131,6 +149,7 @@ no eran de nivel cero. Norma nueva del curso:
 |---|---|---|
 | 2026-09-29 | NB00–NB03 antiguos (Fase 0) | Archivados en `_archivo/` tras el giro de enfoque |
 | 2026-09-30 | Giro a "nivel cero de verdad" + NB00 nuevo | Teoría primero, código en microdosis |
+| 2026-10-02 | NB16–NB19 (pendientes, gradiente, imitación, redes) | Retropropagación escrita a mano |
 | 2026-10-01 | NB12–NB15 (Parte 2: vectores, producto escalar, matrices, NumPy) | 1.er contacto con el humanoide real |
 | 2026-10-01 | NB08–NB11 → Parte 1 completa | Proyecto palo de escoba: 1.er RL desde cero |
 | 2026-10-01 | NB05–NB07 (Parte 1: print, variables, bucles) | Errores reales con code_err |
