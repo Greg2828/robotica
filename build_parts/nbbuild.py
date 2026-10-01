@@ -66,6 +66,15 @@ def code(text: str):
     return ("code", text)
 
 
+def code_err(text: str):
+    """Celda de código que FALLA a propósito (para enseñar a leer errores).
+
+    Lleva la etiqueta 'raises-exception': al verificar con nbconvert, el error se
+    muestra en la salida pero no detiene la ejecución del resto del notebook.
+    """
+    return ("code_err", text)
+
+
 def build(path: str, cells, title: str | None = None, add_theme: bool = True):
     """Escribe un .ipynb a partir de la lista de celdas."""
     nb = new_notebook()
@@ -77,6 +86,8 @@ def build(path: str, cells, title: str | None = None, add_theme: bool = True):
             out.append(new_markdown_cell(text))
         elif kind == "code":
             out.append(new_code_cell(text))
+        elif kind == "code_err":
+            out.append(new_code_cell(text, metadata={"tags": ["raises-exception"]}))
         else:
             raise ValueError(f"Tipo de celda desconocido: {kind!r}")
     nb.cells = out
@@ -89,6 +100,6 @@ def build(path: str, cells, title: str | None = None, add_theme: bool = True):
     if title:
         nb.metadata["title"] = title
     nbf.write(nb, path)
-    n_code = sum(1 for k, _ in cells if k == "code")
+    n_code = sum(1 for k, _ in cells if k in ("code", "code_err"))
     print(f"escrito {path}  ({len(cells)} celdas, {n_code} de código)")
     return path
