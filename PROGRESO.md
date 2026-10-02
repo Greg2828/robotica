@@ -177,7 +177,16 @@ no eran de nivel cero. Norma nueva del curso:
   PPO tasa 0,01, minilote 1024, 10 épocas: supera 490 en it. 54 (vs 78-94 del NB32), sin bajones, cambio |r−1| 2-30 %,
   r máx < 2, σ 0,25→0,18; SIN recorte: semillas 19/47/None, oscila 500↔200, termina 34-48, r máx 1.053-2.160, σ 0,03-0,05;
   examen viento ±80 0 caídas, ±100 3/20. Ejercicios medidos: λ=0 → 66, λ=1 → 376 (0,95 gana); ε=0,05 lento (90),
-  ε=0,5 inestable (136, r 380); bonus de entropía sin recorte NO salva (49/122/31). SIGUIENTE: NB34 Stable-Baselines3.
+  ε=0,5 inestable (136, r 380); bonus de entropía sin recorte NO salva (49/122/31).
+- **NB34 · Stable-Baselines3** ✅ (43/15, ~4 min; SB3 2.9.0 instalado): por qué bibliotecas + mapa (SB3/CleanRL/RSL-RL/Brax);
+  check_env de SB3; DICCIONARIO NB33↔SB3 leído del modelo (n_steps 2048, batch 64, epochs 10, lr 3e-4, clip 0,2, σ inicial 1);
+  make_vec_env (4 copias, autoreset, Monitor); policy 64-64 tanh separadas (8.835 params); inspect.getsource(PPO.train)
+  muestra ratio/clamp/min = el NB33; palo aprendido en 49.152 pasos (NB33 propio: ~240.000); OJO learn() juega lotes
+  completos (pedir múltiplos de 8.192); informe verbose=1 explicado (approx_kl, clip_fraction, explained_variance...);
+  menos robusto al viento que el PPO propio; save/load .zip (pickle); **InvertedPendulum-v5 MuJoCo 1000/1000 en 65.536
+  pasos + GIF assets/nb34_pendulo_ppo.gif**. Ejercicios medidos: σ0=0,25 → 51 a 50k (≈250k para aprender); estocástico
+  929±164 vs 1000; Pendulum-v1 por defecto −1031 (no aprende → RL Zoo). Cifras SB3 varían un poco entre ejecuciones.
+  SIGUIENTE: NB35 Hopper/Walker2d.
 - **NB05 · Tu primer contacto con el ordenador** → aquí empieza `print("hola")` y la
   microdosis de código, gota a gota.
 - (luego) Python desde cero, matemáticas desde cero, física desde cero, siempre al servicio
@@ -206,6 +215,7 @@ no eran de nivel cero. Norma nueva del curso:
 |---|---|---|
 | 2026-09-29 | NB00–NB03 antiguos (Fase 0) | Archivados en `_archivo/` tras el giro de enfoque |
 | 2026-09-30 | Giro a "nivel cero de verdad" + NB00 nuevo | Teoría primero, código en microdosis |
+| 2026-10-03 | NB34 Stable-Baselines3 + 1.er robot MuJoCo | Péndulo invertido 1000/1000, GIF |
 | 2026-10-03 | NB33 PPO desde cero (+GAE) | Experimento sin recorte: derrumbe medido |
 | 2026-10-02 | NB32 actor-crítico (TD vs Montecarlo) | Fragilidad medida → PPO |
 | 2026-10-02 | NB28–NB31 (probabilidad, REINFORCE, crítico, PyTorch) | PyTorch instalado en la Pi |
