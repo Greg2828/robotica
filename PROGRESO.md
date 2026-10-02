@@ -166,6 +166,12 @@ no eran de nivel cero. Norma nueva del curso:
 - **NB31 · PyTorch** ✅ (44/16): tensores, autograd (6 en x²; 14,7596 del NB18), grafo, acumulación/zero_grad, no_grad,
   nn.Linear/ReLU/Sequential/Module (25 params), SGD vs Adam — HONESTO: con 8 neuronas Adam se atasca (29,9) y SGD llega
   (0,71); con 32, SGD 4/4 y Adam a veces; Normal.log_prob → gradiente = fórmula NB29; state_dict + weights_only; .to(cuda).
+- **NB32 · Actor-crítico** ✅ (46/18, ~4 min): jugador/comentarista; pérdida truco −log_prob×ventaja (= dirección NB29, comprobado
+  −0,48/−0,24); escalar entradas; log σ aprendible (0,25→0,20); DIFERENCIA TEMPORAL δ=r+γV'−V (GPS), ruido vs sesgo, reloj en el crítico;
+  Actor 2→32 tanh→1 (130 params) + Crítico 3→64→1 (321); TD semilla 0 supera 490 en it. ~95 (42,6→499,6); actor satura ±40 hacia 3°;
+  mapa del crítico (franja diagonal, máx ~100=1/(1−γ), esquinas negativas = extrapolación); examen en PaloDeEscoba-v0 499,6 0 caídas
+  (aguanta viento ±60; falla desde ±80); TD [94,93,92,78] vs Montecarlo [None,116,100,109]; FRAGILIDAD (Adam+ventajas normalizadas;
+  tasa 0,03 llega a 499 y se derrumba a ~60) → motivación de PPO. SIGUIENTE: NB33 PPO desde cero (+GAE).
 - **NB05 · Tu primer contacto con el ordenador** → aquí empieza `print("hola")` y la
   microdosis de código, gota a gota.
 - (luego) Python desde cero, matemáticas desde cero, física desde cero, siempre al servicio
@@ -194,6 +200,7 @@ no eran de nivel cero. Norma nueva del curso:
 |---|---|---|
 | 2026-09-29 | NB00–NB03 antiguos (Fase 0) | Archivados en `_archivo/` tras el giro de enfoque |
 | 2026-09-30 | Giro a "nivel cero de verdad" + NB00 nuevo | Teoría primero, código en microdosis |
+| 2026-10-02 | NB32 actor-crítico (TD vs Montecarlo) | Fragilidad medida → PPO |
 | 2026-10-02 | NB28–NB31 (probabilidad, REINFORCE, crítico, PyTorch) | PyTorch instalado en la Pi |
 | 2026-10-02 | NB20–NB27 → Parte 3 Python de verdad completa | Pedido: no dejar nada de Python |
 | 2026-10-02 | NB16–NB19 (pendientes, gradiente, imitación, redes) | Retropropagación escrita a mano |
