@@ -1,0 +1,4 @@
+Walker2d-v5 defecto 106496 275.4 2.5 476s
+Walker2d-v5 defecto 212992 322.4 2.5 859s
+Walker2d-v5 defecto 319488 372.2 1.8 1244s
+Walker2d-v5 defecto 425984 429.6 1.4 1625s

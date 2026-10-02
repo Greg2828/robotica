@@ -18,3 +18,5 @@ Thumbs.db
 
 # Carpetas de prácticas que crean los notebooks al ejecutarse
 notebooks/practica_*/
+trabajo_nb35/*.zip
+trabajo_nb35/*.pkl

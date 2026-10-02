@@ -1,0 +1,4 @@
+Hopper-v5 defecto 106496 301.2 1.1 474s
+Hopper-v5 defecto 212992 440.4 1.4 853s
+Hopper-v5 defecto 319488 742.9 2.1 1237s
+Hopper-v5 defecto 425984 1173.7 5.0 1620s

@@ -187,6 +187,9 @@ no eran de nivel cero. Norma nueva del curso:
   pasos + GIF assets/nb34_pendulo_ppo.gif**. Ejercicios medidos: σ0=0,25 → 51 a 50k (≈250k para aprender); estocástico
   929±164 vs 1000; Pendulum-v1 por defecto −1031 (no aprende → RL Zoo). Cifras SB3 varían un poco entre ejecuciones.
   SIGUIENTE: NB35 Hopper/Walker2d.
+- **NB35 · Robots con patas** ⏳ EN CURSO: borrador completo en build_parts/nb35.py (con marcadores a rellenar); entrenamientos
+  largos parados a medias, ver trabajo_nb35/LEEME.md. Datos ya medidos: Hopper-v5 obs 11, acción 3, gear 200, 15,8 kg, dt 0,008;
+  azar 10,4 (19,6 pasos), quieto 146,1 (148,8); Walker2d-v5 obs 17, acción 6, gear 100, 23,7 kg; azar −1,3, quieto 93,5.
 - **NB05 · Tu primer contacto con el ordenador** → aquí empieza `print("hola")` y la
   microdosis de código, gota a gota.
 - (luego) Python desde cero, matemáticas desde cero, física desde cero, siempre al servicio

@@ -1,0 +1,2 @@
+Hopper-v5 afinado 100352 442.6 1.4 705s
+Hopper-v5 afinado 200704 951.7 2.6 1324s
