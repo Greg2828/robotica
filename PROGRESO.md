@@ -241,6 +241,18 @@ no eran de nivel cero. Norma nueva del curso:
   de pie con ctrl 0; empujón 0,05 s (caída = torso baja >30 cm): 180 N aguanta, 200 cae (captura ~12 cm); torso 20 kg
   aguanta 200 (cae 250); pies −0,16..0,24 aguanta 300 (cae 350); solo por delante → cae de espaldas al rebotar; agachado
   aguanta 200 resbalando 0,29 m. SIGUIENTE: NB43 entorno Gymnasium de Zancudo + PPO para andar.
+- **NB43 · Zancudo aprende a andar** ⏳ EN CURSO: entorno notebooks/zancudo_env.py (Zancudo-v0: obs 18 medibles + fase 0,8 s,
+  acción = postura base agachada (0,3/−0,6/0,3) + amplitud × a, 50 Hz, recompensa avance+vida−0,01·a², caída cadera<0,55 o
+  |incl|>0,8, 1000 pasos), script notebooks/entrenar_zancudo.py (guarda último y MEJOR), 4 entrenos en trabajo_nb43/
+  (defecto s0, afinado s0/s1 2M; afinado s0 ruido 0,02 1M). Referencias: quieto ~662 (665 pasos), azar ~69.
+  Borrador build_parts/nb43.py con marcadores (RESULTADO_*, REGISTRO_ZANCUDO, ANALISIS_ZANCUDO, MEJOR_ZANCUDO, MEJOR_RUIDO,
+  EXAMEN_ZANCUDO, GIF_ZANCUDO, FALTA_BONITO, RESUMEN_*, EJERCICIOS).
+- **── PARTE 6 · BÍPEDOS DE VERDAD ──** (plan): NB44 moldear la recompensa (andar bonito: velocidad objetivo con núcleo
+  exponencial, torso recto, levantar los pies, tiempo en el aire alternado, suavidad, energía) · NB45 robustez (aleatorización
+  de masas/rozamiento/PD/retrasos + empujones al entrenar, currículo) · NB46 obedecer órdenes (velocidad pedida, parar, atrás)
+  · NB47 al 3D: el humanoide (Colab) · NB48 miles de robots en GPU: JAX/MJX + MuJoCo Playground (G1, Colab) · NB49 sim-to-real
+  (identificación, latencias, seguridad, exportar ONNX). Parte 7 hardware: electrónica, servos y microcontroladores, bípedo de
+  servos barato, portafolio.
 - **NB05 · Tu primer contacto con el ordenador** ✅ (EXIT 0, 42 celdas, 11 de código): ordenador
   obediente/literal (cocinero que no sabe cocinar), programa=receta, Python, notebook/celdas/kernel,
   cómo abrir (GitHub o `jupyter lab` en la Pi, Mayúsculas+Enter); `print("hola")` desmontado;

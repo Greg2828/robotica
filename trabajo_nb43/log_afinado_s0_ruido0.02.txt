@@ -1,0 +1,6 @@
+zancudo_afinado_s0_ruido0.02 100352 1286.0 680.9 11.73 683s
+zancudo_afinado_s0_ruido0.02 200704 2632.4 643.5 34.99 1310s
+zancudo_afinado_s0_ruido0.02 301056 2008.2 758.0 27.28 1922s
+zancudo_afinado_s0_ruido0.02 401408 2719.6 910.6 37.83 2589s
+zancudo_afinado_s0_ruido0.02 501760 2065.3 958.9 29.74 3298s
+zancudo_afinado_s0_ruido0.02 602112 339.9 419.4 4.55 4145s

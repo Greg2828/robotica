@@ -1,0 +1,8 @@
+zancudo_afinado_s1 100352 566.2 309.2 5.43 642s
+zancudo_afinado_s1 200704 2858.6 45.5 37.41 1255s
+zancudo_afinado_s1 301056 3106.0 38.8 42.43 1906s
+zancudo_afinado_s1 401408 2763.0 633.5 38.34 2528s
+zancudo_afinado_s1 501760 2738.2 672.1 37.29 3149s
+zancudo_afinado_s1 602112 2302.1 1133.9 30.3 3893s
+zancudo_afinado_s1 702464 1521.7 1273.6 20.42 4664s
+zancudo_afinado_s1 802816 853.4 668.9 11.26 5445s
