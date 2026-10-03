@@ -208,7 +208,12 @@ no eran de nivel cero. Norma nueva del curso:
   (Hopper 155 N), fuerza normal, par = F·brazo·sin φ, par de la gravedad m·g·(L/2)·sin θ, inercia de giro (1.000 trocitos → 0,75
   = m·L²/3), α = (3g/2L)·sin θ (masa se cancela; escoba 9,8 vs lápiz 98,1), el "10" del NB11 = escoba de 1,47 m linealizada,
   caída 1,339 s (lineal 1,322) = MuJoCo 1,339 s exacto (péndulo MJCF from_xml_string), motor Hopper 200 N·m = 20 kg a 1 m,
-  punto de no retorno (E6: 0,205 rad con motor −2). SIGUIENTE: NB38 centro de masas.
+  punto de no retorno (E6: 0,205 rad con motor −2).
+- **NB38 · Centro de masas y equilibrio quieto** ✅ (46 celdas, 16 de código, EXIT 0): balancín/ley de la palanca, CdM = media
+  ponderada (NumPy), CdM de Hopper con body_mass+xipos = subtree_com (x +0,022, altura 0,596), se mueve con la postura; base de
+  apoyo (segmento / goma elástica); regla + por qué (suelo empuja, no tira); bloque MJCF freejoint: crítico 18,4°, 18° vuelve,
+  19° vuelca; Hopper-estatua (jnt_stiffness 3000 + qpos_spring, apoyado a 0,0605): h 0/0,3 de pie, 0,6 (CdM 0,276) cae; límite
+  real ~22 cm vs 26 geométrico → margen de seguridad; estático vs dinámico. SIGUIENTE: NB39 LIPM/punto de captura/ZMP.
 - **NB05 · Tu primer contacto con el ordenador** ✅ (EXIT 0, 42 celdas, 11 de código): ordenador
   obediente/literal (cocinero que no sabe cocinar), programa=receta, Python, notebook/celdas/kernel,
   cómo abrir (GitHub o `jupyter lab` en la Pi, Mayúsculas+Enter); `print("hola")` desmontado;
