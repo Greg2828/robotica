@@ -225,7 +225,15 @@ no eran de nivel cero. Norma nueva del curso:
   recta par-velocidad, calor); pierna simulada 2 kg 0,5 m: P oscila (máx ~1,48), PD Kd 0/1/3/10, error estacionario
   0,651/0,734/0,783 (Kp 20/50/200) → compensación de gravedad 0,800, saturación 2,5 N·m columpia; Hopper con PD en ctrl por
   mj_step: Kp 0/50 cae, 300/20 de pie (E5: 100 inclinado, 150+ recto); la estatua del NB38 era un PD; política→ángulos +
-  PD en robots reales. SIGUIENTE: NB41 sensores y ruido.
+  PD en robots reales.
+- **NB41 · Sensores y ruido** ✅ (54 celdas, 22 de código, EXIT 0): información privilegiada; codificador 4096 → 0,088°,
+  velocidad por diferencias salta 0↔1,53 (derivar amplifica); ruido gaussiano, promediar → /√n (verificado), media móvil =
+  retraso; IMU: acelerómetro (quieto 9,81 arriba, atan2) y giróscopo (sesgo → deriva); péndulo MJCF con site+accelerometer+
+  gyro: quieto 0,2964 exacto, balanceándose el acel va en contrafase; errores acel 0,237 / giro 0,173 / complementario 0,061
+  con peso 0,999 (tiempo de corrección paso/(1−peso) = 1 s; 0,98 da 0,222 aquí porque mide a 1 kHz); Kalman nombrado;
+  contacto Hopper con PD 96+59,2 = 155,2 N; retraso: Kp200 ok 10 ms, oscila 20, explota 30; Kp50 aguanta 30; política NB35
+  con ruido 3559/2915/798/318 (0/0,01/0,05/0,1), solo en velocidades aguanta (3446/3403/2377); remedios (ruido, DR,
+  profesor-alumno). SIGUIENTE: NB42 MJCF a fondo + bípedo propio.
 - **NB05 · Tu primer contacto con el ordenador** ✅ (EXIT 0, 42 celdas, 11 de código): ordenador
   obediente/literal (cocinero que no sabe cocinar), programa=receta, Python, notebook/celdas/kernel,
   cómo abrir (GitHub o `jupyter lab` en la Pi, Mayúsculas+Enter); `print("hola")` desmontado;
