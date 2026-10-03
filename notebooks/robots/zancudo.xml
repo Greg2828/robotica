@@ -1,0 +1,70 @@
+
+<mujoco model="zancudo">
+  <compiler angle="radian"/>
+  <option timestep="0.002"/>
+  <default>
+    <joint type="hinge" axis="0 -1 0" damping="1" armature="0.01"/>
+    <geom friction="1 0.005 0.0001" rgba="0.85 0.55 0.25 1"/>
+    <position kp="300" kv="20" forcelimited="true" forcerange="-150 150"/>
+  </default>
+  <visual>
+    <headlight ambient="0.4 0.4 0.4" diffuse="0.6 0.6 0.6"/>
+  </visual>
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.5 0.6 0.7" rgb2="0.1 0.1 0.15" width="200" height="200"/>
+    <texture name="cuadros" type="2d" builtin="checker" rgb1="0.75 0.8 0.75" rgb2="0.45 0.5 0.45" width="300" height="300"/>
+    <material name="suelo" texture="cuadros" texrepeat="10 10"/>
+  </asset>
+  <worldbody>
+    <light pos="0 0 3" dir="0 0 -1" directional="true"/>
+    <geom name="suelo" type="plane" size="20 20 0.1" material="suelo" rgba="1 1 1 1"/>
+    <body name="torso" pos="0 0 0.865">
+      <camera name="lado" mode="trackcom" pos="0 -3 0" xyaxes="1 0 0  0 0 1"/>
+      <joint name="raiz_x" type="slide" axis="1 0 0" damping="0" armature="0"/>
+      <joint name="raiz_z" type="slide" axis="0 0 1" damping="0" armature="0"/>
+      <joint name="raiz_giro" type="hinge" axis="0 1 0" damping="0" armature="0"/>
+      <geom name="torso" type="capsule" fromto="0 0 0.05  0 0 0.45" size="0.08" mass="12"/>
+      <site name="imu" pos="0 0 0.3"/>
+      
+      <body name="muslo_d" pos="0 -0.1 0">
+        <joint name="cadera_d" range="-1.57 1.57"/>
+        <geom type="capsule" fromto="0 0 0  0 0 -0.4" size="0.05" mass="3" rgba="0.85 0.55 0.25 1"/>
+        <body name="pierna_d" pos="0 0 -0.4">
+          <joint name="rodilla_d" range="-2.6 0"/>
+          <geom type="capsule" fromto="0 0 0  0 0 -0.4" size="0.04" mass="2" rgba="0.85 0.55 0.25 1"/>
+          <body name="pie_d" pos="0 0 -0.4">
+            <joint name="tobillo_d" range="-0.78 0.78"/>
+            <geom name="pie_d" type="capsule" fromto="-0.06 0 -0.03  0.14 0 -0.03" size="0.03" mass="0.8" rgba="0.85 0.55 0.25 1"/>
+          </body>
+        </body>
+      </body>
+      
+      <body name="muslo_i" pos="0 0.1 0">
+        <joint name="cadera_i" range="-1.57 1.57"/>
+        <geom type="capsule" fromto="0 0 0  0 0 -0.4" size="0.05" mass="3" rgba="0.6 0.4 0.7 1"/>
+        <body name="pierna_i" pos="0 0 -0.4">
+          <joint name="rodilla_i" range="-2.6 0"/>
+          <geom type="capsule" fromto="0 0 0  0 0 -0.4" size="0.04" mass="2" rgba="0.6 0.4 0.7 1"/>
+          <body name="pie_i" pos="0 0 -0.4">
+            <joint name="tobillo_i" range="-0.78 0.78"/>
+            <geom name="pie_i" type="capsule" fromto="-0.06 0 -0.03  0.14 0 -0.03" size="0.03" mass="0.8" rgba="0.6 0.4 0.7 1"/>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    
+    <position name="m_cadera_d" joint="cadera_d" ctrlrange="-1.57 1.57"/>
+    <position name="m_rodilla_d" joint="rodilla_d" ctrlrange="-2.6 0"/>
+    <position name="m_tobillo_d" joint="tobillo_d" ctrlrange="-0.78 0.78"/>
+    
+    <position name="m_cadera_i" joint="cadera_i" ctrlrange="-1.57 1.57"/>
+    <position name="m_rodilla_i" joint="rodilla_i" ctrlrange="-2.6 0"/>
+    <position name="m_tobillo_i" joint="tobillo_i" ctrlrange="-0.78 0.78"/>
+  </actuator>
+  <sensor>
+    <accelerometer name="acelerometro" site="imu"/>
+    <gyro name="giroscopo" site="imu"/>
+  </sensor>
+</mujoco>

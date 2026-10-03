@@ -233,7 +233,14 @@ no eran de nivel cero. Norma nueva del curso:
   con peso 0,999 (tiempo de corrección paso/(1−peso) = 1 s; 0,98 da 0,222 aquí porque mide a 1 kHz); Kalman nombrado;
   contacto Hopper con PD 96+59,2 = 155,2 N; retraso: Kp200 ok 10 ms, oscila 20, explota 30; Kp50 aguanta 30; política NB35
   con ruido 3559/2915/798/318 (0/0,01/0,05/0,1), solo en velocidades aguanta (3446/3403/2377); remedios (ruido, DR,
-  profesor-alumno). SIGUIENTE: NB42 MJCF a fondo + bípedo propio.
+  profesor-alumno).
+- **NB42 · MJCF: tu propio robot** ✅ (49 celdas, 16 de código, EXIT 0): XML (etiquetas/atributos/árbol), secciones MJCF, caja
+  que cae (8 kg densidad agua), posiciones relativas, tipos de geom, joints (axis 0 -1 0 = + hacia delante, range en radianes
+  con compiler), raíz plana 3 joints; pierna() y motores() con f-strings → **Zancudo** (notebooks/robots/zancudo.xml: 8 bodies,
+  9 joints, 6 position kp300 kv20 forcerange ±150, IMU; 23,6 kg; CdM 0,783); error real 'unknown transmission target';
+  de pie con ctrl 0; empujón 0,05 s (caída = torso baja >30 cm): 180 N aguanta, 200 cae (captura ~12 cm); torso 20 kg
+  aguanta 200 (cae 250); pies −0,16..0,24 aguanta 300 (cae 350); solo por delante → cae de espaldas al rebotar; agachado
+  aguanta 200 resbalando 0,29 m. SIGUIENTE: NB43 entorno Gymnasium de Zancudo + PPO para andar.
 - **NB05 · Tu primer contacto con el ordenador** ✅ (EXIT 0, 42 celdas, 11 de código): ordenador
   obediente/literal (cocinero que no sabe cocinar), programa=receta, Python, notebook/celdas/kernel,
   cómo abrir (GitHub o `jupyter lab` en la Pi, Mayúsculas+Enter); `print("hola")` desmontado;
