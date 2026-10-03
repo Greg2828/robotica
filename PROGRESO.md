@@ -265,7 +265,7 @@ no eran de nivel cero. Norma nueva del curso:
   · NB46 ✅ (92 celdas, 35 código, EXIT 0) Cinemática: marcos, rotaciones (matriz/cuaternión wxyz/Euler), cinemática directa, jacobianos (mj_jac*), velocidad =
     J·q̇, cinemática inversa (mínimos cuadrados amortiguados, singularidades) · Py: numpy.linalg a fondo, funciones puras,
     docstrings, typing de arrays, pytest
-  · NB47 Dinámica inversa y control basado en modelo: mj_inverse, compensación de gravedad, par calculado, espacio de tarea
+  · NB47 ✅ (57 celdas, 21 código, EXIT 0) Dinámica inversa y control basado en modelo: mj_inverse, compensación de gravedad, par calculado, espacio de tarea
     · Py: ABC/Protocol, composición, patrón estrategia
   · NB48 Contactos a fondo: detección (contype/conaffinity, margin), solref/solimp, condim, cono de fricción, solvers,
     mj_contactForce, CoP/ZMP medidos · Py: generadores/iteradores, Enum, NamedTuple, itertools
