@@ -1,2 +1,10 @@
-Hopper-v5 afinado 100352 442.6 1.4 705s
-Hopper-v5 afinado 200704 951.7 2.6 1324s
+Hopper-v5 afinado 100352 442.6 1.4 720s
+Hopper-v5 afinado 200704 951.7 2.6 1406s
+Hopper-v5 afinado 301056 2583.6 238.5 2056s
+Hopper-v5 afinado 401408 2913.5 700.5 2694s
+Hopper-v5 afinado 501760 3328.2 5.4 3331s
+Hopper-v5 afinado 602112 2610.6 601.9 4006s
+Hopper-v5 afinado 702464 2650.7 874.0 4386s
+Hopper-v5 afinado 802816 3327.5 3.6 4763s
+Hopper-v5 afinado 903168 3308.5 33.3 5100s
+Hopper-v5 afinado 1003520 2633.3 716.2 5433s

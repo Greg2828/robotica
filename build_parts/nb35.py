@@ -187,7 +187,7 @@ for nombre, politica in [("azar", azar), ("quieto", quieto)]:
 
 md(r"""(`lambda` es la forma corta de escribir una función de una línea, NB23. Y `info["x_position"]` es la posición hacia delante, que el robot no ve pero el entorno sí apunta.)
 
-- **Al azar**, Hopper se cae enseguida: unos 20 pasos, **0,16 segundos**. Sus motores son tan fuertes (×200) que unas sacudidas al azar lo tumban al instante.
+- **Al azar**, Hopper se cae enseguida: unas pocas decenas de pasos, **un cuarto de segundo** o menos (la cifra exacta cambia en cada ejecución, porque las acciones al azar son distintas cada vez). Sus motores son tan fuertes (×200) que unas sacudidas al azar lo tumban al instante.
 - **Quieto**, sin mover ningún motor, dura bastante más: alrededor de 150 pasos (1,2 s), lo que tarda en **desplomarse** poco a poco por su propio peso, como un muñeco de trapo (el humanoide del NB04
   hacía lo mismo). Y saca más puntos que el azar, sin avanzar nada.
 
@@ -203,7 +203,7 @@ Así que al principio del entrenamiento, el camino fácil para mejorar es aprend
 5.000. Lo que lo empuja a moverse es el término de **avance**.
 
 ¿Qué pasa si **quitamos** el término de avance? Gymnasium deja cambiar los pesos de la recompensa al crear el entorno: `forward_reward_weight=0` multiplica el avance por 0. Hagamos el experimento:
-entrenamos un PPO con la configuración del NB34 durante 106.496 pasos (algo menos de dos minutos en la Pi) en un Hopper que **solo** cobra por sobrevivir, y miramos qué hace.
+entrenamos un PPO con la configuración del NB34 durante 106.496 pasos (unos dos minutos y medio en la Pi) en un Hopper que **solo** cobra por sobrevivir, y miramos qué hace.
 """),
 
 code(r"""import time
@@ -224,7 +224,9 @@ print(f"Solo vida: retorno {r:6.1f} | dura {d:6.1f} pasos | acaba en x = {x:+.2f
 
 md(r"""(`env_kwargs` pasa argumentos a `gym.make` para crear cada copia, NB23. Y 106.496 = 13 lotes exactos de 8.192 pasos: como aprendimos en el NB34, mejor pedir múltiplos del lote.)
 
-RESULTADO_VIDA
+Lo ha clavado: **1.000 pasos** de 1.000, es decir, aguanta el episodio entero en **todos** los episodios, y saca **999,8** de los 1.000 puntos posibles (lo que falta es el pequeño gasto de control). ¿Y cuánto avanza? **6 centímetros** en 8 segundos. Ha aprendido a quedarse **de pie, quieto**, en solo dos minutos y medio de entrenamiento.
+
+No ha hecho "trampa": ha hecho **exactamente** lo que le hemos pedido. Le pagábamos por no caerse y ha encontrado la forma más segura de no caerse: no moverse. Esa es la lección del NB04 vista en directo: **el agente optimiza lo que pagas, no lo que querías**. El término de avance es lo único que lo empuja a arriesgarse a saltar.
 """),
 
 md(r"""## 5 · Normalizar las observaciones: `VecNormalize`
@@ -247,7 +249,7 @@ Dos **trampas** que hay que conocer (muchísima gente cae en ellas):
   al cargarlo le llegarán números en otra escala y hará disparates. Hay que guardar **las dos cosas**.
 - **Al evaluar, no hay que seguir actualizando las estadísticas** (`training=False`) ni normalizar la recompensa (`norm_reward=False`), para que la nota sea la recompensa de verdad.
 
-Comparemos un entrenamiento corto de Hopper **sin** y **con** `VecNormalize`, 106.496 pasos cada uno, la misma semilla (unos tres o cuatro minutos en total):
+Comparemos un entrenamiento corto de Hopper **sin** y **con** `VecNormalize`, 106.496 pasos cada uno, la misma semilla (unos cinco minutos en total):
 """),
 
 code(r"""from stable_baselines3.common.vec_env import VecNormalize
@@ -277,13 +279,21 @@ for usar_normalizacion in [False, True]:
 
 md(r"""(`obs_rms` son las estadísticas de la observación: *rms* viene de *running mean and std*, "media y desviación móviles".)
 
-RESULTADO_NORM
+¡Sorpresa! **Sin** normalizar saca **387** puntos y **con** normalización, **301**. En este experimento corto, `VecNormalize` **no** gana: pierde.
+
+¿Entonces no sirve? Hay que mirarlo con calma, como científicos:
+
+- Los dos agentes están todavía en la fase de "aprender a no caerse" (fíjate en la desviación diminuta: los 5 episodios se caen casi igual). La diferencia entre 301 y 387 a estas alturas es pequeña, y con **una sola semilla** (NB34) no demuestra nada, ni a favor ni en contra.
+- La ventaja de normalizar se nota **a la larga** y crece con el **número** de observaciones: con las 11 de Hopper, la red se las puede arreglar con números algo desiguales; con las 348 del humanoide, no.
+- Los entrenamientos largos de la siguiente sección **sí** usan `VecNormalize`, y llegan a más de 3.500 puntos. Es la práctica habitual con robots.
+
+Para **demostrarlo** de verdad habría que entrenar un millón de pasos con y sin normalización, con varias semillas cada uno: horas de Pi. Esta es una lección importante del oficio: **un experimento corto con una semilla no demuestra nada**, y es mejor decirlo que fingir que el resultado salió como se esperaba.
 """),
 
 md(r"""## 6 · El entrenamiento largo
 
 Para que Hopper salte **bien** hacen falta del orden de **un millón de pasos**. En la Raspberry Pi eso son bastantes minutos por robot (mira el registro de abajo), demasiado para ejecutarlo cada vez que abras
-este cuaderno. Así que lo he entrenado **antes**, con este script (un fichero `.py`, como los del NB26), y he guardado el resultado en la carpeta `modelos/` del curso:
+este cuaderno. Así que lo he entrenado **antes**, con este script (un fichero `.py`, como los del NB26; lo tienes en `notebooks/entrenar_largo.py`), y he guardado el resultado en la carpeta `modelos/` del curso:
 
 ```python
 # entrenar_largo.py  —  uso: python entrenar_largo.py Hopper-v5 defecto 1000000
@@ -317,9 +327,46 @@ Lo entrené con dos configuraciones: **`defecto`** (los ajustes de SB3 del NB34)
 Las notas de su registro, tramo a tramo, están copiadas aquí (cada línea del registro: pasos, nota media de 5 episodios):
 """),
 
-code(r"""REGISTRO_HOPPER"""),
+code(r"""# Registro de entrenar_largo.py, tramo a tramo: (pasos, nota media de 5 episodios, desviación)
+hopper_defecto = [(106_496, 301.2, 1.1), (212_992, 440.4, 1.4), (319_488, 742.9, 2.1), (425_984, 1173.7, 5.0),
+                  (532_480, 2471.0, 803.7), (638_976, 3523.5, 36.1), (745_472, 3087.5, 449.1), (851_968, 3557.9, 5.7),
+                  (958_464, 3071.9, 484.7), (1_064_960, 3508.0, 172.3)]
+hopper_afinado = [(100_352, 442.6, 1.4), (200_704, 951.7, 2.6), (301_056, 2583.6, 238.5), (401_408, 2913.5, 700.5),
+                  (501_760, 3328.2, 5.4), (602_112, 2610.6, 601.9), (702_464, 2650.7, 874.0), (802_816, 3327.5, 3.6),
+                  (903_168, 3308.5, 33.3), (1_003_520, 2633.3, 716.2)]
 
-md(r"""ANALISIS_CURVAS_HOPPER
+def dibujar_registro(titulo, curvas):
+    for nombre, registro in curvas.items():
+        pasos = np.array([p for p, nota, desviacion in registro])
+        notas = np.array([nota for p, nota, desviacion in registro])
+        desviaciones = np.array([desviacion for p, nota, desviacion in registro])
+        plt.plot(pasos, notas, marker="o", label=nombre)
+        plt.fill_between(pasos, notas - desviaciones, notas + desviaciones, alpha=0.2)   # la franja: nota ± desviación
+    plt.xlabel("pasos de entrenamiento")
+    plt.ylabel("nota (media de 5 episodios)")
+    plt.title(titulo)
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.show()
+
+dibujar_registro("Hopper-v5", {"defecto": hopper_defecto, "afinado": hopper_afinado})
+"""),
+
+md(r"""(`fill_between` rellena el espacio entre dos curvas: aquí, la franja de la nota **menos** la desviación a la nota **más** la desviación. Cuanto más ancha, más **distintos** entre sí fueron los 5 episodios del examen.)
+
+Un detalle del registro: los tramos de `defecto` son de 106.496 pasos y los de `afinado` de 100.352. Es la lección del NB34: `learn` siempre juega **lotes completos**, y los lotes son distintos (4 copias × 2.048 = 8.192 pasos en `defecto`; 4 × 512 = 2.048 en `afinado`). Cada robot tardó en total algo más de **una hora** (`defecto`) y **hora y media** (`afinado`), con los cuatro entrenamientos a la vez en la Pi, uno por núcleo.
+
+Lo que cuentan las curvas:
+
+- **Al principio, las dos se arrastran** (300–950 puntos en los primeros 200.000 pasos): el agente está aprendiendo a **no caerse**, la parte fácil de la recompensa (sección 4).
+- **De repente, despegan.** `afinado` descubre el salto antes (2.584 a los 300.000 pasos); `defecto`, hacia los 500.000. Ese salto brusco es típico del RL: durante mucho tiempo parece que no pasa nada y, cuando el agente descubre "el truco", la nota se dispara.
+- **Las dos llegan arriba**, a unos **3.300–3.550 puntos**: más de 3.000, el nivel de un Hopper bien entrenado.
+- **Pero zigzaguean.** Mira `defecto`: 3.523 → 3.087 → 3.558 → 3.072 → 3.508. Y fíjate en las franjas: a veces la desviación es de **±800**. Eso significa que, con **la misma** política, unos episodios aguantan los 1.000 pasos y otros se caen a mitad. Cada episodio empieza con una postura un pelín distinta (el entorno añade un ruido diminuto al reiniciar), y la política está tan al **límite** (saltar deprisa sin caerse) que a veces ese pelín basta.
+- **`afinado` es más rápido pero más inestable**: aprende antes, pero oscila más. Una explicación probable: con lotes más pequeños, cada actualización se basa en menos experiencia y es más "ruidosa" (NB33).
+
+Y una lección de profesional que salta a la vista: **el fichero guardado es el del ÚLTIMO tramo, no el del mejor.** `afinado` llegó a 3.328 puntos, pero acabó en 2.633: su fichero guarda la versión de 2.633. En los proyectos de verdad se guarda **el mejor** examen (SB3 trae una herramienta para eso, `EvalCallback`, "llamada de evaluación", que examina cada cierto tiempo y guarda el mejor). Aquí nos quedamos con `defecto`, que acabó en un sólido **3.508 ± 172**.
+
+Último aviso de honestidad (NB34): esto es **una** semilla. Con otra, el orden entre `defecto` y `afinado` podría cambiar. Para afirmar en serio "esta configuración es mejor" harían falta varias semillas de cada una.
 
 Ahora, a **cargar** el agente entrenado y examinarlo. Para cargarlo hacen falta las dos piezas: el agente (`PPO.load`) y sus estadísticas (`VecNormalize.load`, que necesita un entorno al que envolver):
 """),
@@ -338,7 +385,7 @@ def politica_de(agente, entorno_normalizado):
     # traduce una observación "cruda" a la normalizada antes de pedir la acción
     return lambda obs: agente.predict(entorno_normalizado.normalize_obs(obs), deterministic=True)[0]
 
-agente_hopper, normalizador_hopper = cargar("Hopper-v5", "MEJOR_HOPPER")
+agente_hopper, normalizador_hopper = cargar("Hopper-v5", "defecto")
 politica_hopper = politica_de(agente_hopper, normalizador_hopper)
 r, d, x = jugar_episodios(hopper, politica_hopper)
 print(f"Hopper entrenado: retorno {r:7.1f} | dura {d:6.1f} pasos | recorre {x:5.2f} m en {d * 0.008:.1f} s "
@@ -347,7 +394,7 @@ print(f"Hopper entrenado: retorno {r:7.1f} | dura {d:6.1f} pasos | recorre {x:5.
 
 md(r"""(`normalize_obs` aplica a una observación la misma normalización que veía el agente al entrenar. Así podemos usar el `jugar_episodios` de siempre, con el entorno "crudo".)
 
-EXAMEN_HOPPER
+**3.559 puntos** de media en 10 episodios. Dura **969 pasos** de media: casi siempre aguanta los 1.000, pero en algún episodio se cae antes (la inestabilidad que vimos en las franjas). Y recorre **20,7 metros** en unos 7,8 segundos: **2,67 m/s**, casi 10 km/h. Un robot de 16 kg con **una sola pata** que va a trote ligero. Compáralo con el principio: al azar duraba 20 pasos; quieto, unos 150.
 
 Y ahora, a **verlo**. Grabamos un episodio en GIF, como en el NB34, con la cámara siguiendo al robot:
 """),
@@ -375,7 +422,13 @@ print(n, "fotos")
 Image(filename="assets/nb35_hopper.gif")
 """),
 
-md(r"""GIF_HOPPER
+md(r"""Fíjate en cómo lo hace:
+
+- Empieza recto y en seguida **se agacha**: dobla la rodilla e inclina un poco el torso hacia delante. Agachado, su centro de masas está más bajo y es más difícil volcar.
+- Avanza a base de **saltitos cortos, rápidos y casi rasantes**, no de saltos altos de canguro. Un salto alto tiene una fase en el aire larga (sección 1), en la que no puede corregir nada, y un aterrizaje violento: demasiado riesgo.
+- La pierna trabaja como un **muelle**: el pie aterriza, la rodilla se dobla y absorbe el golpe, y el **tobillo** da el empujón del siguiente salto.
+
+Nadie le ha enseñado nada de esto. Ni "agáchate", ni "salta bajito", ni "usa el tobillo". Lo ha descubierto él solo, a base de un millón de intentos y de la recompensa "avanza sin caerte".
 """),
 
 md(r"""## 7 · Walker2d: dos piernas
@@ -401,12 +454,26 @@ deja inclinarse mucho más que a Hopper).
 Al azar o quieto, se cae enseguida, como Hopper. Lo entrenamos con el mismo script y las mismas dos configuraciones. Su registro:
 """),
 
-code(r"""REGISTRO_WALKER"""),
+code(r"""walker_defecto = [(106_496, 275.4, 2.5), (212_992, 322.4, 2.5), (319_488, 372.2, 1.8), (425_984, 429.6, 1.4),
+                  (532_480, 458.6, 1.9), (638_976, 502.3, 4.7), (745_472, 566.8, 7.7), (851_968, 635.6, 3.4),
+                  (958_464, 664.2, 7.3), (1_064_960, 695.6, 1.6)]
+walker_afinado = [(100_352, 415.6, 3.2), (200_704, 882.1, 5.3), (301_056, 1351.5, 88.1), (401_408, 1380.8, 338.1),
+                  (501_760, 3058.7, 861.2), (602_112, 1929.2, 828.4), (702_464, 2785.6, 768.8), (802_816, 3740.6, 63.7),
+                  (903_168, 2686.3, 743.1), (1_003_520, 2500.1, 1468.6)]
 
-md(r"""ANALISIS_CURVAS_WALKER
+dibujar_registro("Walker2d-v5", {"defecto": walker_defecto, "afinado": walker_afinado})
 """),
 
-code(r"""agente_walker, normalizador_walker = cargar("Walker2d-v5", "MEJOR_WALKER")
+md(r"""Aquí la diferencia es enorme:
+
+- **`defecto` sube lentísimo**: de 275 a 696 puntos en un millón de pasos, y con una franja finísima (todos los episodios iguales). Lo he examinado aparte con los mismos 10 episodios: dura unos **164 pasos** (1,3 s) y recorre **4,3 m**, a más de 3 m/s. Lo que ha aprendido es a **lanzarse hacia delante** a toda velocidad y caerse (lo mismo que verás en el ejercicio E6). Es un **óptimo local** (NB17): cada pequeña mejora de "lanzarse mejor" sube un poco la nota, pero aprender a andar de verdad exigiría pasar antes por un tramo en el que la nota **baja**.
+- **`afinado` sí aprende a andar**: supera los 3.000 puntos a los 500.000 pasos y llega a **3.741** a los 800.000. Una explicación probable: con dos piernas, la campana ancha de `defecto` (σ = 1 al empezar, NB30) produce movimientos tan bruscos que casi nunca se mantiene en pie el tiempo suficiente para descubrir el ritmo de los pasos; la campana más estrecha de `afinado` (σ ≈ 0,37) explora con más calma.
+- Pero **`afinado` es muy inestable**: 3.059 → 1.929 → 2.786 → 3.741 → 2.686 → 2.500, con franjas de ±800 y hasta **±1.469** en el último tramo. Es decir, unos episodios anda de maravilla y otros se cae enseguida.
+
+Un millón de pasos se le queda **corto** a Walker2d: en los artículos de investigación se entrena con varios millones (sección 9). Cargamos `afinado` (su último tramo) y lo examinamos con 10 episodios:
+"""),
+
+code(r"""agente_walker, normalizador_walker = cargar("Walker2d-v5", "afinado")
 politica_walker = politica_de(agente_walker, normalizador_walker)
 r, d, x = jugar_episodios(walker, politica_walker)
 print(f"Walker2d entrenado: retorno {r:7.1f} | dura {d:6.1f} pasos | recorre {x:5.2f} m en {d * 0.008:.1f} s "
@@ -416,7 +483,12 @@ n = grabar("Walker2d-v5", politica_walker, "assets/nb35_walker.gif")
 Image(filename="assets/nb35_walker.gif")
 """),
 
-md(r"""GIF_WALKER
+md(r"""**3.161 puntos**, **849 pasos** de media, **18,5 metros** a **2,73 m/s**. Más que los 2.500 de su último tramo del registro: con una política tan inestable, la nota depende mucho de **qué episodios** le toquen (aquí 10, con semillas 0 a 9; en el registro, 5 con la semilla 123). Moraleja: cuando la desviación es tan grande, **5 episodios no bastan** para juzgar a un agente.
+
+Y mira **cómo** anda, porque es muy curioso:
+
+1. Durante **más de un segundo**, se queda **casi quieto**, de pie, con las piernas juntas, haciendo pequeños ajustes. Va cobrando sus +1 por sobrevivir sin arriesgar nada.
+2. Entonces **inclina el torso muchísimo hacia delante**, como si se fuese a caer de bruces... y empieza a dar **zancadas grandes y rápidas**, lanzando las piernas por delante para no caerse. Literalmente, anda **cayéndose hacia delante** y recogiéndose en cada paso. (Recuerda que a Walker2d se le permite inclinarse hasta 1 radián, unos 57°.)
 
 ## 8 · Formas raras de andar
 
@@ -437,7 +509,7 @@ en **Google Colab** (gratis, NB31) sin cambiar nada; solo hay que instalar lo qu
 
 ```python
 !pip install "stable-baselines3[extra]" "gymnasium[mujoco]"
-!wget -q https://raw.githubusercontent.com/<tu-repo>/entrenar_largo.py    # o súbelo a mano
+!wget -q https://raw.githubusercontent.com/Greg2828/robotica/main/notebooks/entrenar_largo.py
 !python entrenar_largo.py Walker2d-v5 afinado 3000000
 ```
 
@@ -519,7 +591,11 @@ hopper_caro = gym.make("Hopper-v5", ctrl_cost_weight=0.1)
 print(jugar_episodios(hopper_caro, politica_hopper))
 ```
 
-RESULTADO_E4
+Sale `(3482.1, 969.1, 20.73)`: los **mismos** 969 pasos y los **mismos** 20,73 m que antes. La política hace **exactamente lo mismo**: no sabe nada de la recompensa (solo ve observaciones y devuelve acciones). Lo único que cambia es la **nota**: de 3.558,8 a 3.482,1, unos 77 puntos menos.
+
+De ahí se puede sacar cuánto gastaba antes: 100 veces más caro resta 99 veces el gasto original, así que el gasto original era 77 / 99 ≈ **0,78 puntos** en todo el episodio. Diminuto.
+
+¿Hace falta reentrenar? Para que el robot **cambie** su forma de moverse y use menos fuerza, **sí**: la recompensa solo influye **al aprender**. Pero aquí no merece la pena: incluso 100 veces más caro, el gasto es solo un 2 % de la nota.
 </details>
 
 <details>
@@ -529,7 +605,7 @@ RESULTADO_E4
 print(jugar_episodios(walker, lambda obs: agente_walker.predict(obs, deterministic=True)[0]))
 ```
 
-RESULTADO_E5
+Sale `(317.0, 194.5, 0.99)`: se cae en unos 195 pasos (1,6 s) después de avanzar apenas **1 metro**, cuando con la normalización sacaba 3.161 y andaba 18 m. La red recibe números en una escala que **nunca** vio al entrenar (por ejemplo, una altura de 1,25 m en vez del número normalizado, cercano a 0, que estaba acostumbrada a leer), y sus decisiones dejan de tener sentido. Es la **primera trampa** de la sección 5: las estadísticas de `VecNormalize` son **parte del agente**. Sin ellas, el agente está "ciego".
 </details>
 
 <details>
@@ -541,7 +617,9 @@ agente_sin_vida.learn(total_timesteps=106_496)
 print(jugar_episodios(gym.make("Hopper-v5", healthy_reward=0.0), lambda obs: agente_sin_vida.predict(obs, deterministic=True)[0]))
 ```
 
-RESULTADO_E6
+Sale aproximadamente `(227.6, 133.9, 1.82)`: dura unos 134 pasos (1,07 s) y recorre **1,8 m**, a más de 1,6 m/s... y se cae. Se **lanza en plancha** hacia delante.
+
+¿Por qué? Sin premio por sobrevivir, **caerse no cuesta nada**: lo único que da puntos es avanzar. La forma más rápida de avanzar al principio es tirarse hacia delante, y como después de caerse no se pierde nada, no hay motivo para aprender a mantenerse en pie. Es la **trampa contraria** a la de la sección 4: allí no se movía por miedo a caerse; aquí se cae porque no le importa. (Y es justo lo que aprendió el Walker2d `defecto`.) Una buena recompensa necesita **los dos** términos, equilibrados.
 </details>
 """),
 

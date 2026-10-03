@@ -20,3 +20,5 @@ Thumbs.db
 notebooks/practica_*/
 trabajo_nb35/*.zip
 trabajo_nb35/*.pkl
+trabajo_nb35/parcial_*/
+trabajo_nb35/err_*.txt

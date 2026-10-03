@@ -187,6 +187,134 @@ no eran de nivel cero. Norma nueva del curso:
   pasos + GIF assets/nb34_pendulo_ppo.gif**. Ejercicios medidos: σ0=0,25 → 51 a 50k (≈250k para aprender); estocástico
   929±164 vs 1000; Pendulum-v1 por defecto −1031 (no aprende → RL Zoo). Cifras SB3 varían un poco entre ejecuciones.
   SIGUIENTE: NB35 Hopper/Walker2d.
+- **NB35 · Robots con patas** ✅ (39 celdas, EXIT 0, ~8 min de ejecución): Hopper-v5 (obs 11, 3 motores gear 200, 15,8 kg,
+  dt 0,008) y Walker2d-v5 (obs 17, 6 motores gear 100, 23,7 kg); recompensa desmontada con info; trampa de sobrevivir
+  (forward_reward_weight=0 → 999,8, 1000 pasos, x +0,06 m); VecNormalize (corto: sin 387 > con 301 → contado con honestidad,
+  1 semilla no demuestra nada). Entrenamientos 1M con notebooks/entrenar_largo.py (4 en paralelo en la Pi, 68-91 min):
+  Hopper defecto 3508±172 (mejor 3558), afinado más rápido pero inestable (acaba 2633); Walker2d defecto 696 (se lanza y cae,
+  óptimo local), afinado 2500±1469 (pico 3741). Modelos en notebooks/modelos/ (Hopper defecto, Walker afinado). Examen 10 ep:
+  Hopper 3559 / 969 pasos / 20,7 m / 2,67 m/s; Walker 3161 / 849 / 18,5 m / 2,73 m/s. E4 ctrl×100 → 3482 misma conducta;
+  E5 sin normalizar 317; E6 healthy_reward=0 → se lanza en plancha (1,8 m). Checkpoints parciales en trabajo_nb35/.
+  → **✅ PARTE 4 COMPLETA (NB28–NB35)**. SIGUIENTE: Parte 5 · La física del cuerpo.
+- **NB05 · Tu primer contacto con el ordenador** ✅ (EXIT 0, 42 celdas, 11 de código): ordenador
+  obediente/literal (cocinero que no sabe cocinar), programa=receta, Python, notebook/celdas/kernel,
+  cómo abrir (GitHub o `jupyter lab` en la Pi, Mayúsculas+Enter); `print("hola")` desmontado;
+  texto vs número; 3 errores REALES (NameError×2, SyntaxError) y cómo leerlos; comentarios `#`;
+  trampa de la coma decimal `print(1,25)`; recompensa del NB04 = 7.4.
+- **NB06 · Cajas con nombre: variables y números** ✅ (EXIT 0, 72 celdas, 25 de código): caja con
+  etiqueta, `=` es "guarda", reescribir, memoria del kernel/orden, NameError explicado, reglas de
+  nombres, int/float, `/` da decimal, `**`, ruido de decimales + `round`, orden de operaciones,
+  trampa `-0.4 ** 2`, `x = x + 1`; programas: recompensa con nombres (7.4 → 4.9 quieto), esfuerzo
+  de 3 motores (0.33), pelota 3 pasitos copiando celdas (→ motiva bucles).
+- **NB07 · Repetir sin cansarse: el bucle for** ✅ (EXIT 0, 48 celdas, 15 de código): for/range,
+  cuerpo y sangría (IndentationError real), contar desde 0, range(inicio, fin), acumulador
+  (retorno robot quieto 5000), Gauss 5050, pelota con bucle (tabla NB02 con ruido 0.9999…),
+  MEDIDO: paso 0.1→0.5 m, 0.01→0.725, 0.001→0.7475 (exacto 0.75): error ÷10 por paso ÷10.
+- **NB08 · Tomar decisiones: `if`** ✅ (44 celdas, 13 código): comparaciones/bool, = vs == (SyntaxError
+  real), if/else/elif, and/or, +5 del humanoide como if, termostato (1.ª política, 0,5/0,25 sin ruido), pelota
+  que REBOTA (coef. restitución 0,8: botes en pasos 63/163/242), break = fin de episodio (terminado/truncado).
+- **NB09 · Listas** ✅ (63 celdas, 20 código): índice desde 0, IndexError, -1, cambiar, for sobre lista,
+  esfuerzo de 17 motores (0,67), sum/max/min/media, append (método), trayectoria de la pelota grabada (300
+  fotos, bote paso 63 = índice 62, rebota a 1,24 m, 89 fotos > 1 m), porciones, listas en paralelo.
+- **NB10 · Funciones** ✅ (63 celdas, 23 código): def/llamar, parámetros/argumentos, return vs print, None,
+  TypeError, recompensa y esfuerzo como funciones, variables locales, devolver 2 valores (paso_pelota = step),
+  POLÍTICA = función, ENTORNO = función, simular(politica) intercambiable, termostatos comparados (23 min/19,95
+  vs 21 min/18,99) → diseño de recompensa.
+- **NB11 · PROYECTO palo de escoba** ✅ (63 celdas, 22 código): ficha del entorno (obs 2, acción 1 ±40,
+  recompensa 1−(i/30)², cae >30°, 500 pasos), import random/uniform/seed, constantes MAYÚSCULAS; nada 44,8,
+  azar 43,2, solo inclinación 296 (oscila: problema de la foto), incl+vel 499,9; ruedecillas; búsqueda
+  aleatoria 20 candidatos → 499,9 y generaliza a semillas 100-109; límites: motor débil (15) nada lo salva,
+  ruedecilla < 10 pierde contra la gravedad.
+- **── PARTE 2 · Matemáticas y herramientas ──**
+- **NB12 · Vectores** ✅ (50 celdas, 17 código, 6 dibujos matplotlib): Hundir la flota/plano cartesiano, componentes, sumar
+  (odometría), escalar, restar (B−A), Pitágoras+raíz (** 0.5), 3D/45D (distancia entre observaciones 0,057 vs 2,24), robot hacia
+  la meta con viento (25 pasos, dibujado).
+- **NB13 · Producto escalar** ✅ (39 celdas, 12 código): media ponderada → "pesos", política del palo = pesos·obs (política lineal),
+  geometría (+/0/−), unitario/normalizar/proyección, premio por avanzar = vel·(1,0,0), a·a = longitud², NEURONA = pesos·x + sesgo,
+  perceptrón (termostato = neurona), detector de caídas que anticipa (peso 0,3 en velocidad).
+- **NB14 · Matrices** ✅ (43 celdas, 15 código): Segway 2×3 (giro con signos opuestos), lista de listas, bucle anidado, matriz×vector,
+  regla de tamaños (IndexError), capa = M·x + b, humanoide 17×45+17 = 782 (completa 5.933), recortar, 0,5**782 = 3,9e-236
+  (notación científica), capas en fila = red (avance).
+- **NB15 · NumPy + humanoide real** ✅ (76 celdas, 29 código): arrays, shape, elemento a elemento vs listas (concatena/repite), @,
+  ValueError de formas, default_rng/zeros/clip, cronometraje (~50-120× en la Pi), Gymnasium reset/step = reiniciar/paso del NB11,
+  obs (348,) con obs[0]=1,39 altura, recompensa 1.er paso 5,002; política lineal: W=0 → 198,6 (= muñeco de trapo NB04), W azar ~58,
+  mejor de 20 al azar 141,7 < 198,6 → hacen falta pendientes. E5: todo +0,4 → ~237 (tensar ayuda), todo −0,4 → ~45.
+- **NB16 · Pendientes** ✅ (36 celdas, 10 código): función f(x)+gráfica, rampa, velocidad = pendiente de la posición, zoom
+  (curva → recta), (f(x+h)−f(x))/h → 6 en x², a los dos lados, h=1e-12 empeora vs 1e-6, derivada de x² = 2x por tabla;
+  montaña del palo con BATERÍA (coste 0,001, d=8): +27,5 en 12, ≈0 en 23,5 (cima ~462), −0,63 en 40.
+- **NB17 · Ascenso por gradiente** ✅ (31 celdas, 10 código): x += tasa·pendiente; colina 10−(x−3)²: tasas 0,01/0,1/0,5/
+  0,9/1,1 (lento/bien/de un salto/oscila/explota); 1 ruedecilla 12→25,8→~24,7; gradiente 2D = flecha; mapa contourf con
+  camino (12,2) 416 → (22,6; 6,2) ~463; óptimo local (dos colinas, valle entre 3 y 3,5); coste 2N evaluaciones/paso.
+- **NB18 · Aprender imitando (supervisado)** ✅ (37 celdas, 10 código): 300 ejemplos del maestro −30i−8v; ECM/pérdida
+  (305,6 → 0); valle; REGLA DE LA CADENA (engranajes) → 2·media(error×entrada) = numérica (14,7596); tasa 0,2 →
+  (−30; −8; 0), 0,25 aprende, 0,3 explota (6e18); alumno juega 499,9 (a medio aprender 499,8); maestro ±10 →
+  (−29,7; −8,0); desplazamiento de distribución; imitación en humanoides.
+- **NB19 · Redes neuronales** ✅ (30 celdas, 8 código): maestro que satura (clip −30i a ±40); lineal atascada 81,5;
+  capas lineales apiladas = recta; ReLU = codo; 2 codos a mano = exacto; red 1→8→1 con retropropagación a mano (pendiente
+  ReLU 0/1), tasa 0,003, 5000 pasos → 0; tasa 0,01 → atasco ~11 (óptimo local, NO neuronas muertas: verificado);
+  aproximación universal; red de humanoide 348→256→256→17 = 159.505 pesos.
+- **── PARTE 3 · PYTHON DE VERDAD ──**
+- **NB20 · Texto** ✅ (74 celdas, 29 código): índices/porciones, inmutables, métodos, split/join, conversiones (ValueError),
+  escapes, f-strings y formato (:.2f :, :.1% :+ :>8 :05d), proyecto parsear un log → informe alineado.
+- **NB21 · Colecciones** ✅ (80/31): tuplas/desempaquetar, listas a fondo, sort vs sorted, TRAMPA DEL ALIAS (copy, is),
+  enumerate/zip, comprensiones, diccionarios (KeyError, get, items, anidados, contar), info REAL del humanoide (ingredientes
+  de la recompensa), conjuntos, any/all, key=, // y %, proyecto cuaderno de experimentos.
+- **NB22 · Flujo, errores y depuración** ✅ (57/18): while (pelota 63 pasos), límite de seguridad, continue, for-else, pass,
+  match, verdad/falsedad, excepciones y trazas (de abajo arriba), try/except/else/finally, raise (fallar pronto), inf/nan +
+  math.isfinite (vigilante: explota en el paso 16), assert, depurar (f"{x=}", %debug/breakpoint/pdb, catálogo de bichos).
+- **NB23 · Funciones a fondo** ✅ (57/21): defaults, por nombre, trampa del default mutable, *args/**kwargs, desempaquetar al
+  llamar, ámbito (UnboundLocalError), lambda, CIERRES (fábrica de políticas), decoradores (@cronometro), recursión,
+  iteradores/StopIteration, generadores (lotes; 8,4 MB vs 200 B), docstrings, type hints.
+- **NB24 · Clases (I)** ✅ (54/18): clase/objeto, __init__/self, métodos, __repr__, atributos de clase, _privado, @property,
+  PaloDeEscoba con reset/step estilo Gymnasium + random.Random propio, PoliticaLineal con __call__ (como PyTorch), mismo
+  bucle → 44,8/296,0/499,9; @dataclass + field(default_factory).
+- **NB25 · Herencia + entorno Gymnasium** ✅ (43/14): herencia, super(), polimorfismo, ABC/@abstractmethod, Vector con métodos
+  especiales (así funciona NumPy), composición; PaloDeEscobaEnv(gym.Env) con spaces.Box, acción normalizada [-1,1]×40,
+  check_env (avisos explicados), gym.register + gym.make (envoltorios TimeLimit...): nada 44,6 / solo incl 353,4 / a mano
+  499,9; nn.Module explicado.
+- **NB26 · Ficheros, módulos, scripts, terminal** ✅ (72/27): pathlib, open/with/modos, CSV (todo texto), JSON, np.save, pickle
+  (peligro), módulo palo.py + sys.path + reload, script con argparse + subprocess/sys.executable, terminal (!), venv/pip/
+  requirements, logging, Counter/defaultdict/datetime/itertools.product/statistics, proyecto barrido guardado y releído.
+- **NB27 · NumPy a fondo, tests y Git** ✅ (76/29): dtype float32, reshape/-1/.T, índices 2D, máscaras/np.where/argsort, EJES,
+  BROADCASTING (normalizar observaciones), stack, VISTAS vs copias; 1.000 palos vectorizados (solo incl ~63 % caídas; 10-20×
+  más rápido); pytest (test_palo.py, caza el fallo gravedad 10→1); Git real en repo de juguete (init/add/commit/diff/
+  switch -c/--decorate), .gitignore, historial del curso; PEP 8.
+- **── PARTE 4 · APRENDIZAJE POR REFUERZO DE VERDAD ──**
+- **NB28 · Probabilidad** ✅ (48 celdas, 16 código): frecuencia, grandes números (dado, dibujado), distribución (dos dados),
+  valor esperado (producto escalar; el RL maximiza el retorno ESPERADO), varianza/σ (robots A y B), uniforme, histogramas,
+  campana de Gauss (TCL, 68,4/95,5/99,7, fórmula con e/exp), error típico σ/√n (5 vs 100 episodios) e intervalo de confianza,
+  política estocástica (σ: aguanta hasta 50, se desploma en 100; cruce de 400 entre σ 60 y 70), logaritmo y log-prob normal.
+- **NB29 · REINFORCE** ✅ (38/11): (a−μ)/σ² comprobada; ×obs por regla de la cadena; retorno desde cada paso γ=0,99 hacia
+  atrás; puro NO aprende (~30-45); línea base media → 499 (semilla 0 en la it. 53; 5 semillas 47-95); aprendida (−15,7; −20,1)
+  no se cae en 1.000. E5: σ=1 aprende en 6 it (pasos 25× mayores); E7 línea base global inestable (desaprende).
+- **NB30 · Ruido, crítico, descuento** ✅ (27/8, ~2 min): ruido medido (sin base desv 34/44 y media de signo erróneo; con base
+  9,5/20); normalizar ventajas; crítico lineal con rasgos [1,i²,v²,i·v,t/500] por lstsq — honesto: es tosco (predice −231,
+  ordena mal volviendo/cayendo); crítico+normalizar el mejor ([13,17,17,66,26] vs media [53,79,95,60,47]); γ 0,9 no aprende,
+  0,99 bien, 1,0 algo peor.
+- **NB31 · PyTorch** ✅ (44/16): tensores, autograd (6 en x²; 14,7596 del NB18), grafo, acumulación/zero_grad, no_grad,
+  nn.Linear/ReLU/Sequential/Module (25 params), SGD vs Adam — HONESTO: con 8 neuronas Adam se atasca (29,9) y SGD llega
+  (0,71); con 32, SGD 4/4 y Adam a veces; Normal.log_prob → gradiente = fórmula NB29; state_dict + weights_only; .to(cuda).
+- **NB32 · Actor-crítico** ✅ (46/18, ~4 min): jugador/comentarista; pérdida truco −log_prob×ventaja (= dirección NB29, comprobado
+  −0,48/−0,24); escalar entradas; log σ aprendible (0,25→0,20); DIFERENCIA TEMPORAL δ=r+γV'−V (GPS), ruido vs sesgo, reloj en el crítico;
+  Actor 2→32 tanh→1 (130 params) + Crítico 3→64→1 (321); TD semilla 0 supera 490 en it. ~95 (42,6→499,6); actor satura ±40 hacia 3°;
+  mapa del crítico (franja diagonal, máx ~100=1/(1−γ), esquinas negativas = extrapolación); examen en PaloDeEscoba-v0 499,6 0 caídas
+  (aguanta viento ±60; falla desde ±80); TD [94,93,92,78] vs Montecarlo [None,116,100,109]; FRAGILIDAD (Adam+ventajas normalizadas;
+  tasa 0,03 llega a 499 y se derrumba a ~60) → motivación de PPO.
+- **NB33 · PPO desde cero** ✅ (32/11, ~3,5 min): desperdicio+fragilidad; épocas/minilotes (randperm); razón r=exp(Δlogp);
+  recorte min(r·A, clip·A) con tabla de casos + dibujo; GAE λ (comprobado: λ=1 → G−V, λ=0 → δ con crítico al azar);
+  PPO tasa 0,01, minilote 1024, 10 épocas: supera 490 en it. 54 (vs 78-94 del NB32), sin bajones, cambio |r−1| 2-30 %,
+  r máx < 2, σ 0,25→0,18; SIN recorte: semillas 19/47/None, oscila 500↔200, termina 34-48, r máx 1.053-2.160, σ 0,03-0,05;
+  examen viento ±80 0 caídas, ±100 3/20. Ejercicios medidos: λ=0 → 66, λ=1 → 376 (0,95 gana); ε=0,05 lento (90),
+  ε=0,5 inestable (136, r 380); bonus de entropía sin recorte NO salva (49/122/31).
+- **NB34 · Stable-Baselines3** ✅ (43/15, ~4 min; SB3 2.9.0 instalado): por qué bibliotecas + mapa (SB3/CleanRL/RSL-RL/Brax);
+  check_env de SB3; DICCIONARIO NB33↔SB3 leído del modelo (n_steps 2048, batch 64, epochs 10, lr 3e-4, clip 0,2, σ inicial 1);
+  make_vec_env (4 copias, autoreset, Monitor); policy 64-64 tanh separadas (8.835 params); inspect.getsource(PPO.train)
+  muestra ratio/clamp/min = el NB33; palo aprendido en 49.152 pasos (NB33 propio: ~240.000); OJO learn() juega lotes
+  completos (pedir múltiplos de 8.192); informe verbose=1 explicado (approx_kl, clip_fraction, explained_variance...);
+  menos robusto al viento que el PPO propio; save/load .zip (pickle); **InvertedPendulum-v5 MuJoCo 1000/1000 en 65.536
+  pasos + GIF assets/nb34_pendulo_ppo.gif**. Ejercicios medidos: σ0=0,25 → 51 a 50k (≈250k para aprender); estocástico
+  929±164 vs 1000; Pendulum-v1 por defecto −1031 (no aprende → RL Zoo). Cifras SB3 varían un poco entre ejecuciones.
+  SIGUIENTE: NB35 Hopper/Walker2d.
 - **NB35 · Robots con patas** ⏳ EN CURSO: borrador completo en build_parts/nb35.py (con marcadores a rellenar); entrenamientos
   largos parados a medias, ver trabajo_nb35/LEEME.md. Datos ya medidos: Hopper-v5 obs 11, acción 3, gear 200, 15,8 kg, dt 0,008;
   azar 10,4 (19,6 pasos), quieto 146,1 (148,8); Walker2d-v5 obs 17, acción 6, gear 100, 23,7 kg; azar −1,3, quieto 93,5.

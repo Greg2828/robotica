@@ -1,2 +1,10 @@
-Walker2d-v5 afinado 100352 415.6 3.2 720s
-Walker2d-v5 afinado 200704 882.1 5.3 1351s
+Walker2d-v5 afinado 100352 415.6 3.2 724s
+Walker2d-v5 afinado 200704 882.1 5.3 1415s
+Walker2d-v5 afinado 301056 1351.5 88.1 2055s
+Walker2d-v5 afinado 401408 1380.8 338.1 2676s
+Walker2d-v5 afinado 501760 3058.7 861.2 3314s
+Walker2d-v5 afinado 602112 1929.2 828.4 3984s
+Walker2d-v5 afinado 702464 2785.6 768.8 4378s
+Walker2d-v5 afinado 802816 3740.6 63.7 4763s
+Walker2d-v5 afinado 903168 2686.3 743.1 5103s
+Walker2d-v5 afinado 1003520 2500.1 1468.6 5435s
