@@ -1,13 +1,15 @@
-# Estado al cerrar (2026-10-03 ~20:30)
+# Estado (2026-10-04, cierre de sesión)
 
-- NB43 (Zancudo aprende a andar): build_parts/nb43.py casi completo. Quedan 3 marcadores: PENDIENTE_REF (referencias
-  quieto/azar, salen al ejecutar), PENDIENTE_CORTO (entrenamiento corto en vivo) y PENDIENTE_GIF (describir el GIF del
-  campeón). Pasos: construir, ejecutar con nbconvert (timeout 3000), leer las salidas, rellenar los 3 textos, reconstruir y
-  verificar EXIT 0, commit + push. Modelos ya en notebooks/modelos/zancudo_{defecto,afinado,ruido}_mejor.*
-  Cifras medidas: campeón 5452,9 / 1000 pasos / 89,72 m; empujones -300 4/5, -200 5/5, 200 5/5, 300 3/5, 400 3/5;
-  ruido 0/0,02/0,05: afinado 2881/2827/3052, ruido 2745/2680/2546, campeón 5453/5108/5300.
-- NB44 (moldear la recompensa): borrador build_parts/nb44.py con marcadores; entorno notebooks/zancudo_moldeado.py;
-  entrenamientos en trabajo_nb44/ (completa, sin_vuelo, sin_pie_alto, lento; 1M) lanzados con nohup: mirar log_*.txt.
-  Si se cortaron, relanzar: cd trabajo_nb44 && nohup ../venv/bin/python entrenar_moldeado.py <variante> 1000000 > log_<variante>.txt &
-  A los 213k estaban todos en la trampa de sobrevivir (de pie, ~1000 pasos, poca distancia).
-  Al acabar: copiar moldeado_*_mejor(.zip,_norm.pkl) y zancudo_defecto_mejor como MEJOR_NB43 a notebooks/modelos/.
+Parte 6 replanificada a NB45-NB62 (plan en PROGRESO.md). HECHOS y subidos: NB45, NB46, NB47, NB48.
+
+NB49 (integradores y rendimiento): build_parts/nb49.py ESCRITO y el notebook EJECUTA (EXIT 0), pero faltan
+los textos de los marcadores: EXPLICITO_TEXTO, INTEGRADORES_TEXTO, ORDEN_TEXTO, ESTABILIDAD_TEXTO, KV_TEXTO,
+ZANCUDO_TEXTO, PERFIL_TEXTO, ROLLOUT_TEXTO, PROCESOS_TEXTO y SOLUCIONES_49.
+Cifras medidas (de la ejecución): explícito 4,51 → 16,5 J/kg en 20 s; semi 4,58. Péndulo: Euler/implicit/
+implicitfast −4,14e-2 (dt 0,01) y −7,79e-3 (0,002); RK4 +6,4e-6 / +6,3e-8. Orden: Euler cocientes 2,0; RK4 10/13,5/14,8.
+Muelle dt 0,01: k=100 ok, k=1000 ok (pasito·ω 1,37), k=5000 explota (3,06). kv≥20 Euler explota, implicitfast no.
+Zancudo de pie 3 s: Euler cae desde dt 0,005; implicitfast aguanta hasta 0,02; RK4 cae en 0,01 y vuela en 0,02.
+Perfil entorno: mj_step 69 % (0,151 de 0,219 s). PPO 16.384 pasos (medido aparte): mj_step 2,2 de 26,3 s (8 %).
+rollout 8×10.000: 1 hilo 67k pasos/s, 4 hilos 232k. Procesos 8 episodios: 1,61 / 0,84 / 0,48 s (1/2/4).
+Soluciones: script trabajo_nb44/sol_nb49_borrador.py (falla por 'zancudo' no definido: añadir la carga del modelo).
+Después: NB50 MJCF profesional + MjSpec.
