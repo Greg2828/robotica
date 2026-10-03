@@ -74,7 +74,7 @@ La misma receta que Hopper y Walker2d (NB35), que ya sabemos que funciona... y q
 - **Caído** (*terminated*): si la cadera baja de **0,55 m** (estaba a unos 0,83) o el torso se inclina más de **0,8 rad** (46°).
 - **Truncado**: a los **1.000 pasos** de decisión, es decir, **20 segundos**.
 
-Con esto, el mejor resultado imaginable sería andar a, digamos, 1,5 m/s durante 20 segundos: 1.000 × (1 + 1,5) = 2.500 puntos. Quedarse de pie quieto, sin caerse, da **1.000**: la trampa de sobrevivir del NB35 está ahí, esperando.
+Con esto, andar a, digamos, 1,5 m/s durante los 20 segundos daría 1.000 × (1 + 1,5) = 2.500 puntos; y fíjate: la recompensa **no tiene techo**, cuanto más rápido, más cobra (lo recordaremos al final). Quedarse de pie quieto, sin caerse, da **1.000**: la trampa de sobrevivir del NB35 está ahí, esperando.
 """),
 
 md(r"""## 2 · El código del entorno
@@ -152,7 +152,12 @@ for nombre, politica in [("quieto", lambda obs: np.zeros(6)), ("azar", lambda ob
     r, d, x = jugar_episodios(zancudo, politica)
     print(f"{nombre:>6}: retorno {r:6.1f} | dura {d:6.1f} pasos ({d * 0.02:.1f} s) | acaba en x = {x:+.2f} m")"""),
 
-md(r"""PENDIENTE_REF
+md(r"""Dos referencias, dos historias:
+
+- **Quieto: 832,6 puntos.** ¿No habíamos dicho que quedarse quieto daba 1.000? Casi: en **8 de los 10** episodios aguanta los 20 segundos de pie (1.000 puntos cada uno), pero en **2** (semillas 0 y 2) se cae de espaldas, a los 228 y a los 100 pasos. Es el pequeño azar de la postura de partida (±0,05 rad en cada articulación, sección 2): a veces lo deja con el centro de masas un poco por detrás de los pies y, sin nadie que corrija, se va al suelo (NB38). Incluso "no hacer nada" necesita algo de equilibrio.
+- **Azar: 57,1 puntos.** Agitando las piernas al azar se cae en **algo más de 1 segundo** (55,7 pasos). Un punto por paso de vida, y poco más.
+
+Así que el listón está claro: cualquier agente que saque menos de ~830 lo hace **peor que quedarse quieto**, y para pasar de 1.000 tiene que **avanzar** de verdad.
 """),
 
 md(r"""## 4 · Un entrenamiento corto, en directo
@@ -177,7 +182,11 @@ politica_corta = lambda obs: agente_corto.predict(entornos.normalize_obs(obs), d
 r, d, x = jugar_episodios(zancudo, politica_corta)
 print(f"tras 106.496 pasos: retorno {r:6.1f} | dura {d:6.1f} pasos ({d * 0.02:.1f} s) | acaba en x = {x:+.2f} m")"""),
 
-md(r"""PENDIENTE_CORTO
+md(r"""Tras 106.496 pasos (unos 17 minutos en la Pi, que estaba ocupada con otros entrenamientos a la vez): **739,8 puntos**, aguanta de media **16,4 segundos**... y acaba en **x = −1,45 m**. ¡Ha ido **hacia atrás**!
+
+Es exactamente lo que se ve al principio de todo entrenamiento de locomoción: lo primero que aprende es a **no caerse** (cada paso de vida es un punto seguro), y todavía no sabe avanzar. De hecho, saca **menos que quedarse quieto** (832,6): aún no ha llegado ni al nivel de "no hacer nada". Es la **trampa de sobrevivir** en directo.
+
+No te preocupes: con más pasos sale de ahí. Lo verás en la gráfica de la sección siguiente (el primer punto de la curva `defecto`, a esos mismos 106.496 pasos, también está por debajo de los 1.000 y también acaba un poco por detrás del inicio). Las cifras no coinciden exactamente con las de aquí: entrenar en otro momento, con otra carga en la máquina, cambia un poco los resultados aunque la semilla sea la misma (NB34).
 """),
 
 md(r"""## 5 · El entrenamiento largo
@@ -282,7 +291,13 @@ os.makedirs("assets", exist_ok=True)
 grabar(politica, "assets/nb43_zancudo.gif")
 Image(filename="assets/nb43_zancudo.gif")"""),
 
-md(r"""PENDIENTE_GIF
+md(r"""Fíjate bien en **cómo** se mueve, porque será el tema de la Parte 6:
+
+- Parte agachado, se **inclina hacia delante** (se deja caer, como en el NB39) y arranca con **zancadas enormes**: la pierna que avanza se lanza muy por delante y muy alta.
+- En muchos fotogramas **ningún pie toca el suelo**: no anda, **corre a saltos**.
+- El torso va casi recto, con una ligera inclinación hacia delante, y **no se cae nunca**.
+
+Es eficaz (89 metros en 20 segundos), pero no es la forma de andar que tenías en la cabeza cuando diseñaste a Zancudo. Volveremos a ello en la sección 8.
 """),
 
 md(r"""## 7 · ¿Es robusto?
@@ -331,7 +346,9 @@ for ruido in [0.0, 0.02, 0.05]:
     r2, d2, x2 = jugar_episodios(entorno_ruidoso, politica_r)
     print(f"ruido {ruido:.2f}:  entrenado SIN ruido {r1:6.1f} ({x1:5.1f} m)  |  entrenado CON ruido {r2:6.1f} ({x2:5.1f} m)")"""),
 
-md(r"""¡Sorpresa! Ninguno de los dos se hunde. El entrenado **sin** ruido saca prácticamente lo mismo con ruido de 0,02 o 0,05 (las diferencias son del tamaño del azar entre episodios), y el entrenado **con** ruido, también. El campeón (`defecto`), lo mismo: lo puedes comprobar en el ejercicio E3.
+md(r"""¡Sorpresa! Ninguno de los dos se hunde. El campeón, entrenado **sin** ruido, saca 5.453 sin ruido, 5.108 con ruido de 0,02 y 5.300 con 0,05: diferencias del tamaño del azar entre episodios (fíjate en que con más ruido saca *más* que con menos). El entrenado **con** ruido, igual: 2.745, 2.680 y 2.546, apenas cambia.
+
+(¿Y por qué el entrenado con ruido saca la mitad de nota? No es por el ruido: es un agente `afinado`, de los que se derrumbaron en la sección 5, y su mejor examen en el entrenamiento ya rondaba los 2.700. Comparar dos agentes entrenados con ajustes distintos no dice nada sobre el ruido; lo que sí dice algo es cómo cambia **cada uno** al subir el ruido. Y la respuesta es: casi nada.)
 
 Esto contradice lo que vimos con Hopper en el NB41, donde un ruido de 0,05 hundía su nota de 3.559 a unos 800. ¿Qué es diferente? La explicación más probable está en las **decisiones de diseño** de la sección 1:
 
@@ -347,9 +364,9 @@ md(r"""## 8 · Lo que falta para andar "bonito"
 Zancudo **se mueve** muy bien: es rápido, aguanta empujones... Pero si lo comparas con cómo anda una persona (o un robot humanoide de verdad), le falta mucho:
 
 - **Corre en vez de andar.** Pasa buena parte del tiempo con los dos pies en el aire. Nadie le dijo "anda"; le dijimos "avanza lo más deprisa que puedas".
-- **Va demasiado rápido.** Más de 4 m/s, casi 15 km/h. Nadie le pidió una velocidad concreta: cuanto más rápido, más cobra (la recompensa no tiene techo).
+- **Va demasiado rápido.** Casi 4,5 m/s, unos 16 km/h. Nadie le pidió una velocidad concreta: cuanto más rápido, más cobra (la recompensa no tiene techo).
 - **Da patadas.** Levanta los pies muchísimo más de lo necesario. Nada en la recompensa lo castiga.
-- **Va a tirones.** Sus acciones cambian bruscamente de una decisión a la siguiente: en un robot real, eso son golpes en los motores (NB40).
+- **Puede ir a tirones.** Nada en la recompensa le impide cambiar bruscamente sus acciones de una decisión a la siguiente: en un robot real, eso son golpes en los motores (NB40). Lo mediremos en el NB44.
 
 Todo esto tiene la misma causa: la recompensa dice **qué** (avanzar sin caerse), no **cómo**. Es la lección del NB04 y del NB35 otra vez, y es el tema del primer notebook de la Parte 6: **moldear la recompensa**, para pedirle que **ande**, a la **velocidad que queramos**, sin patadas y con **suavidad**.
 """),

@@ -1,4 +1,5 @@
-# entrenar_moldeado.py — uso: python entrenar_moldeado.py <variante> <pasos>
+# entrenar_moldeado.py — uso: python entrenar_moldeado.py <variante> <pasos> [seguir]
+# Con "seguir" reanuda desde el último guardado (moldeado_<variante>.zip + _norm.pkl).
 # Script del NB44: entrena PPO (ajustes por defecto + VecNormalize) en ZancudoMoldeado-v0 con distintas variantes.
 import sys, time, torch
 import numpy as np
@@ -18,11 +19,20 @@ torch.set_num_threads(1)
 variante, total = sys.argv[1], int(sys.argv[2])
 kwargs = VARIANTES[variante]
 nombre = f"moldeado_{variante}"
-entornos = VecNormalize(make_vec_env("ZancudoMoldeado-v0", n_envs=4, seed=0, env_kwargs=kwargs))
-agente = PPO("MlpPolicy", entornos, seed=0)
+seguir = len(sys.argv) > 3 and sys.argv[3] == "seguir"
+crudos = make_vec_env("ZancudoMoldeado-v0", n_envs=4, seed=0, env_kwargs=kwargs)
+if seguir:
+    entornos = VecNormalize.load(f"{nombre}_norm.pkl", crudos)
+    agente = PPO.load(nombre, env=entornos)
+else:
+    entornos = VecNormalize(crudos)
+    agente = PPO("MlpPolicy", entornos, seed=0)
 examen = VecNormalize(make_vec_env("ZancudoMoldeado-v0", n_envs=1, seed=123, env_kwargs=kwargs),
                       training=False, norm_reward=False)
 inicio, mejor = time.time(), -np.inf
+if seguir:                                                     # la mejor nota ya registrada en el log
+    with open(f"log_{variante}.txt") as f:
+        mejor = max(float(l.split()[2]) for l in f if l.startswith(nombre))
 while agente.num_timesteps < total:
     agente.learn(100_352, reset_num_timesteps=False)
     examen.obs_rms = entornos.obs_rms
