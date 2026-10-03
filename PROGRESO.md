@@ -219,7 +219,13 @@ no eran de nivel cero. Norma nueva del curso:
   (−0,294→−0,319 por error de Euler; dt/10 → −0,296); velocidad justa 1,051; punto de captura x+v/ω = 0,143 (±2 cm cae);
   tobillo vs paso (0,53 m/s con punta a 0,15); ZMP = x − (z0/g)ẍ (−0,082 para 1 m/s²), NB38 caso particular, ASIMO; andar
   pisando b antes de la captura: pasos 0,152/0,304/0,457 → 0,38/0,76/1,14 m/s; límites + relación con RL. E5: 1,5 m/s 2 pasos,
-  2,5 → 4, 3 → no se salva. SIGUIENTE: NB40 motores + control PD.
+  2,5 → 4, 3 → no se salva.
+- **NB40 · Motores y control PD** ✅ (42 celdas, 14 de código, EXIT 0): motor (rotor/estátor, par ∝ corriente), reductora N:1
+  (0,5 N·m 3000 rpm 50:1 → 25 N·m 6,28 rad/s), holgura/inercia reflejada N²/retroimpulsable/cuasi-directos, límites (par,
+  recta par-velocidad, calor); pierna simulada 2 kg 0,5 m: P oscila (máx ~1,48), PD Kd 0/1/3/10, error estacionario
+  0,651/0,734/0,783 (Kp 20/50/200) → compensación de gravedad 0,800, saturación 2,5 N·m columpia; Hopper con PD en ctrl por
+  mj_step: Kp 0/50 cae, 300/20 de pie (E5: 100 inclinado, 150+ recto); la estatua del NB38 era un PD; política→ángulos +
+  PD en robots reales. SIGUIENTE: NB41 sensores y ruido.
 - **NB05 · Tu primer contacto con el ordenador** ✅ (EXIT 0, 42 celdas, 11 de código): ordenador
   obediente/literal (cocinero que no sabe cocinar), programa=receta, Python, notebook/celdas/kernel,
   cómo abrir (GitHub o `jupyter lab` en la Pi, Mayúsculas+Enter); `print("hola")` desmontado;
