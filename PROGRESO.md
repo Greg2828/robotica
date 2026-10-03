@@ -204,7 +204,11 @@ no eran de nivel cero. Norma nueva del curso:
   trampa math.sin(90)=0,894, ondas, desde la vertical (L·sin, L·cos), Pitágoras, atan2 vs atan, cinemática directa de la
   pierna de Hopper (cadera 1,05; muslo 0,45; pierna 0,50; ángulos MuJoCo + = hacia delante) que coincide con MuJoCo
   (xanchor −0,6975/0,5213), paso con dos senos (desfase −1,5 = pie abajo yendo hacia atrás = bueno; +1,5 = al revés, E6).
-  SIGUIENTE: NB37.
+- **NB37 · Fuerza, par y el péndulo de verdad** ✅ (57 celdas, 20 de código, EXIT 0): unidades SI, a = F/m, newton, peso
+  (Hopper 155 N), fuerza normal, par = F·brazo·sin φ, par de la gravedad m·g·(L/2)·sin θ, inercia de giro (1.000 trocitos → 0,75
+  = m·L²/3), α = (3g/2L)·sin θ (masa se cancela; escoba 9,8 vs lápiz 98,1), el "10" del NB11 = escoba de 1,47 m linealizada,
+  caída 1,339 s (lineal 1,322) = MuJoCo 1,339 s exacto (péndulo MJCF from_xml_string), motor Hopper 200 N·m = 20 kg a 1 m,
+  punto de no retorno (E6: 0,205 rad con motor −2). SIGUIENTE: NB38 centro de masas.
 - **NB05 · Tu primer contacto con el ordenador** ✅ (EXIT 0, 42 celdas, 11 de código): ordenador
   obediente/literal (cocinero que no sabe cocinar), programa=receta, Python, notebook/celdas/kernel,
   cómo abrir (GitHub o `jupyter lab` en la Pi, Mayúsculas+Enter); `print("hola")` desmontado;
