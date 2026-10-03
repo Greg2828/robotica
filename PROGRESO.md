@@ -213,7 +213,13 @@ no eran de nivel cero. Norma nueva del curso:
   ponderada (NumPy), CdM de Hopper con body_mass+xipos = subtree_com (x +0,022, altura 0,596), se mueve con la postura; base de
   apoyo (segmento / goma elástica); regla + por qué (suelo empuja, no tira); bloque MJCF freejoint: crítico 18,4°, 18° vuelve,
   19° vuelca; Hopper-estatua (jnt_stiffness 3000 + qpos_spring, apoyado a 0,0605): h 0/0,3 de pie, 0,6 (CdM 0,276) cae; límite
-  real ~22 cm vs 26 geométrico → margen de seguridad; estático vs dinámico. SIGUIENTE: NB39 LIPM/punto de captura/ZMP.
+  real ~22 cm vs 26 geométrico → margen de seguridad; estático vs dinámico.
+- **NB39 · Punto de captura y ZMP** ✅ (43 celdas, 13 de código, EXIT 0, sin MuJoCo): modelo (mapa≠territorio), LIPM por triángulos
+  semejantes a = (g/z0)(x−p), z0 0,8 → ω 3,502; 3 empujones desde −0,3 (0,9 vuelve, 1,05 casi, 1,2 pasa); energía orbital
+  (−0,294→−0,319 por error de Euler; dt/10 → −0,296); velocidad justa 1,051; punto de captura x+v/ω = 0,143 (±2 cm cae);
+  tobillo vs paso (0,53 m/s con punta a 0,15); ZMP = x − (z0/g)ẍ (−0,082 para 1 m/s²), NB38 caso particular, ASIMO; andar
+  pisando b antes de la captura: pasos 0,152/0,304/0,457 → 0,38/0,76/1,14 m/s; límites + relación con RL. E5: 1,5 m/s 2 pasos,
+  2,5 → 4, 3 → no se salva. SIGUIENTE: NB40 motores + control PD.
 - **NB05 · Tu primer contacto con el ordenador** ✅ (EXIT 0, 42 celdas, 11 de código): ordenador
   obediente/literal (cocinero que no sabe cocinar), programa=receta, Python, notebook/celdas/kernel,
   cómo abrir (GitHub o `jupyter lab` en la Pi, Mayúsculas+Enter); `print("hola")` desmontado;
