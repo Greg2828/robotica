@@ -259,10 +259,10 @@ no eran de nivel cero. Norma nueva del curso:
   antes de tocar robots reales, para pasar cualquier entrevista"; Python PROFESIONAL explicado a fondo en cada NB; sin límite de
   NB ni de longitud). Cada NB = tema de MuJoCo/dinámica + tema de Python profesional. NB44 (moldear la recompensa) ✅ ya hecho.
   **Bloque A · MuJoCo por dentro**
-  · NB45 Cómo piensa MuJoCo: mjModel/mjData, coordenadas generalizadas (nq≠nv, cuaternión de la free joint), pipeline de
+  · NB45 ✅ (111 celdas, 42 código, EXIT 0) Cómo piensa MuJoCo: mjModel/mjData, coordenadas generalizadas (nq≠nv, cuaternión de la free joint), pipeline de
     mj_step, mj_forward, M(q)q̈+c=τ+Jᵀf (mj_fullM, qfrc_bias...), energía · Py: type hints, dataclasses, __repr__, @property,
     vistas vs copias (trampa de mjData)
-  · NB46 Cinemática: marcos, rotaciones (matriz/cuaternión wxyz/Euler), cinemática directa, jacobianos (mj_jac*), velocidad =
+  · NB46 ✅ (92 celdas, 35 código, EXIT 0) Cinemática: marcos, rotaciones (matriz/cuaternión wxyz/Euler), cinemática directa, jacobianos (mj_jac*), velocidad =
     J·q̇, cinemática inversa (mínimos cuadrados amortiguados, singularidades) · Py: numpy.linalg a fondo, funciones puras,
     docstrings, typing de arrays, pytest
   · NB47 Dinámica inversa y control basado en modelo: mj_inverse, compensación de gravedad, par calculado, espacio de tarea
