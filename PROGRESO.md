@@ -241,12 +241,20 @@ no eran de nivel cero. Norma nueva del curso:
   de pie con ctrl 0; empujón 0,05 s (caída = torso baja >30 cm): 180 N aguanta, 200 cae (captura ~12 cm); torso 20 kg
   aguanta 200 (cae 250); pies −0,16..0,24 aguanta 300 (cae 350); solo por delante → cae de espaldas al rebotar; agachado
   aguanta 200 resbalando 0,29 m. SIGUIENTE: NB43 entorno Gymnasium de Zancudo + PPO para andar.
-- **NB43 · Zancudo aprende a andar** ⏳ EN CURSO: entorno notebooks/zancudo_env.py (Zancudo-v0: obs 18 medibles + fase 0,8 s,
-  acción = postura base agachada (0,3/−0,6/0,3) + amplitud × a, 50 Hz, recompensa avance+vida−0,01·a², caída cadera<0,55 o
-  |incl|>0,8, 1000 pasos), script notebooks/entrenar_zancudo.py (guarda último y MEJOR), 4 entrenos en trabajo_nb43/
-  (defecto s0, afinado s0/s1 2M; afinado s0 ruido 0,02 1M). Referencias: quieto ~662 (665 pasos), azar ~69.
-  Borrador build_parts/nb43.py con marcadores (RESULTADO_*, REGISTRO_ZANCUDO, ANALISIS_ZANCUDO, MEJOR_ZANCUDO, MEJOR_RUIDO,
-  EXAMEN_ZANCUDO, GIF_ZANCUDO, FALTA_BONITO, RESUMEN_*, EJERCICIOS).
+- **NB43 · Zancudo aprende a andar** ✅ (42 celdas, 15 de código, EXIT 0): las 4 decisiones (obs 18 medibles + reloj de fase
+  0,8 s; acción = postura base + amplitud × a a 50 Hz; recompensa avance+vida−0,01·a²; caída cadera<0,55 o |incl|>0,8; 1000 pasos),
+  zancudo_env.py leído con inspect, check_env. Referencias: quieto 832,6 (se cae en 2/10: semillas 0 y 2), azar ~57. Corto en vivo
+  106k: 739,8, x=−1,45 (trampa de sobrevivir). Largos (entrenar_zancudo.py): defecto sube a 5.435; los 3 afinado COLAPSAN. Campeón
+  5.453, 0 caídas, 89,7 m = 4,49 m/s (corre a saltos). Empujones 200 N 5/5, 300 N 3-4/5. Ruido apenas afecta (ángulos+PD filtran).
+  Ejercicios resueltos; E5 (sin reloj, 300k): 3.278 vs 2.854 con reloj → el reloj no ayudaba sin recompensa que lo use.
+  → **✅ PARTE 5 COMPLETA (NB36–NB43)**.
+- **NB44 · Moldear la recompensa** ✅ (49 celdas, 19 de código, EXIT 0) — abre la Parte 6. zancudo_moldeado.py (campana vel 1 m/s,
+  recto, vida 0,2, vuelo, pie>15 cm, suavidad). Ablación 1M (completa/sin_vuelo/sin_pie_alto/lento; reanudadas tras reinicio de la
+  Pi con `seguir`): todas a la velocidad pedida; sin_vuelo 18→40 % aire; sin_pie_alto pie 0,79 m y tirones ×4; lento atascado
+  ~870 = quieto cobra e⁻¹ (ancho de campana). DESCUBRIMIENTO: todas GALOPAN (izq. siempre ~1 m detrás, arrastrada 0,85 m/s).
+  zancudo_alterno.py: ZancudoAlterno (alternar apoyos con el reloj) → galope con ritmo + vuelve a levantar el pie (términos se
+  pelean); ZancudoZancada (campana sobre separación de pies −0,2·cos(fase)) → se cruzan 25 veces/10 s, izq. delante 50 %,
+  desliza 0,2 → ANDA (0,85 m/s, 29 % aire). Ejercicios resueltos. Modelos en notebooks/modelos/moldeado_*_mejor.
 - **── PARTE 6 · BÍPEDOS DE VERDAD ──** (plan): NB44 moldear la recompensa (andar bonito: velocidad objetivo con núcleo
   exponencial, torso recto, levantar los pies, tiempo en el aire alternado, suavidad, energía) · NB45 robustez (aleatorización
   de masas/rozamiento/PD/retrasos + empujones al entrenar, currículo) · NB46 obedecer órdenes (velocidad pedida, parar, atrás)

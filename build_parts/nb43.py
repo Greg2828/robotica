@@ -155,7 +155,7 @@ for nombre, politica in [("quieto", lambda obs: np.zeros(6)), ("azar", lambda ob
 md(r"""Dos referencias, dos historias:
 
 - **Quieto: 832,6 puntos.** ¿No habíamos dicho que quedarse quieto daba 1.000? Casi: en **8 de los 10** episodios aguanta los 20 segundos de pie (1.000 puntos cada uno), pero en **2** (semillas 0 y 2) se cae de espaldas, a los 228 y a los 100 pasos. Es el pequeño azar de la postura de partida (±0,05 rad en cada articulación, sección 2): a veces lo deja con el centro de masas un poco por detrás de los pies y, sin nadie que corrija, se va al suelo (NB38). Incluso "no hacer nada" necesita algo de equilibrio.
-- **Azar: 57,1 puntos.** Agitando las piernas al azar se cae en **algo más de 1 segundo** (55,7 pasos). Un punto por paso de vida, y poco más.
+- **Azar: unos 57 puntos.** Agitando las piernas al azar se cae en **algo más de 1 segundo** (unos 55 pasos). Un punto por paso de vida, y poco más. (Si lo ejecutas tú, te saldrá algo un poco distinto: `action_space.sample()` no usa la semilla del `reset`, así que el azar cambia en cada ejecución.)
 
 Así que el listón está claro: cualquier agente que saque menos de ~830 lo hace **peor que quedarse quieto**, y para pasar de 1.000 tiene que **avanzar** de verdad.
 """),
@@ -403,6 +403,78 @@ md(r"""## 10 · Ejercicios
 **E4.** Graba un GIF del agente entrenado con ruido (`politica_r`) y compáralo con el del campeón. ¿Anda distinto?
 
 **E5.** **Reto.** Crea un Zancudo **sin** reloj de fase: copia `zancudo_env.py` en `zancudo_sin_reloj.py`, quita el seno y el coseno de la observación (y cambia la `shape` del espacio de observación a 16), y entrénalo 300.000 pasos con `defecto`. ¿Aprende más despacio que con reloj? (Compáralo con el registro de `defecto` en la sección 5.)
+"""),
+
+md(r"""<details>
+<summary>▶ Solución E1</summary>
+
+La recompensa por paso es velocidad + 1 − 0,01 × (suma de las acciones al cuadrado).
+
+- A 1 m/s con acción 0: 1 + 1 − 0 = **2** por paso → **2.000** en 1.000 pasos.
+- A 4 m/s con las seis acciones a ±1: cada una al cuadrado vale 1, y suman 6. 4 + 1 − 0,01 × 6 = **4,94** por paso → **4.940** en 1.000 pasos.
+
+Correr a tope, aunque gaste toda la "energía" posible, paga **casi 2,5 veces más** que andar tranquilo. El castigo de control es tan pequeño que casi no cuenta. Por eso nuestro campeón corre (y es el punto de partida del NB44).
+</details>
+
+<details>
+<summary>▶ Solución E2</summary>
+
+0,8 s / 0,02 s por decisión = **40 decisiones** por vuelta del reloj. Un paso con cada pierna por vuelta son 2 pasos cada 0,8 s: 2 / 0,8 = **2,5 pasos por segundo** (una persona andando da unos 2 pasos por segundo).
+</details>
+
+<details>
+<summary>▶ Solución E3</summary>
+
+```python
+agente_a, normalizador_a = cargar("zancudo_afinado_mejor")
+politica_a = lambda obs: agente_a.predict(normalizador_a.normalize_obs(obs), deterministic=True)[0]
+r, d, x = jugar_episodios(zancudo, politica_a)
+print(f"afinado: retorno {r:6.1f} | dura {d:6.1f} pasos | recorre {x:5.2f} m")
+```
+
+**2.881** puntos, dura **702** pasos de media y recorre **43,9 m**. Saca poco más de la mitad que el campeón (5.453), y lo más importante: **se cae** en algunos episodios (el más corto dura solo 183 pasos), mientras que el campeón no se cayó en ninguno. Es la otra cara del colapso: incluso su **mejor** versión era frágil.
+</details>
+
+<details>
+<summary>▶ Solución E4</summary>
+
+```python
+grabar(politica_r, "assets/nb43_zancudo_ruido.gif")
+Image(filename="assets/nb43_zancudo_ruido.gif")
+```
+
+Anda distinto: con el campeón, la pierna **naranja** (la derecha) es la que se lanza hacia delante; con este, es la **morada** (la izquierda) la que va delante, muy levantada, y el torso va bastante más **inclinado** hacia delante. Dos entrenamientos distintos, dos "estilos" distintos: el RL no encuentra **la** forma de andar, sino **una** de las muchas que cumplen la recompensa.
+</details>
+
+<details>
+<summary>▶ Solución E5</summary>
+
+En vez de copiar el fichero, también se puede hacer con **herencia** (NB25), cambiando solo la observación:
+
+```python
+from gymnasium import spaces
+
+class ZancudoSinReloj(Zancudo):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(16,), dtype=np.float64)
+
+    def _observacion(self):
+        return super()._observacion()[:16]          # quitamos seno y coseno del reloj (los dos últimos)
+
+gym.register(id="ZancudoSinReloj-v0", entry_point=ZancudoSinReloj)
+```
+
+y se entrena como en la sección 4, con `"ZancudoSinReloj-v0"`. Lo hice con los mismos tramos que `defecto` (semilla 0):
+
+| pasos | sin reloj | con reloj (`defecto`) |
+|---|---|---|
+| 106.496 | 999,7 (0,1 m) | 605,6 (−0,5 m) |
+| 212.992 | 2.131,7 (23,0 m) | 2.123,3 (22,8 m) |
+| 319.488 | **3.277,8** (46,1 m) | 2.853,8 (37,5 m) |
+
+¡**Sin** reloj aprende igual o incluso algo más deprisa! Con una sola semilla de cada no podemos afirmar que sea mejor (NB34: el azar de una semilla mueve mucho las cifras), pero sí que **el reloj no le estaba ayudando**. ¿Por qué? Porque nada en la recompensa le pide seguir un ritmo: el reloj son dos números más que la red tiene que aprender a ignorar. En el NB44 veremos para qué sirve de verdad: cuando la recompensa **sí** pide seguir el ritmo del reloj.
+</details>
 """),
 
 md(r"""## 11 · Posdata

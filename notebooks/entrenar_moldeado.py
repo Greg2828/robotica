@@ -7,27 +7,34 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize
 import zancudo_moldeado                                       # registra ZancudoMoldeado-v0
+import zancudo_alterno                                        # registra ZancudoAlterno-v0
 
 VARIANTES = {
     "completa":     dict(),                                   # los cinco términos
     "sin_vuelo":    dict(pesos=dict(vuelo=0.0)),              # quitamos el castigo por volar
     "sin_pie_alto": dict(pesos=dict(pie_alto=0.0, suavidad=0.0)),   # quitamos patadas y suavidad
     "lento":        dict(velocidad_objetivo=0.5),             # pedimos medio metro por segundo
+    "alterna_05":   dict(peso_alterna=0.5),                   # NB44 sección 9: turnarse las piernas (ZancudoAlterno)
+    "alterna_1":    dict(peso_alterna=1.0),
+    "zancada_1":    dict(peso_zancada=1.0),                   # segundo intento: el pie que vuela adelanta (ZancudoZancada)
+    "zancada_2":    dict(peso_zancada=2.0),
 }
 
 torch.set_num_threads(1)
 variante, total = sys.argv[1], int(sys.argv[2])
 kwargs = VARIANTES[variante]
+entorno_id = ("ZancudoZancada-v0" if variante.startswith("zancada") else
+              "ZancudoAlterno-v0" if variante.startswith("alterna") else "ZancudoMoldeado-v0")
 nombre = f"moldeado_{variante}"
 seguir = len(sys.argv) > 3 and sys.argv[3] == "seguir"
-crudos = make_vec_env("ZancudoMoldeado-v0", n_envs=4, seed=0, env_kwargs=kwargs)
+crudos = make_vec_env(entorno_id, n_envs=4, seed=0, env_kwargs=kwargs)
 if seguir:
     entornos = VecNormalize.load(f"{nombre}_norm.pkl", crudos)
     agente = PPO.load(nombre, env=entornos)
 else:
     entornos = VecNormalize(crudos)
     agente = PPO("MlpPolicy", entornos, seed=0)
-examen = VecNormalize(make_vec_env("ZancudoMoldeado-v0", n_envs=1, seed=123, env_kwargs=kwargs),
+examen = VecNormalize(make_vec_env(entorno_id, n_envs=1, seed=123, env_kwargs=kwargs),
                       training=False, norm_reward=False)
 inicio, mejor = time.time(), -np.inf
 if seguir:                                                     # la mejor nota ya registrada en el log
