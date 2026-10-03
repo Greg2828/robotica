@@ -196,6 +196,15 @@ no eran de nivel cero. Norma nueva del curso:
   Hopper 3559 / 969 pasos / 20,7 m / 2,67 m/s; Walker 3161 / 849 / 18,5 m / 2,73 m/s. E4 ctrl×100 → 3482 misma conducta;
   E5 sin normalizar 317; E6 healthy_reward=0 → se lanza en plancha (1,8 m). Checkpoints parciales en trabajo_nb35/.
   → **✅ PARTE 4 COMPLETA (NB28–NB35)**. SIGUIENTE: Parte 5 · La física del cuerpo.
+- **── PARTE 5 · LA FÍSICA DEL CUERPO ──** (plan: NB36 ángulos/trigonometría/cinemática directa · NB37 fuerza, par y el péndulo
+  de verdad (deducir el "10 × inclinación" del NB11) · NB38 centro de masas y equilibrio estático · NB39 equilibrio dinámico
+  (péndulo invertido lineal, punto de captura, ZMP) · NB40 motores de verdad y control PD · NB41 sensores y ruido · NB42 MJCF:
+  tu propio robot · NB43 proyecto bípedo propio).
+- **NB36 · Ángulos y giros** ✅ (80 celdas, 30 de código, EXIT 0): grados/π/radianes (arco = r·θ), seno/coseno como sombras,
+  trampa math.sin(90)=0,894, ondas, desde la vertical (L·sin, L·cos), Pitágoras, atan2 vs atan, cinemática directa de la
+  pierna de Hopper (cadera 1,05; muslo 0,45; pierna 0,50; ángulos MuJoCo + = hacia delante) que coincide con MuJoCo
+  (xanchor −0,6975/0,5213), paso con dos senos (desfase −1,5 = pie abajo yendo hacia atrás = bueno; +1,5 = al revés, E6).
+  SIGUIENTE: NB37.
 - **NB05 · Tu primer contacto con el ordenador** ✅ (EXIT 0, 42 celdas, 11 de código): ordenador
   obediente/literal (cocinero que no sabe cocinar), programa=receta, Python, notebook/celdas/kernel,
   cómo abrir (GitHub o `jupyter lab` en la Pi, Mayúsculas+Enter); `print("hola")` desmontado;
