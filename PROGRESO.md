@@ -267,7 +267,7 @@ no eran de nivel cero. Norma nueva del curso:
     docstrings, typing de arrays, pytest
   · NB47 ✅ (57 celdas, 21 código, EXIT 0) Dinámica inversa y control basado en modelo: mj_inverse, compensación de gravedad, par calculado, espacio de tarea
     · Py: ABC/Protocol, composición, patrón estrategia
-  · NB48 Contactos a fondo: detección (contype/conaffinity, margin), solref/solimp, condim, cono de fricción, solvers,
+  · NB48 ✅ (57 celdas, 19 código, EXIT 0) Contactos a fondo: detección (contype/conaffinity, margin), solref/solimp, condim, cono de fricción, solvers,
     mj_contactForce, CoP/ZMP medidos · Py: generadores/iteradores, Enum, NamedTuple, itertools
   · NB49 Integradores, paso de tiempo y rendimiento: Euler/implicitfast/RK4, estabilidad, armature, determinismo, profiling,
     simular en paralelo · Py: decoradores, context managers, functools, multiprocessing/concurrent.futures
