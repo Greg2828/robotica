@@ -614,7 +614,7 @@ Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo ree
 Hoy ha sido un día grande: has manejado **el humanoide de verdad** con tu propio código, y has comprobado con datos reales casi todo lo que
 la Parte 0 te contó con palabras. Y has llegado al muro: miles de ruedecillas que no se pueden ajustar probando al azar.
 
-En el **NB16** empezamos a derribarlo. Volveremos a la montaña con niebla del NB04, y aprenderemos a hacer la pregunta clave: **¿hacia
+Antes, el **NB15b** te dará unas cuantas herramientas de matemáticas que usaremos muy pronto (mover funciones, la exponencial, el logaritmo). Y en el **NB16** empezamos a derribarlo. Volveremos a la montaña con niebla del NB04, y aprenderemos a hacer la pregunta clave: **¿hacia
 dónde sube el terreno?**. Es la idea de **pendiente** (los matemáticos la llaman **derivada**), explicada desde cero, con dibujos y sin
 fórmulas que asusten. Con ella, en lugar de dar palos de ciego, el robot sabrá **hacia dónde girar cada ruedecilla** para mejorar.
 """),

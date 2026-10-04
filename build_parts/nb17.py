@@ -300,7 +300,7 @@ ascenso por la pendiente **solo ve el terreno bajo sus pies**. Si empieza cerca 
 se quedará, porque en su cima la pendiente es cero. No tiene forma de saber que hay una montaña más alta al otro lado del valle.
 
 Comprobémoslo con un terreno de juguete con **dos colinas**: una pequeña (altura 3) cerca de x = 1, y una grande (altura 5) cerca de x = 6.
-(La fórmula usa una función matemática que aún no hemos visto, la exponencial, para dibujar "campanas"; lo único que importa es su forma.)
+(La fórmula usa dos **campanas** e^(−x²) desplazadas, como las del NB15b: una de altura 3 centrada en x = 1 y otra de altura 5, más ancha (dividida por 2), en x = 6. El número 2,718281828 es e.)
 """),
 
 code(r"""def dos_colinas(x):

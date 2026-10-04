@@ -310,7 +310,7 @@ plt.ylabel("pérdida")
 plt.yscale("log")         # escala especial: cada raya es 10 veces menos que la anterior
 plt.show()"""),
 
-md(r"""La pérdida **baja sin parar**, de 305 a casi cero. (Hemos usado una **escala logarítmica** en el eje vertical: en vez de ir de 10 en 10, cada raya
+md(r"""La pérdida **baja sin parar**, de 305 a casi cero. (Hemos usado una **escala logarítmica** en el eje vertical, NB15b: en vez de ir de 10 en 10, cada raya
 es **10 veces** más pequeña que la anterior, 100, 10, 1, 0,1... Así se ve bien una caída tan enorme. Es la escala que usan los profesionales para
 mirar curvas de aprendizaje.)
 
