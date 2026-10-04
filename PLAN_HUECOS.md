@@ -1,12 +1,18 @@
-# Plan de relleno de huecos (auditoría 2026-10-04, 8 revisores leyeron NB00-NB50 completos)
+# Plan de relleno
+
+HECHO (2026-10-04): NB03b números (era "NB04b" en el plan), NB04b álgebra (era "NB04c"), NB05b, NB11b, NB15b, NB17b + arreglos NB01/02/03/04/05/06/08/11/14/15/17/18.
+SIGUIENTE: NB28b; luego NB38b, NB39b, NB44p7, y los arreglos pendientes de abajo.
+Verificar cada NB con nbconvert --execute y las soluciones con el script checksol (extrae bloques ```python de los <details>).
+
+ de huecos (auditoría 2026-10-04, 8 revisores leyeron NB00-NB50 completos)
 
 ## Notebooks NUEVOS (en orden de lectura)
-- [ ] NB04b · Números a fondo: porcentajes, decimales, potencias (negativas, fraccionarias), raíces, notación científica (sin código)
-- [ ] NB04c · Letras y ecuaciones: fórmulas, despejar, fracciones con letras, cancelar, caída libre h=h0−½gt² (el 0,75 m del NB02) (sin código)
-- [ ] NB05b · Tu ordenador por dentro y la terminal: binario/bits/bytes, CPU/núcleos/memoria/disco, carpetas/rutas, terminal, venv, pip, instalar en tu máquina, procesos e hilos
-- [ ] NB11b · Python que vas a ver: argumentos con nombre, tuplas, atributo vs método, `in`, listas de listas, import/from/as
-- [ ] NB15b · Funciones a fondo: desplazar/reflejar/escalar, exponencial y e, logaritmo y sus reglas, escalas log, decaimiento exponencial y constante de tiempo (63 %)
-- [ ] NB17b · Reglas de derivación: potencia, suma, cadena, producto, exp, log, segunda derivada, parciales (comprobadas numéricamente)
+- [x] NB04b · Números a fondo: porcentajes, decimales, potencias (negativas, fraccionarias), raíces, notación científica (sin código)
+- [x] NB04c · Letras y ecuaciones: fórmulas, despejar, fracciones con letras, cancelar, caída libre h=h0−½gt² (el 0,75 m del NB02) (sin código)
+- [x] NB05b · Tu ordenador por dentro y la terminal: binario/bits/bytes, CPU/núcleos/memoria/disco, carpetas/rutas, terminal, venv, pip, instalar en tu máquina, procesos e hilos
+- [x] NB11b · Python que vas a ver: argumentos con nombre, tuplas, atributo vs método, `in`, listas de listas, import/from/as
+- [x] NB15b · Funciones a fondo: desplazar/reflejar/escalar, exponencial y e, logaritmo y sus reglas, escalas log, decaimiento exponencial y constante de tiempo (63 %)
+- [x] NB17b · Reglas de derivación: potencia, suma, cadena, producto, exp, log, segunda derivada, parciales (comprobadas numéricamente)
 - [ ] NB28b · Las matemáticas del gradiente de la política: regla del producto, log de productos, derivar log N paso a paso, ∇p = p∇log p, línea base sin sesgo, serie geométrica 1/(1−γ), n vs n−1
 - [ ] NB38b · Energía, trabajo y potencia (cinética, potencial, conservación, potencia = par·ω)
 - [ ] NB39b · Muelles, amortiguadores y ecuaciones diferenciales: derivadas de sen/cos, oscilador, ω, ζ, sub/crítico/sobre, simular con Euler y estabilidad (x' = −λx → pasito·λ < 2)
