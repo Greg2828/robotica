@@ -258,6 +258,19 @@ no eran de nivel cero. Norma nueva del curso:
 - **── PARTE 6 · SIMULACIÓN DE BÍPEDOS A FONDO ──** (REPLANIFICADA 2026-10-04 a petición del usuario: "ser experto en simular
   antes de tocar robots reales, para pasar cualquier entrevista"; Python PROFESIONAL explicado a fondo en cada NB; sin límite de
   NB ni de longitud). Cada NB = tema de MuJoCo/dinámica + tema de Python profesional. NB44 (moldear la recompensa) ✅ ya hecho.
+  **Puente de Python (NB44p1-p6)** ✅ (añadido 2026-10-04: la transición NB27→NB45 fue brusca: 17 NB sin estudiar Python y luego
+  4-6 conceptos profesionales por NB). Cada uno con laboratorio de 12 retos resueltos (soluciones ejecutadas):
+  · P1 leer código (predice la salida, leer zancudo_env.py con método, introspección, errores de bibliotecas, documentación/firmas)
+  · P2 funciones como piezas (tabla de despacho, callbacks, / y *, cierres + enlace tardío, nonlocal, decoradores escalón a escalón,
+    partial, cache)
+  · P3 clases intermedias (modelo de datos, Trayectoria pitónica, eq/hash, setters, classmethod, dataclasses a fondo + trampa eq con
+    arrays en 3.13, Enum, NamedTuple, composición)
+  · P4 iterar y recursos (iterable/iterador, generadores, simulación infinita, tuberías + trampa del filtro que cuelga, itertools,
+    collections, gestores de contexto, contextmanager, ExitStack)
+  · P5 tipos y errores (anotaciones, mypy REAL vía subprocess —instalado, en requirements—, Callable/type alias/Literal, Protocol,
+    genéricos 3.12, excepciones propias, raise from, add_note, logging)
+  · P6 NumPy para robótica (formas, trayectorias (T,n), máscaras/argmax-trampa, axis, diff vs gradient (diff exacto con el integrador),
+    broadcasting, pts @ R.T, einsum, vectorizar ×14, solve vs inv (Hilbert), vistas/copias, +=, isclose, float32, NaN)
   **Bloque A · MuJoCo por dentro**
   · NB45 ✅ (111 celdas, 42 código, EXIT 0) Cómo piensa MuJoCo: mjModel/mjData, coordenadas generalizadas (nq≠nv, cuaternión de la free joint), pipeline de
     mj_step, mj_forward, M(q)q̈+c=τ+Jᵀf (mj_fullM, qfrc_bias...), energía · Py: type hints, dataclasses, __repr__, @property,
