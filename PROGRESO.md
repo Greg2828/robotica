@@ -272,8 +272,10 @@ no eran de nivel cero. Norma nueva del curso:
   · NB49 ✅ (58 celdas, 21 código, EXIT 0) Integradores, paso de tiempo y rendimiento: Euler explícito vs semiimplícito a mano, Euler/implicit/implicitfast/RK4,
     orden (log-log), estabilidad (pasito·ω<2, kv), BADQACC+reinicio, Zancudo: implicitfast aguanta dt 0,02, determinismo, cProfile,
     rollout (×3,5 con 4 hilos), ProcessPoolExecutor (armature queda para NB50) · Py: decoradores, context managers, functools, multiprocessing/concurrent.futures
-  · NB50 MJCF profesional y MjSpec: defaults, keyframes, actuadores general (gain/bias/dyn), tendones, equality, sensores,
-    mallas, modelos por programa · Py: patrón constructor, xml.etree, pathlib
+  · NB50 ✅ (78 celdas, 30 código, EXIT 0) MJCF profesional y MjSpec: clases de defaults (+trampa grados), keyframes, actuadores = general
+    (trampa biastype, timeconst, delay+nsample), armature N²·J (estabilidad), tendones, equality (joint, weld "grúa"), sensores (touch=peso,
+    noise no se aplica), mallas (envolvente convexa), MjSpec (add/attach mochila/delete/recompile/to_xml), barrido de piernas (empuje
+    21→9 N) → robots/zancudo_v2.xml (implicitfast, tactos, posturas, grúa) · Py: pathlib a fondo, xml.etree, patrón constructor (Self)
   **Bloque B · Andar sin RL**
   · NB51 Planificar pasos: LIPM analítico, punto de captura, plan de pasos, trayectorias del pie · Py: numpy vectorizado,
     matplotlib profesional
