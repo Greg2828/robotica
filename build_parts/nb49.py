@@ -98,7 +98,18 @@ plt.legend()
 plt.grid(alpha=0.3)
 plt.show()"""),
 
-md(r"""EXPLICITO_TEXTO
+md(r"""### Qué acabamos de ver
+
+Los dos métodos hacen **las mismas cuentas**, solo que en distinto orden, y el resultado es completamente distinto:
+
+- **Euler explícito**: la energía empieza en 4,51 J/kg y a los 20 segundos vale **16,5**: más del **triple**. El péndulo, que debería subir siempre hasta la misma altura, sube cada vez un poco más, hasta dar vueltas completas. Nadie le ha dado energía: la ha **fabricado el método numérico**. Si lo dejaras correr más, seguiría creciendo sin límite.
+- **Euler semiimplícito**: la energía se queda **pegada** a la verdadera (4,58 a los 20 s). No es exacta (sube y baja un poquito alrededor del valor verdadero, lo verás si haces zoom en la gráfica), pero **no se escapa nunca**.
+
+¿Por qué? Una forma intuitiva de verlo: en el explícito, el péndulo avanza con la velocidad **de antes** de que la gravedad la frene. Cuando sube, frena "tarde", y llega un poco más alto de lo que debería. Cada vaivén, un poquito más. En el semiimplícito, la posición usa la velocidad **ya frenada**, y los errores de la subida y de la bajada se **compensan** en lugar de acumularse.
+
+(Para los curiosos: los métodos que tienen esta propiedad de no "inventar" ni "perder" energía a la larga se llaman **simplécticos**. El Euler semiimplícito lo es; el explícito, no. Es una palabra que impresiona en una entrevista, pero la idea es solo esta: los errores no se acumulan en la energía.)
+
+**Moraleja para un robot**: un robot que gana energía de la nada salta, vibra y acaba explotando. Por eso **ningún** simulador serio usa Euler explícito.
 """),
 
 md(r"""## 2 · Los integradores de MuJoCo
@@ -145,7 +156,15 @@ print(f"{'integrador':>13} | {'dt = 0,01':>11} | {'dt = 0,002':>11}")
 for integrador in ["Euler", "implicit", "implicitfast", "RK4"]:
     print(f"{integrador:>13} | {deriva_de_energia(integrador, 0.01):+11.2e} | {deriva_de_energia(integrador, 0.002):+11.2e}")"""),
 
-md(r"""INTEGRADORES_TEXTO
+md(r"""### Leyendo la tabla
+
+(Los números están en **notación científica**: `-4.14e-02` significa −4,14 × 10⁻², es decir, −0,0414. El `e-02` dice "mueve la coma dos sitios a la izquierda".)
+
+1. **Euler, implicit e implicitfast dan exactamente lo mismo.** Tiene sentido: los tres solo se diferencian en cómo tratan las fuerzas que dependen de la **velocidad** (amortiguadores, `kv`), y este péndulo **no tiene ninguna**. Sin esas fuerzas, los tres son el mismo Euler semiimplícito. La diferencia aparecerá en la sección 4.
+2. **Pierden un poquito de energía**: 0,041 J de unos 4,6 J de energía inicial (la varilla, con su centro a 0,5 m del eje, soltada desde 1,5 rad: 1 · 9,81 · 0,5 · (1 − cos 1,5) ≈ 4,56 J) con un pasito de 0,01, menos del 1 %. Con el pasito 5 veces más pequeño (0,002, el de MuJoCo por defecto), pierden **unas 5 veces menos** (0,0078). Esto ya nos da una pista de la sección siguiente: el error es **proporcional** al pasito.
+3. **RK4 es muchísimo más preciso**: con dt = 0,01, un error de 6 millonésimas, **6.000 veces menor** que Euler. Con dt = 0,002, de 6 cienmillonésimas.
+
+¿Entonces por qué no usar siempre RK4? Por tres motivos que veremos hoy: cuesta **4 veces más** por paso; su precisión brilla en movimientos **suaves** (como este péndulo), pero los contactos son **bruscos** (un pie que toca el suelo cambia de golpe), y ahí la ventaja se esfuma; y, como verás en la sección 5, con un robot de verdad puede ser **menos** estable que `implicitfast`.
 """),
 
 md(r"""## 3 · El orden de un integrador
@@ -174,7 +193,7 @@ errores = {integrador: [abs(angulo_final(integrador, dt) - referencia) for dt in
            for integrador in ["Euler", "RK4"]}
 for integrador, lista in errores.items():
     print(integrador, ["%.2e" % e for e in lista],
-          " cocientes:", [round(lista[i] / lista[i + 1], 1) for i in range(len(lista) - 1)])"""),
+          " cocientes:", [float(round(lista[i] / lista[i + 1], 1)) for i in range(len(lista) - 1)])"""),
 
 md(r"""(La línea de `errores` es una **comprensión de diccionario** con una comprensión de lista dentro, NB21: para cada integrador, la lista de errores con cada pasito.)
 
@@ -190,7 +209,16 @@ plt.legend()
 plt.grid(alpha=0.3, which="both")
 plt.show()"""),
 
-md(r"""ORDEN_TEXTO
+md(r"""### Leyendo los cocientes
+
+- **Euler**: cada vez que dividimos el pasito entre 2, el error se divide entre **2,0**. Exactamente lo que predice el orden 1. En la gráfica, una recta que baja **una** década (×10) por cada década de pasito: pendiente 1.
+- **RK4**: los cocientes son 10; 13,5; 14,8... acercándose a **16** = 2⁴. No llegan del todo porque la teoría del orden habla de pasitos "suficientemente pequeños", y con 0,02 s aún no lo somos tanto; según el pasito se encoge, el cociente se acerca a 16. En la gráfica, una recta mucho más **empinada**: pendiente casi 4.
+
+¿Por qué una recta? Si error ≈ C · dtᵖ, tomando logaritmos (NB28): log(error) ≈ log(C) + p · log(dt). Eso es la ecuación de una recta en la que **p es la pendiente**. Es el mismo truco de siempre: los logaritmos convierten potencias en rectas, y las rectas se leen a simple vista.
+
+Esta gráfica es una herramienta **profesional**: si programas un integrador (o una pieza nueva de un simulador) y quieres comprobar que está bien hecho, mides su orden así. Si la pendiente no es la que debería, hay un error en el código. Se llama **estudio de convergencia**.
+
+Observa también la escala: con dt = 0,0025, Euler se equivoca en 1,5 milésimas de radián y RK4 en **0,00000000007**. Para un péndulo que se mueve suave, RK4 gana por goleada.
 """),
 
 md(r"""## 4 · Estabilidad: cuándo explota una simulación
@@ -244,7 +272,17 @@ for k in [100, 1000, 5000]:
     print(f"k = {k:5d}  →  ω = {omega:5.0f} rad/s,  pasito·ω = {0.01 * omega:.2f}  →  "
           f"ángulo máximo {mayor:12.2f} rad,  avisos: {avisos}")"""),
 
-md(r"""ESTABILIDAD_TEXTO
+md(r"""### La regla se cumple
+
+- **k = 100** (pasito·ω = 0,43) y **k = 1.000** (pasito·ω = 1,37): por debajo de 2, la varilla oscila tranquila (ángulo máximo 0,51 y 0,68 rad; empezaba en 0,5).
+- **k = 5.000** (pasito·ω = 3,06): por encima de 2, el ángulo llega a **434.730 radianes** (¡unas 69.000 vueltas!) y MuJoCo avisa. Ha explotado en menos de una décima de segundo.
+
+Fíjate en dos detalles:
+
+1. Con k = 1.000 el ángulo máximo es 0,68, **más** que el inicial (0,5). La simulación no ha explotado, pero ya está cerca del límite y empieza a meter algo de energía falsa. Cerca del límite, la simulación es estable pero **mala**. En la práctica, se deja un margen: pasito·ω de 0,5 o menos.
+2. El salto entre "va bien" y "explota" es **brusco**: no hay término medio. Por eso las explosiones sorprenden: subes un poco la rigidez de un motor y, de repente, todo vuela.
+
+**Qué hacer si una simulación explota** (pregunta de entrevista): por orden, (1) buscar qué tiene una rigidez enorme (un `kp` o `kv` gigante, un contacto con `solref` muy pequeño, NB48, una masa o inercia diminuta: ω = √(k / inercia), así que una inercia minúscula dispara ω igual que una rigidez enorme); (2) reducir el pasito; (3) cambiar a un integrador implícito si la rigidez viene de amortiguadores o `kv`.
 """),
 
 md(r"""### Qué hace MuJoCo cuando explota
@@ -284,7 +322,18 @@ for kv in [5, 10, 20, 50]:
     i_mayor, i_avisos = probar("implicitfast", kp=100, kv=kv)
     print(f"{kv:>4} | máx {e_mayor:10.2f} rad, avisos {e_avisos} | máx {i_mayor:10.2f} rad, avisos {i_avisos}")"""),
 
-md(r"""KV_TEXTO
+md(r"""### implicitfast salva a los motores
+
+Con `kp = 100` fijo:
+
+- Con **Euler**, `kv` = 5 y 10 van bien, pero con **kv = 20 la simulación explota** (y con 50 también).
+- Con **implicitfast**, **todos** van bien, incluso kv = 50. El ángulo máximo apenas cambia (0,45-0,49 rad).
+
+¿Por qué con kv = 20 Euler ya explota, si `kp = 100` es un muelle blandito? Porque un amortiguador también tiene su "ω": una fuerza de frenado kv · velocidad sobre una inercia I frena la velocidad a un ritmo kv / I. Aquí, 20 / 0,053 ≈ 375 por segundo, y 0,01 × 375 = 3,75: por encima de 2. Con kv = 10, 0,01 × 188 = 1,9: justo por debajo. Euler explícito frena **de más** en cada paso: la velocidad se pasa al otro lado, cada vez con más fuerza... y explota.
+
+Un integrador **implícito** calcula el frenado con la velocidad **del final** del paso, y así nunca puede frenar "de más": como mucho, deja la velocidad en cero. Por eso es estable con cualquier `kv`. Y como solo hace implícitas las fuerzas que dependen de la velocidad (no los contactos ni los muelles de posición), `implicitfast` cuesta casi lo mismo que Euler.
+
+(Nota: el Euler de MuJoCo **sí** trata de forma implícita el `damping` de las articulaciones, como decía la tabla de la sección 2. Pero el `kv` de un actuador no es `damping` de la articulación: es una fuerza del motor, y Euler la trata de forma explícita. Esta sutileza ha hecho perder horas a mucha gente.)
 """),
 
 md(r"""## 5 · ¿Qué pasito para Zancudo?
@@ -309,7 +358,20 @@ for dt in [0.002, 0.005, 0.01, 0.02]:
     alturas = [zancudo_de_pie(dt, valor) for valor in integradores.values()]
     print(f"{dt:>7} | " + " | ".join(f"{h:10.3f} m" for h in alturas))"""),
 
-md(r"""ZANCUDO_TEXTO
+md(r"""### El veredicto
+
+| pasito | Euler | implicitfast | RK4 |
+|---|---|---|---|
+| 0,002 | de pie | de pie | de pie |
+| 0,005 | **en el suelo** (0,09 m) | de pie | de pie |
+| 0,01 | en el suelo | de pie | en el suelo |
+| 0,02 | caos (0,76 m) | de pie (0,856 m) | **¡34 m de altura!** |
+
+- **Euler** solo aguanta con el pasito por defecto, 0,002. Con 0,005, las piernas empiezan a vibrar (por el `kv = 20` de los motores, como en la sección 4), la vibración crece y Zancudo se desploma hacia el segundo y medio. Con 0,02, el 0,76 m de la tabla engaña: no está de pie, sino **dando saltos** de hasta 1,5 m con las articulaciones girando a 60 rad/s, un baile absurdo que en ese instante pilla a media altura. No hubo aviso de explosión: **una simulación puede estar rota sin que MuJoCo se queje**. Hay que mirar (o vigilar magnitudes como la velocidad máxima).
+- **implicitfast** aguanta de pie hasta con **0,02**: 10 veces el pasito por defecto, al mismo coste por paso que Euler. Es decir, puede simular el mismo tiempo **hasta 10 veces más rápido** (lo medirás en E1).
+- **RK4** aguanta con 0,005, pero con 0,01 cae y con 0,02 sale **volando** a 34 metros. Su orden 4 no le protege de la rigidez de los `kv`: es explícito, y la regla pasito·ω < 2 (con un número algo mayor, 2,8) también va con él.
+
+¿Significa esto que hay que entrenar con pasito 0,02? **No necesariamente**: "se mantiene de pie quieto" es la prueba más fácil. Al andar, los impactos de los pies y los contactos piden pasitos más finos (NB48: `solref` de 0,02 s necesita varios pasitos para "verse"; la regla habitual es pasito ≤ timeconst / 2). Lo profesional es **elegir implicitfast** y después buscar el pasito más grande con el que la **tarea real** (andar) da los mismos resultados que con un pasito pequeño. Por eso muchos modelos de MuJoCo Menagerie (NB58) usan `integrator="implicitfast"`, y por eso en el NB50 se lo pondremos a Zancudo.
 """),
 
 md(r"""## 6 · Determinismo
@@ -421,7 +483,8 @@ md(r"""La segunda llamada no imprime "cargando": devuelve el **mismo** objeto. P
 """),
 
 code(r"""euler_con_motor = functools.partial(probar, "Euler", kp=100)
-print(euler_con_motor(kv=5))           # equivale a probar("Euler", kp=100, kv=5)"""),
+mayor, avisos = euler_con_motor(kv=5)   # equivale a probar("Euler", kp=100, kv=5)
+print(f"ángulo máximo {mayor:.2f} rad, avisos {avisos}")"""),
 
 md(r"""Muy útil para pasar funciones "a medida" a otras que esperan funciones con menos argumentos: `map`, los *callbacks* del NB47, o el multiproceso de la sección 10.
 """),
@@ -553,7 +616,32 @@ salida = io.StringIO()
 pstats.Stats(perfilador, stream=salida).sort_stats("tottime").print_stats(6)
 print(salida.getvalue()[:1800])"""),
 
-md(r"""PERFIL_TEXTO
+md(r"""### Cómo se lee un perfil
+
+Cada fila es una función. Las columnas importantes:
+
+| Columna | Qué significa |
+|---|---|
+| `ncalls` | cuántas veces se ha llamado |
+| `tottime` | tiempo **dentro** de esa función, **sin contar** las funciones a las que llama ("tiempo propio") |
+| `cumtime` | tiempo **total** desde que entra hasta que sale, **incluyendo** lo que llama ("tiempo acumulado") |
+| `percall` | lo mismo dividido entre `ncalls` |
+
+Las hemos ordenado por `tottime` (`sort_stats("tottime")`) y mostrado solo las 6 primeras (`print_stats(6)`). Lo que dice:
+
+- **`mj_step`**: 10.000 llamadas (1.000 decisiones × 10 pasitos de submuestreo, NB43), **0,15 s de 0,24**: casi **dos tercios** del tiempo es la física. Y como es una función de C, el perfilador no puede ver dentro: para él es una caja negra.
+- **`step` del entorno**: 0,027 s propios, pero **0,22 s acumulados**, porque dentro llama a `mj_step`, a `_observacion`... El `cumtime` de `step` es casi todo el episodio: es la función "de arriba".
+- **`_observacion`**, el `clip` de NumPy...: unas pocas centésimas. Es el Python "de pegamento".
+
+Conclusión: **en este entorno, la física manda**. Acelerar el Python apenas ganaría nada; si quisiéramos ir más rápido, habría que simular menos pasos (un pasito mayor con implicitfast) o en paralelo (sección 10).
+
+### Pero ojo: depende de qué midas
+
+Si en vez de un episodio con una política lineal perfilas un **entrenamiento de PPO** completo (NB47), el cuadro cambia por completo. Lo medí aparte con 16.384 pasos de entrenamiento de Zancudo: de 26,3 segundos, `mj_step` solo se llevó **2,2** (un **8 %**). El resto, la red neuronal (PyTorch, al decidir cada acción y al aprender) y el pegamento de Stable-Baselines3. Ahí, acelerar la física no serviría de casi nada.
+
+Esta es **la regla de oro del rendimiento**, y una respuesta de entrevista perfecta: *"no adivines: mide"*. La intuición sobre dónde se va el tiempo falla muchísimo. Primero se perfila, después se optimiza **solo** lo que pesa. (La frase famosa de Donald Knuth: "la optimización prematura es la raíz de todos los males".)
+
+(Sobre el código de la celda: `io.StringIO()` es un "fichero" falso que vive en la memoria (en vez de en el disco); le decimos a `pstats` que escriba ahí, y luego lo leemos con `getvalue()` como un texto normal. Lo recortamos a 1.800 caracteres con `[:1800]` para que no ocupe media pantalla.)
 """),
 
 md(r"""## 10 · Simular en paralelo
@@ -591,7 +679,19 @@ for hilos in [1, 4]:
         estados, _ = rollout.rollout(zancudo, datos_por_hilo, estados_iniciales, ordenes)
     print(f"    {n_trayectorias * n_pasos / crono.segundos:,.0f} pasos por segundo;  forma del resultado: {estados.shape}")"""),
 
-md(r"""ROLLOUT_TEXTO
+md(r"""### Lo que ha pasado
+
+- Con **1 hilo**: unos **68.000 pasos por segundo**, prácticamente lo mismo que `mj_step` llamado desde Python (lo medimos con `timeit`: 66.000). Cada paso de Zancudo cuesta ~15 µs de física, y el coste de "volver a Python" en cada paso, que `rollout` se ahorra, es pequeño en comparación.
+- Con **4 hilos**: entre **230.000 y 260.000 pasos por segundo** según la ejecución, ¡unas **3,5 veces** más! Cerca del máximo teórico de 4 (un núcleo por hilo). No llega a 4 porque los hilos compiten por la memoria y porque el sistema operativo también necesita algo de procesador.
+
+Los detalles de la celda:
+
+- **`mj_getState` / `mjSTATE_FULLPHYSICS`** (NB45): el estado completo (tiempo, posiciones, velocidades, estado de los actuadores...) aplanado en un solo array. `mj_stateSize` dice cuántos números tiene: 19 para Zancudo, la última dimensión del resultado.
+- **`np.tile(inicial, (8, 1))`**: repite el array 8 veces hacia abajo → una matriz de 8 filas, una por trayectoria.
+- **La forma del resultado, (8, 10000, 19)**: 8 trayectorias × 10.000 pasos × 19 números de estado. Un array de **tres** dimensiones (NB15): `estados[3, 500]` es el estado de la trayectoria 3 en el paso 500.
+- **Un `MjData` por hilo**: cada hilo necesita su propia "pizarra" de datos (NB45: el `MjModel` se puede compartir porque no se modifica, pero el `MjData` cambia en cada paso). Si dos hilos escribieran en el mismo `MjData`, se pisarían.
+
+¿Para qué sirve esto en robótica? Para todo lo que simule **muchas trayectorias con órdenes ya decididas**: el **control predictivo** (probar muchos planes de movimiento y elegir el mejor), la **identificación de sistemas** (ajustar parámetros del simulador para que coincida con datos reales, NB61), o la búsqueda por fuerza bruta.
 """),
 
 md(r"""### Procesos: concurrent.futures
@@ -607,7 +707,31 @@ for procesos in [1, 2, 4]:
             notas = list(repartidor.map(episodio, range(8)))       # semillas 0..7
 print("notas:", np.round(notas, 1))"""),
 
-md(r"""PROCESOS_TEXTO
+md(r"""### Leyendo los tiempos
+
+- **1 proceso**: unos 1,6 s para los 8 episodios.
+- **2 procesos**: algo más de 0,8 s, casi la **mitad**.
+- **4 procesos**: entre 0,5 y 0,65 s, según la ejecución: unas **3 veces** más rápido, no 4.
+
+¿Por qué no 4 veces? Porque arrancar procesos **cuesta**: cada uno es un Python nuevo que tiene que importar MuJoCo, Gymnasium, NumPy... y cargar el modelo. Con trabajos tan cortos (0,2 s por episodio), ese coste fijo se nota. Con trabajos largos (entrenamientos de minutos), el reparto se acerca mucho más al ideal. Regla práctica: **el paralelismo compensa cuando cada trabajo es mucho más largo que el coste de repartirlo**.
+
+Los detalles:
+
+- **`ProcessPoolExecutor(max_workers=procesos)`** crea una "piscina" de procesos trabajadores. Dentro de un `with` (¡un gestor de contexto!): al salir, espera a que todos terminen y los cierra. Sin el `with`, habría que llamar a `repartidor.shutdown()` a mano... y acordarse.
+- **`repartidor.map(episodio, range(8))`** funciona como el `map` normal (NB23): aplica `episodio` a 0, 1, ..., 7, pero repartiendo las llamadas entre los procesos. Devuelve los resultados **en el mismo orden** que los argumentos, aunque terminen en otro orden. El `list(...)` espera a que estén todos.
+- **Cómo viaja el trabajo**: el proceso principal tiene que **enviar** a cada trabajador la función y sus argumentos, y recibir el resultado. Para enviarlos los convierte en bytes con **`pickle`** (NB26). Por eso: (1) la función tiene que poder importarse por su nombre (en Linux, una función definida en el notebook funciona; en Windows y Mac, que arrancan los procesos de otra forma, hay que ponerla en un fichero `.py`), y (2) los argumentos y resultados tienen que poder "picklearse". Un `MjModel` **sí** se puede (MuJoCo lo permite), pero enviar un modelo grande en cada llamada es lento: es mejor enviar **la ruta** y que cada proceso lo cargue (o lo cachee con `lru_cache`, que aquí sí tiene sentido, porque cada proceso tiene **su propia** caché).
+- **Las notas son distintas** porque cada episodio usa su semilla (0 a 7): una política al azar distinta en cada uno.
+
+Y esto es justo lo que hace por dentro el `SubprocVecEnv` de Stable-Baselines3 (frente al `DummyVecEnv` que usamos en el NB34, que ejecuta las copias del entorno una detrás de otra en el mismo proceso): un proceso por copia del entorno.
+
+### Resumen: ¿hilos o procesos?
+
+| | Hilos de C (`rollout`) | Procesos (`ProcessPoolExecutor`) |
+|---|---|---|
+| ¿Python en cada paso? | **No**: órdenes decididas de antemano | **Sí**: políticas, entornos de Gymnasium |
+| Coste de arranque | casi nulo | alto (un Python nuevo por proceso) |
+| Memoria | compartida | cada uno la suya (copias) |
+| Velocidad con 4 núcleos | ×3,5 | ×2,5 - ×3 (con trabajos cortos) |
 """),
 
 md(r"""## 11 · Resumen de la lección (y del Bloque A)
@@ -660,8 +784,160 @@ md(r"""## 12 · Ejercicios
 **E6.** **Reto.** Repite el experimento del vuelco del NB48 (empujar el torso con fuerzas de 10 a 20 N y ver si cae), repartiendo las 11 fuerzas entre 4 procesos con `ProcessPoolExecutor`. ¿Cuánto tarda frente a hacerlas una detrás de otra? Usa `functools.partial` si tu función necesita más argumentos que la fuerza.
 """),
 
-md(r"""SOLUCIONES_49
-"""),
+md(r'''<details>
+<summary>▶ Solución E1</summary>
+
+```python
+import timeit
+
+for nombre, integrador, dt_maximo in [("Euler", mujoco.mjtIntegrator.mjINT_EULER, 0.002),
+                                      ("implicitfast", mujoco.mjtIntegrator.mjINT_IMPLICITFAST, 0.02),
+                                      ("RK4", mujoco.mjtIntegrator.mjINT_RK4, 0.005)]:
+    m = mujoco.MjModel.from_xml_path("robots/zancudo.xml")
+    m.opt.integrator, m.opt.timestep = integrador, dt_maximo
+    d = mujoco.MjData(m)
+    segundos = min(timeit.repeat(lambda: mujoco.mj_step(m, d), number=3000, repeat=3))
+    pasos_por_segundo = 3000 / segundos
+    print(f"{nombre:>12}: {pasos_por_segundo:8,.0f} pasos/s × {dt_maximo} s = "
+          f"{pasos_por_segundo * dt_maximo:7.1f} s de robot por segundo de reloj")
+```
+
+| Integrador | pasos/s | pasito máximo | segundos de robot por segundo |
+|---|---|---|---|
+| Euler | ~66.000 | 0,002 | **~133** |
+| implicitfast | ~63.000 | 0,02 | **~1.260** |
+| RK4 | ~19.000 | 0,005 | **~97** |
+
+**implicitfast gana por casi 10 veces**: cuesta lo mismo por paso que Euler (63.000 frente a 66.000), pero aguanta pasitos 10 veces mayores. RK4 es **el peor**: cada paso cuesta más de 3 veces más (4 evaluaciones de la dinámica) y, para colmo, no aguanta pasitos tan grandes. Su precisión no sirve de nada si lo que limita es la **estabilidad**. (Recuerda el aviso de la sección 5: "de pie quieto" es la prueba fácil; al andar el pasito máximo útil será menor, pero la proporción entre integradores se mantiene.)
+</details>
+
+<details>
+<summary>▶ Solución E2</summary>
+
+```python
+abajo, arriba = 0.0005, 0.05             # con 0,0005 va bien seguro; con 0,05 explota seguro
+for vuelta in range(25):
+    medio = (abajo + arriba) / 2
+    mayor, avisos = probar("Euler", dt=medio, k=1000)
+    if mayor < 1:                        # no explota: se puede probar un pasito mayor
+        abajo = medio
+    else:
+        arriba = medio
+
+print(f"pasito máximo medido: {abajo:.4f} s")
+print(f"regla 2/ω:            {2 / np.sqrt(1000 / inercia):.4f} s")
+```
+
+Medido: **0,0129 s**; la regla: **0,0146 s**. La regla da el límite **teórico** de estabilidad, pero nuestro criterio ("ángulo máximo < 1 rad") es más exigente: cerca del límite la simulación ya mete tanta energía falsa (como vimos con k = 1.000 y dt = 0,01) que, aunque no crezca hasta el infinito, en 2 segundos supera 1 rad. Por eso la regla se usa con **margen**: nunca te pongas cerca de pasito·ω = 2.
+</details>
+
+<details>
+<summary>▶ Solución E3</summary>
+
+```python
+def contar_llamadas(funcion):
+    @functools.wraps(funcion)
+    def envoltorio(*args, **kwargs):
+        envoltorio.llamadas += 1
+        return funcion(*args, **kwargs)
+    envoltorio.llamadas = 0              # las funciones son objetos: se les pueden poner atributos
+    return envoltorio
+
+
+@contar_llamadas
+def cuadrado(x: float) -> float:
+    """Devuelve x al cuadrado."""
+    return x * x
+
+for i in range(10):
+    cuadrado(i)
+print(cuadrado.llamadas, cuadrado.__name__, cuadrado.__doc__)    # 10 cuadrado Devuelve x al cuadrado.
+```
+
+Dos ideas clave: (1) las funciones son **objetos** y, como cualquier objeto, pueden tener atributos (`envoltorio.llamadas = 0`); (2) dentro de `envoltorio`, el nombre `envoltorio` se refiere a **la propia función** (que ya existe cuando se la llama), así que puede actualizar su propio contador. Como `cuadrado` es ahora el envoltorio, `cuadrado.llamadas` es ese contador. Y gracias a `functools.wraps`, el nombre y la documentación siguen siendo los de `cuadrado`.
+
+(Otra forma habitual sería guardar el contador en una variable del cierre con `nonlocal`, pero entonces no se podría leer desde fuera. El atributo es más práctico.)
+</details>
+
+<details>
+<summary>▶ Solución E4</summary>
+
+```python
+for lugar, g in [("Luna", 1.62), ("Tierra", 9.81), ("Júpiter", 24.8)]:
+    with opciones(zancudo, gravity=np.array([0.0, 0.0, -g])):
+        d = mujoco.MjData(zancudo)
+        for paso in range(500):                          # 1 segundo
+            mujoco.mj_step(zancudo, d)
+        mujoco.mj_rnePostConstraint(zancudo, d)          # calcula cfrc_ext (NB48)
+        fuerza = d.body("pie_d").cfrc_ext[5] + d.body("pie_i").cfrc_ext[5]
+        peso = zancudo.body_subtreemass[0] * g
+        print(f"{lugar:>8}: suelo {fuerza:7.2f} N, peso {peso:7.2f} N")
+print("gravedad restaurada:", zancudo.opt.gravity)
+```
+
+| | fuerza del suelo | peso (23,6 kg × g) |
+|---|---|---|
+| Luna | 38,23 N | 38,23 N |
+| Tierra | 231,52 N | 231,52 N |
+| Júpiter | 585,26 N | 585,28 N |
+
+El suelo empuja **exactamente** con el peso (NB48: quieto, fuerza total = peso), y Zancudo sigue de pie en los tres sitios (en Júpiter, con 2,5 veces más carga, sus motores aún aguantan). `body_subtreemass[0]` es la masa de todo lo que cuelga del mundo: la masa total del robot. Y al salir del `with`, la gravedad vuelve a −9,81, aunque **solo** hemos escrito el `try/finally` una vez, dentro de `opciones`. Fíjate en que hemos pasado un array como valor: `getattr`/`setattr` funcionan igual con cualquier tipo.
+</details>
+
+<details>
+<summary>▶ Solución E5</summary>
+
+```python
+rng = np.random.default_rng(0)
+ordenes = rng.uniform(-0.5, 0.5, size=(1000, zancudo.nu))
+
+# 1) Bucle normal
+d = mujoco.MjData(zancudo)
+inicial = np.zeros(mujoco.mj_stateSize(zancudo, ESTADO))
+mujoco.mj_getState(zancudo, d, inicial, ESTADO)
+for paso in range(1000):
+    d.ctrl[:] = ordenes[paso]
+    mujoco.mj_step(zancudo, d)
+final = np.zeros_like(inicial)
+mujoco.mj_getState(zancudo, d, final, ESTADO)
+
+# 2) rollout (con una trayectoria: añadimos la dimensión con [None])
+estados, _ = rollout.rollout(zancudo, [mujoco.MjData(zancudo)], inicial[None, :], ordenes[None, :, :])
+print(np.array_equal(estados[0, -1], final), np.abs(estados[0, -1] - final).max())     # True 0.0
+```
+
+**Idénticos bit a bit** (diferencia máxima: 0,0). `rollout` no es una aproximación: hace exactamente los mismos `mj_step`, solo que desde C. Es el **determinismo** de la sección 6 en acción (mismo ordenador, misma versión). `inicial[None, :]` añade una dimensión al principio: de un vector de 19 a una matriz de 1 × 19, porque `rollout` espera una fila por trayectoria. (Este tipo de comprobación, "la versión rápida da lo mismo que la lenta", es exactamente lo que un buen ingeniero escribe como **test** antes de fiarse de una optimización, NB46.)
+</details>
+
+<details>
+<summary>▶ Solución E6</summary>
+
+```python
+from concurrent.futures import ProcessPoolExecutor
+
+def cae(fuerza: float, segundos: float = 3.0) -> bool:
+    m = mujoco.MjModel.from_xml_path("robots/zancudo.xml")
+    d = mujoco.MjData(m)
+    torso = m.body("torso").id
+    for paso in range(int(round(segundos / m.opt.timestep))):
+        d.xfrc_applied[torso, 0] = fuerza            # empuje horizontal constante (NB48)
+        mujoco.mj_step(m, d)
+    return bool(0.865 + d.qpos[1] < 0.8)
+
+fuerzas = list(range(10, 21))
+with Cronometro("una detrás de otra"):
+    seguidas = [cae(f) for f in fuerzas]
+with Cronometro("4 procesos"):
+    with ProcessPoolExecutor(max_workers=4) as repartidor:
+        repartidas = list(repartidor.map(cae, fuerzas))
+print(seguidas == repartidas, [f for f, c in zip(fuerzas, repartidas) if c])
+```
+
+Los dos dan lo mismo: **cae desde 16 N** (de 10 a 15 aguanta), igual que en el NB48. Tiempos: unos **0,34 s** seguidas frente a **0,14 s** con 4 procesos, unas 2,4 veces más rápido (no 4, por el coste de arrancar los procesos, como en la sección 10).
+
+¿Y `partial`? Si quisieras simular, por ejemplo, 5 segundos en vez de 3, `repartidor.map(cae, fuerzas)` solo pasa **un** argumento. La solución: `repartidor.map(functools.partial(cae, segundos=5.0), fuerzas)`. Un `partial` se puede enviar a otro proceso con `pickle` (una `lambda`, en cambio, **no**: `pickle` no sabe guardar funciones sin nombre). Por eso, en código con multiproceso, `partial` es la herramienta estándar.
+</details>
+'''),
 
 md(r"""## 13 · Posdata
 

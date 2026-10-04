@@ -269,8 +269,9 @@ no eran de nivel cero. Norma nueva del curso:
     · Py: ABC/Protocol, composición, patrón estrategia
   · NB48 ✅ (57 celdas, 19 código, EXIT 0) Contactos a fondo: detección (contype/conaffinity, margin), solref/solimp, condim, cono de fricción, solvers,
     mj_contactForce, CoP/ZMP medidos · Py: generadores/iteradores, Enum, NamedTuple, itertools
-  · NB49 Integradores, paso de tiempo y rendimiento: Euler/implicitfast/RK4, estabilidad, armature, determinismo, profiling,
-    simular en paralelo · Py: decoradores, context managers, functools, multiprocessing/concurrent.futures
+  · NB49 ✅ (58 celdas, 21 código, EXIT 0) Integradores, paso de tiempo y rendimiento: Euler explícito vs semiimplícito a mano, Euler/implicit/implicitfast/RK4,
+    orden (log-log), estabilidad (pasito·ω<2, kv), BADQACC+reinicio, Zancudo: implicitfast aguanta dt 0,02, determinismo, cProfile,
+    rollout (×3,5 con 4 hilos), ProcessPoolExecutor (armature queda para NB50) · Py: decoradores, context managers, functools, multiprocessing/concurrent.futures
   · NB50 MJCF profesional y MjSpec: defaults, keyframes, actuadores general (gain/bias/dyn), tendones, equality, sensores,
     mallas, modelos por programa · Py: patrón constructor, xml.etree, pathlib
   **Bloque B · Andar sin RL**

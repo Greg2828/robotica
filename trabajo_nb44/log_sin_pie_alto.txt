@@ -1,0 +1,10 @@
+moldeado_sin_pie_alto 106496 522.1 4.5 1.08 1000.0 510s
+moldeado_sin_pie_alto 212992 618.0 38.5 5.25 1000.0 993s
+moldeado_sin_pie_alto 319488 1081.8 11.0 19.19 1000.0 1450s
+moldeado_sin_pie_alto 425984 1083.9 10.5 19.08 1000.0 605s
+moldeado_sin_pie_alto 532480 1121.1 6.3 19.42 1000.0 1141s
+moldeado_sin_pie_alto 638976 1148.0 24.9 19.09 1000.0 1645s
+moldeado_sin_pie_alto 745472 1192.3 12.5 18.71 1000.0 2091s
+moldeado_sin_pie_alto 851968 1220.2 7.3 19.16 1000.0 2536s
+moldeado_sin_pie_alto 958464 1241.7 12.1 19.68 1000.0 2909s
+moldeado_sin_pie_alto 1064960 1255.9 9.5 19.92 1000.0 3268s
