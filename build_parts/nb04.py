@@ -713,7 +713,7 @@ un robot por dentro, por qué andar es tan difícil para él, cómo funciona un 
 mente de un robot y cómo se le guía con premios... y por qué esos premios son tan traicioneros. Todo eso
 sin una sola línea de código. Es una base muy sólida.
 
-En el **NB05** empieza la **Parte 1**: por fin vamos a tocar el ordenador. Pero con muchísima calma:
+Antes de tocar el ordenador, una última parada técnica: en el **NB04b** aprenderemos el idioma de las fórmulas (letras, ecuaciones, despejar) y deduciremos por fin el 0,75 m de la pelota del NB02. Después, en el **NB05**, empieza la **Parte 1**: por fin vamos a tocar el ordenador. Pero con muchísima calma:
 primero qué es un ordenador, qué es un programa y dónde se escribe; y después, **una sola línea** de
 código, la más famosa de la historia: hacer que el ordenador diga "hola". Una idea por vez, como
 prometimos en la primera lección.

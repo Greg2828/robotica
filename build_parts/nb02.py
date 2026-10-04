@@ -253,8 +253,8 @@ que anda está trabajando sin parar: cada vez que un pie toca el suelo.
 
 ### Rareza 2: los números no son exactos
 
-La física real (la que estudiarías en el instituto con una fórmula) dice que a los **0,5
-segundos** la pelota debería estar a **0,75 metros**. Nuestra tabla dice **0,50**. ¡Hemos
+La física real (con una fórmula que deduciremos juntos en el **NB04b**; por ahora, fíate) dice
+que a los **0,5 segundos** la pelota debería estar a **0,75 metros**. Nuestra tabla dice **0,50**. ¡Hemos
 fallado por 25 centímetros!
 
 ¿Por qué? Porque dimos **saltos demasiado grandes**. En la realidad, la velocidad crece poco a
