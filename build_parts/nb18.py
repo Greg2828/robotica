@@ -193,7 +193,7 @@ algo mucho mejor: calcular la pendiente **exacta**, de **todas** las ruedecillas
 
 md(r"""## 5 · La regla de la cadena: engranajes
 
-Imagina tres **engranajes** conectados: A mueve a B, y B mueve a C.
+En el NB17b viste la regla de la cadena con funciones sueltas. Aquí la vamos a aplicar a algo de verdad: el error de una máquina que aprende. Recordemos la idea con tres **engranajes** conectados: A mueve a B, y B mueve a C.
 
 ```
        A ────► B ────► C

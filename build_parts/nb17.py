@@ -384,8 +384,8 @@ md(r"""## 7 · Resumen de la lección
 
 md(r"""## 8 · Ejercicios
 
-**E1.** En la colina de juguete, si estás en x = 5 con tasa 0,1, ¿cuál es la pendiente (calcúlala con la regla del NB16: la pendiente de
-−(x − 3)² es −2 × (x − 3)) y adónde te lleva el siguiente paso?
+**E1.** En la colina de juguete, si estás en x = 5 con tasa 0,1, ¿cuál es la pendiente (la pendiente de −(x − 3)² es −2 × (x − 3); de dónde
+sale lo verás en el NB17b, y mientras tanto puedes comprobarla con la función `pendiente`) y adónde te lleva el siguiente paso?
 
 **E2.** Para **bajar** a un valle en vez de subir a una cumbre, ¿qué cambiarías en la receta? Pruébalo para encontrar el fondo de f(x) = x²
 (NB16) empezando en x = 4, con tasa 0,1.
@@ -478,7 +478,7 @@ Hoy has escrito el algoritmo más importante de la inteligencia artificial: **se
 lleva al palo de escoba hasta su mejor política, has aprendido a temer a la tasa de aprendizaje, y has visto por qué un robot puede quedarse
 atascado en una colina falsa.
 
-En el **NB18** usaremos el descenso por gradiente para una forma de aprender **distinta y muy potente**: aprender **imitando**. Le enseñaremos
+Antes, en el **NB17b**, aprenderás las **reglas** que dan la pendiente exacta de casi cualquier función sin calcularla dos veces. Y en el **NB18** usaremos el descenso por gradiente para una forma de aprender **distinta y muy potente**: aprender **imitando**. Le enseñaremos
 a una neurona **ejemplos** de lo que hace la política buena del palo de escoba ("en esta situación, empujó tanto"), y la neurona, bajando por
 la pendiente de su **error**, **redescubrirá sola** los números −30 y −8. Es el **aprendizaje supervisado**, y con él veremos por primera vez
 cómo se calculan las pendientes de golpe, sin tener que mover cada ruedecilla por separado.
