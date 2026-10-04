@@ -334,7 +334,7 @@ Vamos a contar sus motores, uno por uno:
 | Abdomen (la "cintura") | 1 rótula hecha con 3 bisagras | 3 |
 | Caderas | 2 rótulas, de 3 bisagras cada una | 3 + 3 = 6 |
 | Rodillas | 2 bisagras | 1 + 1 = 2 |
-| Hombros | 2 articulaciones de 2 bisagras | 2 + 2 = 4 |
+| Hombros | 2 articulaciones de 2 bisagras (una simplificación: tu hombro tiene unos 3 grados de libertad, el del robot solo 2) | 2 + 2 = 4 |
 | Codos | 2 bisagras | 1 + 1 = 2 |
 | **Total** | | **17** |
 

@@ -315,8 +315,8 @@ distintas habría?
 - Con **3** números: 10 × 10 × 10 = 1.000.
 - Con **45** números: un 1 seguido de **45 ceros**.
 
-Para que te hagas una idea: se calcula que en toda la Tierra hay más o menos un 1 seguido de 50
-átomos. Nuestra tabla tendría casi tantas filas como **átomos tiene el planeta**. Y eso
+Para que te hagas una idea: se calcula que el número de átomos de toda la Tierra es, más o menos, un 1 seguido de
+50 ceros. Nuestra tabla tendría casi tantas filas como **átomos tiene el planeta**. Y eso
 redondeando muchísimo. No hay ordenador en el mundo que pueda guardarla, ni robot que viva lo
 bastante para rellenarla probando.
 
@@ -695,7 +695,7 @@ Con esta lección ya tienes tres piezas del mapa: el **cuerpo** (NB01), el **mun
 **mente** (este NB03), unidas por el **bucle** de observación → acción. Y ya hablas el idioma de
 los profesionales: agente, entorno, observación, acción, paso, episodio.
 
-En el **NB04** llega la pieza que lo pone todo en marcha: **la recompensa**, los "puntos" que le
+Antes de seguir con la robótica, el **NB03b** es una parada técnica: los **números** que vas a usar en todo el curso (decimales, porcentajes, potencias, notación científica...), contados con calma. Y después, en el **NB04**, llega la pieza que lo pone todo en marcha: **la recompensa**, los "puntos" que le
 dicen al robot si lo está haciendo bien. Veremos cómo se diseña con los números de verdad de
 nuestro humanoide... y descubriremos que es facilísimo que el robot **haga trampas** y consiga
 muchos puntos sin aprender a andar. Es una de las lecciones más divertidas del curso.
