@@ -160,8 +160,9 @@ source venv/bin/activate
 jupyter lab
 ```
 
-(No te preocupes por entender qué significan; las explicaremos más adelante. Por ahora, son "las
-palabras mágicas para abrir el cuaderno".) Se abrirá el navegador con una lista de archivos: entra
+(No te preocupes por entender qué significan: las explicaremos una a una en el **NB05b**, la
+próxima lección. Por ahora, son "las palabras mágicas para abrir el cuaderno". Y si no tienes la
+Raspberry Pi del curso, en el NB05b también verás cómo instalarlo en tu propio ordenador.) Se abrirá el navegador con una lista de archivos: entra
 en la carpeta `notebooks` y abre este.
 
 Una vez dentro, lo único que necesitas saber es:
@@ -557,7 +558,7 @@ md(r"""## 16 · Posdata
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
 Hoy has escrito tus primeras líneas de código, y has visto que la programación no es magia: es
-escribir recetas precisas para un cocinero literal. En el **NB06** daremos el siguiente paso, y es un
+escribir recetas precisas para un cocinero literal. Antes, el **NB05b** abrirá la caja del ordenador (bits, memoria, archivos) y te explicará las "palabras mágicas" de la terminal. Y en el **NB06** daremos el siguiente paso, y es un
 paso enorme: aprender a **guardar** valores en "cajas con nombre" (las **variables**), para que el
 ordenador pueda **recordar** cosas como la velocidad del robot o su altura. Con eso, el cálculo de la
 recompensa dejará de ser una ristra de números y se convertirá en un pequeño programa que se entiende
