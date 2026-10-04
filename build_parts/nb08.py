@@ -300,8 +300,12 @@ minuto:
 La política (escrita a mano): **si la temperatura es menor que 20, enciende; si no, apaga**.
 
 Lee la celda despacio. Es un bucle (NB07) con un `if`/`else` dentro (lo de hoy), y cajas que se
-actualizan con su propio valor (NB06). No hay ninguna idea nueva: solo piezas que ya conoces,
-**combinadas**:
+actualizan con su propio valor (NB06). Casi todo son piezas que ya conoces, **combinadas**, con
+**una idea pequeña nueva**: una caja también puede guardar **texto**. La caja `calefaccion` guarda
+`"encendida"` o `"apagada"` (entre comillas, como en el `print` del NB05), y con `==` se puede
+**comparar** si un texto es igual a otro, igual que con los números. Los textos se comparan letra a
+letra: `"encendida" == "encendida"` es `True`, y `"encendida" == "Encendida"` es `False` (una
+mayúscula ya los hace distintos):
 """),
 
 code(r"""temperatura = 18.0

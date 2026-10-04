@@ -501,7 +501,14 @@ pelota soltada desde 2 metros: en cada pasito de 0,1 segundos, **la gravedad cam
 **la velocidad cambia la altura**. Era la "cadena de oro", lo que hace un simulador por dentro.
 
 Vamos a programarlo. Primero, el **estado inicial** del mundo, en cajas. Reutilizamos el nombre
-`velocidad`: lo que tuviera dentro se sustituye (apartado 7):
+`velocidad`: lo que tuviera dentro se sustituye (apartado 7).
+
+**Un aviso sobre el signo.** En el NB04, una velocidad **negativa** significaba "hacia **atrás**".
+Aquí, para la pelota que cae, vamos a elegir otro convenio: velocidad **positiva** = "hacia
+**abajo**" (así los números de la caída salen positivos y es más fácil seguirlos). Elegir qué
+sentido es el positivo es **una decisión nuestra**, y en física y en programación se hace
+constantemente: lo importante es **decirlo** y ser coherente. En el NB08, al rebotar, la velocidad
+pasará a ser negativa: hacia arriba.
 """),
 
 code(r"""# El mundo
