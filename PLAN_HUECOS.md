@@ -1,0 +1,20 @@
+# Plan de relleno de huecos (auditoría 2026-10-04, 8 revisores leyeron NB00-NB50 completos)
+
+## Notebooks NUEVOS (en orden de lectura)
+- [ ] NB04b · Números a fondo: porcentajes, decimales, potencias (negativas, fraccionarias), raíces, notación científica (sin código)
+- [ ] NB04c · Letras y ecuaciones: fórmulas, despejar, fracciones con letras, cancelar, caída libre h=h0−½gt² (el 0,75 m del NB02) (sin código)
+- [ ] NB05b · Tu ordenador por dentro y la terminal: binario/bits/bytes, CPU/núcleos/memoria/disco, carpetas/rutas, terminal, venv, pip, instalar en tu máquina, procesos e hilos
+- [ ] NB11b · Python que vas a ver: argumentos con nombre, tuplas, atributo vs método, `in`, listas de listas, import/from/as
+- [ ] NB15b · Funciones a fondo: desplazar/reflejar/escalar, exponencial y e, logaritmo y sus reglas, escalas log, decaimiento exponencial y constante de tiempo (63 %)
+- [ ] NB17b · Reglas de derivación: potencia, suma, cadena, producto, exp, log, segunda derivada, parciales (comprobadas numéricamente)
+- [ ] NB28b · Las matemáticas del gradiente de la política: regla del producto, log de productos, derivar log N paso a paso, ∇p = p∇log p, línea base sin sesgo, serie geométrica 1/(1−γ), n vs n−1
+- [ ] NB38b · Energía, trabajo y potencia (cinética, potencial, conservación, potencia = par·ω)
+- [ ] NB39b · Muelles, amortiguadores y ecuaciones diferenciales: derivadas de sen/cos, oscilador, ω, ζ, sub/crítico/sobre, simular con Euler y estabilidad (x' = −λx → pasito·λ < 2)
+- [ ] NB44p7 · Álgebra lineal para robótica: traspuesta, identidad, inversa, A·x=b, det, rango, valores/vectores propios, definida positiva, SVD, condición, pseudoinversa, producto vectorial
+
+## ARREGLOS en notebooks existentes
+- [ ] Puente P1-P6: quitar/parafrasear referencias a NB45-NB50 como sabidas (van ANTES del NB45)
+- [ ] NB45-NB50: lo enseñado en el puente citarlo como repaso (P2/P3/P4), no "a fondo en NB48/49"
+- [ ] Errores: NB03 "1 seguido de 50 átomos"; NB01 hombro; NB36 θ="zeta"→theta; NB37 "newton por metro"→"newton metro"; NB34 nan "del NB33"; NB38 euler en grados; NB39 Kajita 1991/2001; NB46 Hilbert 12×12 (n=10); NB49 "PPO (NB47)"; NB48 refs falsas a NB17 (convexidad, Newton, bisección) y §2 "nuevo"→repaso; NB43/NB44 refs caducadas a NB45/NB46; P2 "paso bajo (NB41)"; P3 ω/ζ "(NB40)"→NB39b; P1 inspect NB34 vs NB43
+- [ ] Notas breves: NB34/NB35 radianes y par (→NB36/NB37); NB14 0,5×0,5 (aplazar a NB28b); NB17 E1 (→NB17b); NB02/NB07 0,75 (→NB04c); NB06-08 criterio de signo; NB08 texto en variable; NB25 dtype/float32 y conversiones; NB19 retropropagación con 1 neurona antes de 8; NB49 regla pasito·ω<2 (→NB39b)
+- [ ] Actualizar PROGRESO.md, README, memoria
