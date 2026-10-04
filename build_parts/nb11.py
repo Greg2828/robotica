@@ -742,7 +742,7 @@ Con este proyecto **termina la Parte 1**. Mira hacia atrás: hace siete leccione
 construido un entorno de aprendizaje por refuerzo, has diagnosticado una política que fallaba mirando sus datos, y has
 hecho que un ordenador **aprenda solo** a mantener un palo de pie. Con tu propio código, línea a línea.
 
-En la **Parte 2** vamos a por las dos cosas que nos faltan para el humanoide: las **matemáticas** que permiten girar
+Antes de la Parte 2, el **NB11b** te presentará unas cuantas formas de escribir Python que vas a encontrar enseguida (argumentos con nombre, tuplas, listas de listas...). Y en la **Parte 2** vamos a por las dos cosas que nos faltan para el humanoide: las **matemáticas** que permiten girar
 miles de ruedecillas a la vez con inteligencia (empezando, desde cero, por las **flechas** —los vectores— y las
 **pendientes**), y las herramientas de Python para manejar montones de números a toda velocidad. Todo, como siempre,
 desde el principio y en gotas.

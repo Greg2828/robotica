@@ -91,7 +91,7 @@ y 3 columnas, en total 2 × 3 = 6 números. Siempre se dicen **primero las filas
 
 md(r"""## 3 · Una matriz en Python: una lista de listas
 
-¿Cómo guardamos una tabla en Python? Con algo que aún no hemos usado, pero que ya puedes adivinar: una **lista cuyos
+¿Cómo guardamos una tabla en Python? Con lo que viste en el NB11b: una **lista cuyos
 elementos son listas**. Cada fila es una lista (NB09), y la matriz es la lista de las filas:
 """),
 
@@ -369,7 +369,10 @@ En el NB11, la búsqueda aleatoria encontró buenas ruedecillas en un par de int
 
 Hagamos una cuenta muy simplificada (solo para hacernos una idea). Supón que cada ruedecilla, por separado, tiene un **50 %
 de probabilidad** de caer en una "zona buena" al elegirla al azar (como lanzar una moneda). Para que la política entera sea
-buena, **todas** tienen que caer bien a la vez. Con 2 ruedecillas: 0,5 × 0,5 = 0,25, uno de cada cuatro intentos. ¿Y con 782?
+buena, **todas** tienen que caer bien a la vez. Con 2 ruedecillas, piensa en dos monedas: de las cuatro combinaciones
+posibles (cara-cara, cara-cruz, cruz-cara, cruz-cruz), solo una es "cara-cara": uno de cada cuatro intentos, 0,25, que es
+justo 0,5 × 0,5. (Que la probabilidad de que pasen dos cosas independientes sea el **producto** de sus probabilidades lo verás
+bien explicado en el NB28 y el NB28b; por ahora, el ejemplo de las monedas basta.) ¿Y con 782?
 Hay que multiplicar 0,5 por sí mismo 782 veces, es decir, elevar a 782 (`**`, NB06):
 """),
 
@@ -377,7 +380,7 @@ code(r"""print("Con 2 ruedecillas:  ", 0.5 ** 2)
 print("Con 782 ruedecillas:", 0.5 ** 782)"""),
 
 md(r"""El segundo número sale escrito de una forma rara: **`3.93...e-236`**. Es la **notación científica**, la forma que usa Python
-para números **gigantes o minúsculos**. La `e-236` significa "**multiplicado por 10 elevado a −236**", es decir: **un cero, una
+para números **gigantes o minúsculos** (la viste en el NB03b). La `e-236` significa "**multiplicado por 10 elevado a −236**", es decir: **un cero, una
 coma, y 235 ceros más** antes del 3 y pico. Es un número tan pequeño que no tiene nombre.
 
 Para que te hagas una idea: si probaras **mil millones** de políticas por segundo desde el **origen del universo** (hace unos
