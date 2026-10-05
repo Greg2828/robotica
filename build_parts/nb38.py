@@ -496,7 +496,7 @@ md(r"""## 11 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-En el **NB39** dejamos el equilibrio quieto y pasamos al de verdad, el que usan los robots que andan: el **equilibrio dinámico**. Veremos el modelo más famoso de la locomoción bípeda (el **péndulo invertido lineal**), calcularemos **dónde hay que poner el pie para no caerse** (el punto de captura) y conoceremos el **ZMP**, el concepto con el que andaban los robots de Honda (ASIMO) y que todo ingeniero de bípedos tiene que conocer.
+En el **NB38b**, una lección intermedia: la **energía**, el **trabajo** y la **potencia** (cuánto gasta un robot, y una forma de responder preguntas de física sin simular). Y en el **NB39** dejamos el equilibrio quieto y pasamos al de verdad, el que usan los robots que andan: el **equilibrio dinámico**. Veremos el modelo más famoso de la locomoción bípeda (el **péndulo invertido lineal**), calcularemos **dónde hay que poner el pie para no caerse** (el punto de captura) y conoceremos el **ZMP**, el concepto con el que andaban los robots de Honda (ASIMO) y que todo ingeniero de bípedos tiene que conocer.
 """),
 
 ]

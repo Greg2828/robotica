@@ -2,7 +2,8 @@
 
 HECHO (2026-10-04): NB03b números (era "NB04b" en el plan), NB04b álgebra (era "NB04c"), NB05b, NB11b, NB15b, NB17b + arreglos NB01/02/03/04/05/06/08/11/14/15/17/18.
 HECHO (2026-10-05): NB28b (+ enlaces desde NB28/NB29/NB30, quitados los "los matemáticos demostraron").
-SIGUIENTE: NB38b, NB39b, NB44p7, y los arreglos pendientes de abajo.
+HECHO (2026-10-05): NB38b (+ enlaces NB38/NB39, NB45 energía "NB37"→NB38b).
+SIGUIENTE: NB39b, NB44p7, y los arreglos pendientes de abajo.
 Verificar cada NB con nbconvert --execute y las soluciones con el script checksol (extrae bloques ```python de los <details>).
 
  de huecos (auditoría 2026-10-04, 8 revisores leyeron NB00-NB50 completos)
@@ -15,7 +16,7 @@ Verificar cada NB con nbconvert --execute y las soluciones con el script checkso
 - [x] NB15b · Funciones a fondo: desplazar/reflejar/escalar, exponencial y e, logaritmo y sus reglas, escalas log, decaimiento exponencial y constante de tiempo (63 %)
 - [x] NB17b · Reglas de derivación: potencia, suma, cadena, producto, exp, log, segunda derivada, parciales (comprobadas numéricamente)
 - [x] NB28b · Las matemáticas del gradiente de la política: regla del producto, log de productos, derivar log N paso a paso, ∇p = p∇log p, línea base sin sesgo, serie geométrica 1/(1−γ), n vs n−1
-- [ ] NB38b · Energía, trabajo y potencia (cinética, potencial, conservación, potencia = par·ω)
+- [x] NB38b · Energía, trabajo y potencia (cinética, potencial, conservación, potencia = par·ω)
 - [ ] NB39b · Muelles, amortiguadores y ecuaciones diferenciales: derivadas de sen/cos, oscilador, ω, ζ, sub/crítico/sobre, simular con Euler y estabilidad (x' = −λx → pasito·λ < 2)
 - [ ] NB44p7 · Álgebra lineal para robótica: traspuesta, identidad, inversa, A·x=b, det, rango, valores/vectores propios, definida positiva, SVD, condición, pseudoinversa, producto vectorial
 

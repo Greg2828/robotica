@@ -197,7 +197,7 @@ Y aquí viene la clave. Los físicos descubrieron que, en el péndulo invertido 
    energía orbital  =  v²  −  ω² × (x − p)²
 ```
 
-A medida que el CdM se mueve, la velocidad v cambia y la distancia al pie (x − p) cambia, pero esta combinación se queda **exactamente igual** todo el rato. Se llama **energía orbital** (es pariente de la energía que estudiarás en física, pero no hace falta saber nada de energía para usarla). No me creas: compruébalo con la simulación de 0,9 m/s, mirando el principio, la mitad y el final:
+A medida que el CdM se mueve, la velocidad v cambia y la distancia al pie (x − p) cambia, pero esta combinación se queda **exactamente igual** todo el rato. Se llama **energía orbital** (es pariente de la energía del NB38b: no es exactamente cinética más potencial, pero se usa con el mismo truco, "si no cambia, el principio te dice el final"). No me creas: compruébalo con la simulación de 0,9 m/s, mirando el principio, la mitad y el final:
 """),
 
 code(r"""t, x, v = simular(-0.3, 0.9, 0.0, 1.0)

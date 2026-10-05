@@ -641,7 +641,7 @@ La ecuación se puede usar en dos direcciones:
 
 md(r"""## 8 · La energía
 
-Otra forma de mirar dentro de la simulación es la **energía** (NB37): la **potencial** (por la altura: m·g·h) y la **cinética** (por el movimiento: ½·m·v²). MuJoCo la calcula si se lo pides, activando un "interruptor" del modelo:
+Otra forma de mirar dentro de la simulación es la **energía** (NB38b): la **potencial** (por la altura: m·g·h) y la **cinética** (por el movimiento: ½·m·v²). MuJoCo la calcula si se lo pides, activando un "interruptor" del modelo:
 """),
 
 code(r"""modelo.opt.enableflags |= mujoco.mjtEnableBit.mjENBL_ENERGY
@@ -676,7 +676,7 @@ Así funcionan los ajustes de muchísimas bibliotecas de C (y los permisos de lo
 
 md(r"""### La energía al caer
 
-Ahora un experimento. Una caja libre cae desde 1 m sobre el suelo. Mientras cae, la energía potencial se convierte en cinética y la **suma** debería mantenerse (conservación de la energía, NB37). Al chocar, parte de la energía se pierde (se "disipa" en el contacto, que en MuJoCo es un poco blando, NB48):
+Ahora un experimento. Una caja libre cae desde 1 m sobre el suelo. Mientras cae, la energía potencial se convierte en cinética y la **suma** debería mantenerse (conservación de la energía, NB38b). Al chocar, parte de la energía se pierde (se "disipa" en el contacto, que en MuJoCo es un poco blando, NB48):
 """),
 
 code(r"""CAJA = '''
