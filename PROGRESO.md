@@ -11,7 +11,7 @@
   **NB44p7 álgebra lineal para robótica** (último del puente).
 - Erratas, notas breves y repaso editorial del orden nuevo (puente P1-P6 sin dar por sabido NB45-NB50;
   NB45-NB50 citando el puente como repaso): HECHOS. **Plan de huecos COMPLETO.**
-- **Orden de lectura:** … NB44 → P1 … P7 → NB45 … NB50 → NB51 → (siguiente) NB52.
+- **Orden de lectura:** … NB44 → P1 … P7 → NB45 … NB50 → NB51 → NB52 → (siguiente) NB53.
 - **NB51 · Planificar pasos ✅ (2026-10-06, 102 celdas, 41 de código, EXIT 0)**: LIPM resuelto a mano (cosh/sinh)
   vs Euler; DCM ξ = x + v/ω (huye del pie) y CdM que lo persigue; energía orbital = producto ξ·ζ; capturabilidad
   con N pasos (Zancudo: 0,19 / 0,61 / … límite 0,82 m/s); marcha periódica; plan de pisadas 2D + plan del DCM
@@ -20,8 +20,16 @@
   ZMP se aparta 9,7 cm. Python: NumPy vectorizado (ufuncs, timeit, broadcasting, máscaras, searchsorted,
   numpy.typing) + matplotlib OO (subplots, subplot_mosaic, colormaps, pcolormesh, patches, log, savefig).
   Figura guardada en notebooks/assets/nb51_plan_de_marcha.png.
-- **Siguiente: NB52 · Zancudo anda sin RL** (preview control de Kajita, IK, PD; clásico vs RL; Py: librería +
-  logging). Para continuar, dile a Claude: **«sigamos con robótica»**.
+- **NB52 · Zancudo anda sin RL ✅ (2026-10-06, 100 celdas, 41 de código, EXIT 0, ~1 min)**: ZMP con apoyo doble,
+  carrito sobre la mesa, LQR/Riccati por iteración (sin SciPy), vista previa de Kajita (horizonte 1,6 s; con 0,1 s
+  error 60 cm), IK analítica de la pierna (ley del coseno) + IK del CdM por la secante, servos: prealimentación de
+  velocidad ctrl = q + (kv/kp)·q̇, kp=3000/kv=90 (kv=300 → temblor de 2,5 Hz quieto). Empujones: clásico en bucle
+  abierto ~0,17-0,2 m/s (= tobillo del NB51); paso de captura de pie 0,30 → 0,59 m/s; más pasos a veces empeora;
+  RL `completa` del NB44 aguanta siempre 0,85 m/s y a menudo 1,3-1,7. Librería **notebooks/andar/** (fuente única en
+  build_parts/nb52_andar/, escrita con %%writefile): plan.py, cinematica.py, control.py (PasoDeCaptura, Enum),
+  logging. GIFs nb52_zancudo_clasico.gif / nb52_paso_de_captura.gif. **→ Bloque B COMPLETO.**
+- **Siguiente: NB53 · Zancudo 3D (MjSpec)**: cadera 3 GDL, tobillo 2 GDL, equilibrio lateral; Py: dataclasses +
+  YAML. Para continuar, dile a Claude: **«sigamos con robótica»**.
 - Rutina: tras cada notebook verificado → commit + push (repo GitHub público Greg2828/robotica).
 
 ## ⚠ GIRO DE ENFOQUE (2026-09-30)

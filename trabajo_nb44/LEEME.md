@@ -6,6 +6,9 @@ Robot de trabajo: notebooks/robots/zancudo_v2.xml (implicitfast, tacto_d/tacto_i
 NB51 ✅ (2026-10-06): planificar pasos (LIPM exacto, DCM, capturabilidad N pasos, plan del DCM hacia atrás,
 pie en el aire, LIPM en MuJoCo con realimentación del DCM).
 
-Siguiente: NB52 Bloque B · Zancudo anda sin RL: preview control de ZMP (Kajita) + IK + PD; clásico vs RL
-(Py: diseñar una librería, logging). Reutilizar de NB51: lipm, plan_pies, Fase, trayectoria_cdm, pie_en_vuelo,
-controlador DCM p = p_plan + (1 + k/ω)(ξ − ξ_plan). z0 = 0,71 (CdM en key 'agachado' de zancudo_v2).
+NB52 ✅ (2026-10-06): Zancudo anda sin RL (vista previa de Kajita + IK + servos rígidos con prealimentación;
+paso de captura; comparación con RL). Librería notebooks/andar/ (fuente: build_parts/nb52_andar/).
+Bloque B completo.
+
+Siguiente: NB53 Bloque C · Zancudo 3D con MjSpec: cadera 3 GDL, tobillo 2 GDL, equilibrio lateral, de pie con
+gravedad compensada (Py: config con dataclasses + YAML). El plan 2D del NB51 (pisadas x,y) ya está listo para 3D.
