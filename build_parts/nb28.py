@@ -569,7 +569,8 @@ md(r"""## 12 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Hoy has construido la probabilidad desde cero: frecuencias, distribuciones, valor esperado, dispersión, la campana de Gauss, el error típico y las políticas que exploran. En el **NB29** juntamos
+Hoy has construido la probabilidad desde cero: frecuencias, distribuciones, valor esperado, dispersión, la campana de Gauss, el error típico y las políticas que exploran. En el **NB28b**
+deduciremos con lápiz, y comprobaremos, todas las piezas matemáticas que necesita el algoritmo siguiente. Y en el **NB29** juntamos
 todo: el primer algoritmo de aprendizaje por refuerzo **de verdad**, **REINFORCE**. Sin maestro, sin probar ruedecillas al azar: el palo de escoba jugará episodios con su política exploradora,
 mirará qué acciones salieron mejor de lo normal, y moverá sus ruedecillas para hacerlas **más probables**. Y aprenderá a mantener el palo de pie **desde cero**.
 """),

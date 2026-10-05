@@ -83,8 +83,8 @@ Imagina que el robot sorteó una acción **a = −55** cuando la media era **μ 
    log-probabilidad(a) = − (a − μ)² / (2 σ²)  −  log(σ √(2π))
 ```
 
-Su pendiente respecto a μ se puede calcular con la regla de la pendiente de un cuadrado (NB16: la de x² es 2x) y la de la cadena (NB18). Queda algo
-sorprendentemente sencillo:
+Su pendiente respecto a μ la dedujiste paso a paso en el NB28b (apartado 3), con la regla de la cadena del NB17b. Recuerda lo
+sorprendentemente sencilla que queda:
 
 ```
    pendiente de la log-probabilidad respecto a μ  =  (a − μ) / σ²
@@ -179,7 +179,7 @@ Juntando las dos piezas, la regla de REINFORCE para girar las ruedecillas es:
 
 Cada acción "vota" por mover las ruedecillas hacia donde **ella** sería más probable, y su voto **pesa** tanto como lo bien que le fue al robot después.
 
-Los matemáticos demostraron que esta "dirección de mejora" es, en promedio, **exactamente el gradiente del retorno esperado** (NB28): la flecha que apunta cuesta arriba en la montaña
+Como demostraste en el NB28b (el **truco del logaritmo** y el **teorema del gradiente de la política**, apartados 4 y 5), esta "dirección de mejora" es, en promedio, **exactamente el gradiente del retorno esperado**: la flecha que apunta cuesta arriba en la montaña
 del NB17. Pero aquí hay una diferencia enorme con el NB17: allí **medíamos** la pendiente moviendo cada ruedecilla por separado (2 evaluaciones por ruedecilla). Aquí la **estimamos
 a partir de los propios episodios**, con un solo lote de partidas, sea cual sea el número de ruedecillas. Es un cálculo de **Montecarlo** (NB28): con pocos episodios, la estimación
 es ruidosa; con muchos, se acerca a la de verdad.
@@ -314,7 +314,7 @@ salir** en ese paso:
 Ahora, las acciones que llevaron a un retorno **mejor de lo normal** tienen ventaja **positiva** (se refuerzan), y las que llevaron a uno **peor de lo normal**, **negativa** (se debilitan).
 Es la golosina **comparada**: "esto lo has hecho mejor que de costumbre". A ese "lo normal" que se resta se le llama **línea base**, y a G menos la línea base, **ventaja**.
 
-Y lo mejor: restar una línea base **no cambia la dirección en promedio** (los matemáticos lo demuestran: el "montón común" no aportaba nada), pero **elimina gran parte del ruido**. Es lo
+Y lo mejor: restar una línea base **no cambia la dirección en promedio** (lo demostraste en el NB28b, apartado 6: la media de las pendientes de ln p es 0, porque las probabilidades suman 1), pero **elimina gran parte del ruido**. Es lo
 que hace la línea `G = G - G.mean(axis=1, keepdims=True)` de nuestra función: a cada G le resta la media de los G **del mismo paso** en los 50 episodios (`axis=1`, NB27; `keepdims=True`
 conserva la dimensión para que el broadcasting encaje). Entrenemos otra vez, ahora con la línea base:
 """),

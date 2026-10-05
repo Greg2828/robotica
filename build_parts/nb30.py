@@ -320,7 +320,7 @@ md(r"""Un resultado muy instructivo:
 - Con **γ = 1** (sin descuento), también aprende, pero algo más despacio: ahora cada acción carga con **todo** lo que pasa hasta el final del episodio, incluidas cosas lejanísimas en las que no
   influyó, y eso añade ruido.
 
-**γ define el "horizonte" del robot**: más o menos, cuántos pasos hacia el futuro le importan (una regla práctica: unos 1/(1 − γ) pasos; con 0,99, unos 100 pasos, 2 segundos en el palo). Tiene
+**γ define el "horizonte" del robot**: más o menos, cuántos pasos hacia el futuro le importan (unos 1/(1 − γ) pasos, la serie geométrica del NB28b; con 0,99, unos 100 pasos, 2 segundos en el palo). Tiene
 que ser lo bastante largo para **ver las consecuencias de sus actos**, pero no tanto que se llene de ruido. Para un humanoide que anda, donde un mal paso se paga un segundo después, también se
 usan valores en torno a 0,99.
 """),
