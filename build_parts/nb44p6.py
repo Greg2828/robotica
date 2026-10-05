@@ -24,7 +24,7 @@ md(r"""# NB44·P6 · Puente de Python (6): NumPy intermedio para robótica
 
 **Puente de Python — Lección 6 de 7**
 
-> En el NB15 y el NB27 aprendiste NumPy: arrays, `shape`, operaciones elemento a elemento, `@`, ejes, broadcasting, máscaras, vistas. Después, NB45-NB50 lo usaron a fondo: jacobianos de 3×9, matrices de rotación, `np.linalg.pinv`, `svd`, lotes de estados de forma (8, 10.000, 19)... y la trampa de las vistas de MuJoCo. Hoy hacemos el puente: el NumPy que de verdad se usa en robótica, con datos de Zancudo.
+> En el NB15 y el NB27 aprendiste NumPy: arrays, `shape`, operaciones elemento a elemento, `@`, ejes, broadcasting, máscaras, vistas. En el Bloque A (NB45-NB50) lo vas a necesitar a fondo: jacobianos de 3×9, matrices de rotación, `np.linalg.pinv`, `svd`, lotes de estados de forma (8, 10.000, 19)... y la trampa de las vistas de MuJoCo. Hoy hacemos el puente: el NumPy que de verdad se usa en robótica, con datos de Zancudo.
 
 La habilidad que vamos a entrenar tiene nombre: **pensar en formas**. Un programador de NumPy con experiencia, antes de escribir una operación, se pregunta: "¿qué forma tiene cada array, y qué forma tendrá el resultado?". Si contestas eso, el resto sale solo, y los errores de forma (los más comunes, P1) desaparecen.
 """),
@@ -51,9 +51,9 @@ Casi todo lo que manejarás encaja en unas pocas formas. Apréndelas como un voc
 | `(T, n)` | una **trayectoria**: T instantes, n números en cada uno | 1.000 pasos de `qpos`: `(1000, 9)` |
 | `(N, 3)` | una **nube de puntos**: N puntos en 3D | las posiciones de los 8 cuerpos: `(8, 3)` |
 | `(3, 3)` | una **matriz de rotación** (NB46) | la orientación del torso |
-| `(3, nv)` | un **jacobiano** (NB46) | el del pie: `(3, 9)` |
+| `(3, nv)` | un **jacobiano** (NB46: cuánto se mueve el pie al mover cada articulación) | el del pie: `(3, 9)` |
 | `(N, 3, 3)` | un **lote** de N rotaciones | la orientación de cada cuerpo: `(8, 3, 3)` |
-| `(E, T, n)` | E trayectorias (episodios, semillas...) | el `rollout` del NB49: `(8, 10000, 19)` |
+| `(E, T, n)` | E trayectorias (episodios, semillas...) | el `rollout` que verás en el NB49: `(8, 10000, 19)` |
 
 La convención casi universal: **el tiempo (o el índice del lote) va primero**, y las coordenadas, al final. Así, `trayectoria[t]` es el estado en el instante t, y `trayectoria[:, j]` es la evolución de la coordenada j a lo largo del tiempo.
 
@@ -101,7 +101,7 @@ print("trayectoria:", tray.shape, tray.dtype, "| contactos:", contactos.shape, c
 md(r"""Dos detalles importantes:
 
 - **`np.empty`** reserva memoria **sin inicializarla**: lo que hay dentro es "basura" (lo que hubiera antes en esa memoria). Es un poco más rápido que `np.zeros`, pero si te olvidas de rellenar alguna fila, tendrás números absurdos sin aviso. Úsalo solo si vas a rellenarlo **entero**.
-- **`tray[paso] = d.qpos`** **copia** los valores dentro de la fila del array (la asignación a una porción escribe **dentro**, NB27). No hay trampa de vistas aquí, a diferencia de `lista.append(d.qpos)` sin `.copy()`, que guardaría 1.500 veces la misma vista (NB45).
+- **`tray[paso] = d.qpos`** **copia** los valores dentro de la fila del array (la asignación a una porción escribe **dentro**, NB27). No hay trampa de vistas aquí, a diferencia de `lista.append(d.qpos)` sin `.copy()`, que guardaría 1.500 veces la misma vista (P1).
 
 ### Porciones: columnas y filas
 
@@ -172,7 +172,7 @@ md(r"""Hay pasos con la cadera baja **después** de que termine la fase de agach
 
 ### El primer instante en que algo pasa
 
-Un modismo muy útil: **`np.argmax(mascara)`** da la posición del **primer** `True` (porque `argmax` devuelve el primer máximo, y `True` > `False`). Lo usamos en NB49 y NB50 para medir "cuándo llega al 90 %". Pero cuidado con su trampa:
+Un modismo muy útil: **`np.argmax(mascara)`** da la posición del **primer** `True` (porque `argmax` devuelve el primer máximo, y `True` > `False`). Lo usarás en el NB49 y el NB50 para medir "cuándo llega al 90 %". Pero cuidado con su trampa:
 """),
 
 code(r"""print("primer paso bajo 0,8 m:", np.argmax(altura < 0.8))
@@ -225,7 +225,7 @@ print(f"último paso: diferencias {velocidad_cadera[-1]:.5f} | MuJoCo {d.qvel[1]
 
 md(r"""- **`np.diff`** da la diferencia entre vecinos: con `/ np.diff(tiempos)`, una velocidad (NB16: pendiente = cambio / tiempo). Tiene un elemento menos, así que para dibujarla contra el tiempo hay que usar `tiempos[1:]`.
 - **`np.gradient(x, t)`** calcula la pendiente en **cada** punto (con diferencias "centradas" en el interior: la media de la de antes y la de después), y conserva la longitud. Más cómoda para dibujar.
-- La diferencia de posiciones coincide (casi) con la velocidad que integra MuJoCo: con el integrador semiimplícito (NB49), la posición nueva se calcula **con** la velocidad nueva, así que `(q_nuevo − q_viejo) / dt` es justo esa velocidad.
+- La diferencia de posiciones coincide (casi) con la velocidad que integra MuJoCo: con el integrador semiimplícito (NB39b; lo verás a fondo en el NB49), la posición nueva se calcula **con** la velocidad nueva, así que `(q_nuevo − q_viejo) / dt` es justo esa velocidad.
 
 Y la operación inversa, **`np.cumsum`** (suma acumulada), reconstruye una posición sumando velocidades × dt: es una integral "a mano" (NB16), lo mismo que `itertools.accumulate` del P4, pero vectorizada.
 """),
@@ -280,7 +280,7 @@ md(r"""`diferencias[i, j]` es el vector que va del cuerpo j al cuerpo i, y su no
 
 ### Rotar muchos puntos a la vez
 
-Para rotar **un** punto `p` (forma `(3,)`) con una matriz `R`: `R @ p` (NB46). ¿Y para rotar **N** puntos guardados como filas de una matriz `(N, 3)`? `R @ puntos` no encaja: `(3, 3) @ (N, 3)` necesitaría que N fuera 3. El truco es **trasponer**:
+Para rotar **un** punto `p` (forma `(3,)`) con una matriz `R`: `R @ p` (lo verás a fondo en el NB46). ¿Y para rotar **N** puntos guardados como filas de una matriz `(N, 3)`? `R @ puntos` no encaja: `(3, 3) @ (N, 3)` necesitaría que N fuera 3. El truco es **trasponer**:
 """),
 
 code(r"""angulo = np.radians(30)
@@ -318,7 +318,7 @@ md(r"""## 6 · Vectorizar
 
 Un bucle de Python que hace una cuenta pequeña en cada vuelta paga, en **cada** vuelta, el coste del intérprete (averiguar el tipo de cada variable, buscar la operación, crear objetos nuevos...). NumPy hace la misma cuenta **en C**, sobre todo el array, pagando ese coste **una vez**. A **vectorizar** se le llama a convertir un bucle sobre elementos en operaciones sobre arrays enteros (NB27).
 
-Pongámoslo a prueba con algo de verdad: la **cinemática directa** de la pierna de Zancudo (NB46), es decir, la posición del tobillo respecto a la cadera a partir de los ángulos de cadera y rodilla, para **100.000** posturas. Con los muslos y piernas de 0,4 m, y midiendo los ángulos como en Zancudo:
+Pongámoslo a prueba con algo de verdad: la **cinemática directa** de la pierna de Zancudo (lo verás a fondo en el NB46), es decir, la posición del tobillo respecto a la cadera a partir de los ángulos de cadera y rodilla, para **100.000** posturas. Con los muslos y piernas de 0,4 m, y midiendo los ángulos como en Zancudo:
 
 ```
    x = L₁·sen(θ₁) + L₂·sen(θ₁ + θ₂)          z = −L₁·cos(θ₁) − L₂·cos(θ₁ + θ₂)
@@ -352,12 +352,12 @@ md(r"""El código vectorizado es **casi igual** que la fórmula (se lee mejor qu
 
 (`np.stack([x, z], axis=1)` apila dos vectores como **columnas** de una matriz; con `axis=0` serían filas. Es el compañero de `np.concatenate`, que **une** arrays a lo largo de una dimensión que ya existe, NB27.)
 
-Regla práctica: si escribes `for i in range(len(array))` y dentro solo hay cuentas con `array[i]`, casi seguro que se puede vectorizar. Lo que **no** se puede vectorizar fácilmente son los bucles en los que cada paso **depende del anterior** (como `mj_step`: el estado siguiente necesita el actual). Para esos están las herramientas del NB49 (`rollout`) y del NB59 (JAX).
+Regla práctica: si escribes `for i in range(len(array))` y dentro solo hay cuentas con `array[i]`, casi seguro que se puede vectorizar. Lo que **no** se puede vectorizar fácilmente son los bucles en los que cada paso **depende del anterior** (como `mj_step`: el estado siguiente necesita el actual). Para esos habrá otras herramientas: `rollout` (NB49) y JAX (NB59).
 """),
 
 md(r"""## 7 · np.linalg: el álgebra lineal del día a día
 
-En el NB46 usaste `pinv`, `lstsq`, `svd` y `cond` para la cinemática inversa. Aquí van las piezas más **básicas**, que aparecen por todas partes:
+En el NB46 usarás `pinv`, `lstsq`, `svd` y `cond` para la cinemática inversa (el P7 te los explica antes, desde cero). Aquí van las piezas más **básicas**, que aparecen por todas partes:
 """),
 
 code(r"""v = np.array([3.0, 4.0, 0.0])
@@ -375,7 +375,9 @@ md(r"""- **`np.linalg.norm(v)`**: la longitud de un vector (NB12). Con `axis`, l
 
 ### solve, no inv
 
-Para resolver un sistema de ecuaciones **A·x = b** (lo que hace MuJoCo en cada paso con la ecuación del movimiento, M·q̈ = ..., NB45), la tentación es calcular la inversa: `x = inv(A) @ b`. **No lo hagas**: usa `np.linalg.solve(A, b)`, que es más rápido y, sobre todo, más **preciso**:
+Para resolver un sistema de ecuaciones **A·x = b**, la tentación es calcular la inversa: `x = inv(A) @ b`. **No lo hagas**: usa `np.linalg.solve(A, b)`, que es más rápido y, sobre todo, más **preciso**.
+
+Lo probaremos con un **adelanto de lo que verás en el NB45**. En cada pasito, MuJoCo resuelve la ecuación de Newton de todo el robot: **masas × aceleraciones = fuerzas**. Como Zancudo tiene 9 coordenadas, las "masas" forman una tabla de 9×9, la **matriz de masas** M (`mj_fullM` la copia en un array), y las fuerzas se juntan en un vector de 9: `qfrc_actuator` (los motores), `qfrc_passive` (muelles y rozamientos de las articulaciones), `qfrc_constraint` (el suelo empujando los pies) y, restando, `qfrc_bias` (la gravedad y los efectos de los giros). La incógnita son las 9 aceleraciones q̈: M·q̈ = fuerzas es justo un sistema A·x = b. Hoy no hace falta entenderlo a fondo; fíjate solo en cómo se resuelve:
 """),
 
 code(r"""mujoco.mj_forward(zancudo, d)
@@ -388,7 +390,7 @@ aceleracion_inv = np.linalg.inv(M) @ fuerza
 print("solve ≈ inv:", np.allclose(aceleracion_solve, aceleracion_inv))
 print("¿coincide con la qacc de MuJoCo?", np.allclose(aceleracion_solve, d.qacc, atol=1e-6))
 
-# una matriz MAL condicionada (NB46): la de Hilbert, H[i, j] = 1 / (i + j + 1)
+# una matriz MAL condicionada (P7): la de Hilbert, H[i, j] = 1 / (i + j + 1)
 n = 10
 H = 1.0 / (np.arange(n)[:, None] + np.arange(n)[None, :] + 1)    # ¡broadcasting! (sección 5)
 x_verdad = np.ones(n)
@@ -397,14 +399,14 @@ print(f"número de condición: {np.linalg.cond(H):.1e}")
 for nombre, x in [("solve", np.linalg.solve(H, b)), ("inv  ", np.linalg.inv(H) @ b)]:
     print(f"{nombre}: error en x {np.abs(x - x_verdad).max():.1e} | residuo |H·x − b| {np.abs(H @ x - b).max():.1e}")"""),
 
-md(r"""- Con la matriz de masas de Zancudo (bien condicionada), `solve` e `inv` dan lo mismo, y recuperan **exactamente** la aceleración que calcula MuJoCo: la ecuación del movimiento del NB45, resuelta por nosotros.
-- Con una matriz **mal condicionada** (la de Hilbert de 10×10, un ejemplo clásico: su número de condición, NB46, es de 10¹³, así que los errores de redondeo se amplifican hasta 10¹³ veces), las dos se alejan de la solución exacta, pero `inv` lo hace **unas 14 veces peor** en x, y su **residuo** (cuánto falla al volver a meter la solución en la ecuación) es de 10⁻⁵ frente al 10⁻¹⁶ de `solve`: `solve` da una solución que cumple la ecuación hasta la última cifra; `inv`, no. Calcular la inversa entera y luego multiplicar acumula más errores que resolver directamente. Además, `solve` es más rápida, sobre todo con matrices grandes (no calcula la inversa entera, que no necesita).
+md(r"""- Con la matriz de masas de Zancudo (bien condicionada), `solve` e `inv` dan lo mismo, y recuperan **exactamente** la aceleración que calcula MuJoCo: la ecuación del movimiento que verás en el NB45, resuelta por nosotros.
+- Con una matriz **mal condicionada** (la de Hilbert de 10×10, un ejemplo clásico: su número de condición, que el P7 te explicará a fondo, es de 10¹³, así que los errores de redondeo se amplifican hasta 10¹³ veces), las dos se alejan de la solución exacta, pero `inv` lo hace **unas 14 veces peor** en x, y su **residuo** (cuánto falla al volver a meter la solución en la ecuación) es de 10⁻⁵ frente al 10⁻¹⁶ de `solve`: `solve` da una solución que cumple la ecuación hasta la última cifra; `inv`, no. Calcular la inversa entera y luego multiplicar acumula más errores que resolver directamente. Además, `solve` es más rápida, sobre todo con matrices grandes (no calcula la inversa entera, que no necesita).
 
-Regla: **nunca `inv(A) @ b`; siempre `solve(A, b)`**. Y si la matriz puede ser singular o no cuadrada (como un jacobiano), `lstsq` o `pinv` (NB46).
+Regla: **nunca `inv(A) @ b`; siempre `solve(A, b)`**. Y si la matriz puede ser singular o no cuadrada (como un jacobiano), `lstsq` o `pinv` (P7 y NB46).
 
 ### Comprobar propiedades con allclose
 
-Y un uso constante de `np.allclose`: comprobar propiedades matemáticas. Por ejemplo, que una matriz de rotación cumple RᵀR = I y det(R) = 1 (NB46):
+Y un uso constante de `np.allclose`: comprobar propiedades matemáticas. Por ejemplo, que una matriz de rotación cumple RᵀR = I y det(R) = 1 (lo verás en el NB46; el determinante, `det`, te lo explica el P7):
 """),
 
 code(r"""print("RᵀR = I:", np.allclose(R.T @ R, np.eye(3)), "| det(R) = 1:", np.isclose(np.linalg.det(R), 1.0))
@@ -417,7 +419,7 @@ md(r"""## 8 · Vistas y copias, a fondo
 
 ### La regla, completa
 
-La trampa que más horas hace perder con NumPy y MuJoCo (NB27, NB45). Aquí está **completa**:
+La trampa que más horas hace perder con NumPy y MuJoCo (NB27, P1). Aquí está **completa**:
 
 | Operación | ¿Vista o copia? |
 |---|---|
@@ -464,7 +466,7 @@ md(r"""- **`qpos += 1`** modifica el array **existente** (operación *in place*)
 
 ### out=: calcular sin crear arrays
 
-Para bucles muy rápidos, muchas funciones de NumPy aceptan **`out=`**: escriben el resultado en un array que ya existe, sin crear uno nuevo en cada vuelta (como el estilo "rellena este array" de MuJoCo, NB45):
+Para bucles muy rápidos, muchas funciones de NumPy aceptan **`out=`**: escriben el resultado en un array que ya existe, sin crear uno nuevo en cada vuelta (como el estilo "rellena este array" de MuJoCo: el `mj_fullM` de la sección 7):
 """),
 
 code(r"""destino = np.empty(3)
@@ -487,7 +489,7 @@ md(r"""Para `float64`, 2,2·10⁻¹⁶ (unas 16 cifras); para `float32`, 1,2·10
 
 ### El tiempo acumulado
 
-Ya lo viste en el NB49: `simular_zancudo(2.0)` devolvía un tiempo de `2.0000000000000013`. Sumar 0,002 mil veces acumula errores de redondeo:
+En el NB49 verás que una simulación de 2 segundos acaba con un tiempo de `2.0000000000000013`. Es fácil de reproducir: sumar 0,002 mil veces acumula errores de redondeo:
 """),
 
 code(r"""t = 0.0
@@ -496,7 +498,7 @@ for _ in range(1000):
 print(t, "| ¿igual a 2.0?", t == 2.0, "| ¿cerca?", np.isclose(t, 2.0))
 print("la forma robusta: contar PASOS (enteros) y multiplicar:", 1000 * 0.002)"""),
 
-md(r"""Por eso, en los bucles del curso, siempre contamos **pasos** (`for paso in range(int(round(segundos / dt)))`, NB49) en vez de comparar tiempos (`while t < segundos`): los enteros son **exactos**. Y para decidir si dos decimales son "iguales", **nunca `==`**: siempre con tolerancia.
+md(r"""Por eso, en los bucles del curso, contaremos **pasos** (`for paso in range(int(round(segundos / dt)))`, como en el NB49) en vez de comparar tiempos (`while t < segundos`): los enteros son **exactos**. Y para decidir si dos decimales son "iguales", **nunca `==`**: siempre con tolerancia.
 
 ### isclose y allclose: dos tolerancias
 
@@ -520,7 +522,7 @@ md(r"""Elige las tolerancias **pensando en las unidades**: para alturas en metro
 
 ### NaN se contagia
 
-Por último, el `NaN` (NB22, NB49): **cualquier** operación con un `NaN` da `NaN`, así que un solo `NaN` en un array **contagia** las sumas, las medias, los máximos...
+Por último, el `NaN` (NB22, P5): **cualquier** operación con un `NaN` da `NaN`, así que un solo `NaN` en un array **contagia** las sumas, las medias, los máximos...
 """),
 
 code(r"""notas = np.array([412.0, 455.2, np.nan, 430.8])
@@ -548,7 +550,7 @@ md(r"""## 10 · Resumen
 8. **Vistas y copias**: la tabla; `.base`, `np.shares_memory`; **`+=` modifica, `a = a + b` crea**; `datos.qpos[:] = ...`; `out=`.
 9. **Decimales**: épsilon (float64 ≈ 16 cifras, float32 ≈ 7); contar pasos enteros; **`isclose`/`allclose`** con `atol` y `rtol` pensadas en unidades; `NaN` se contagia, `np.isnan`, `nan*`, `NaN != NaN`.
 
-**El puente completo.** Con P1-P6 has subido, escalón a escalón, del Python de la Parte 3 al del Bloque A: leer código ajeno y documentación, funciones como piezas (callbacks, cierres, decoradores), clases que se comportan como las de Python, generadores y gestores de contexto, tipos y errores profesionales, y el NumPy de la robótica. Ahora, NB45-NB50 se leen de otra manera: te recomiendo **repasarlos** (aunque sea por encima) antes de seguir con el NB51.
+**Casi al final del puente.** Con P1-P6 has subido, escalón a escalón, del Python de la Parte 3 al del Bloque A: leer código ajeno y documentación, funciones como piezas (callbacks, cierres, decoradores), clases que se comportan como las de Python, generadores y gestores de contexto, tipos y errores profesionales, y el NumPy de la robótica. Solo falta el P7 (el álgebra lineal) y estarás listo para el Bloque A (NB45-NB50).
 
 ### Palabras nuevas de hoy
 
@@ -651,10 +653,10 @@ print(f"aceleración media de las articulaciones: {np.abs(np.diff(velocidades[:,
 
 ¡Sorpresa! `np.gradient` se equivoca en más de **1 rad/s** de media (y hasta casi 10), mientras que `np.diff` coincide con MuJoCo **exactamente** (error de 10⁻¹⁵: solo redondeo). Dos razones, y las dos son lecciones:
 
-1. **`np.diff` coincide exactamente por cómo integra MuJoCo** (NB49): el Euler semiimplícito calcula la posición nueva **con la velocidad nueva**, `q_nuevo = q_viejo + dt · v_nuevo`. Así que `(q_nuevo − q_viejo) / dt` **es** `v_nuevo`, por definición.
+1. **`np.diff` coincide exactamente por cómo integra MuJoCo** (NB39b; lo verás a fondo en el NB49): el Euler semiimplícito calcula la posición nueva **con la velocidad nueva**, `q_nuevo = q_viejo + dt · v_nuevo`. Así que `(q_nuevo − q_viejo) / dt` **es** `v_nuevo`, por definición.
 2. **`np.gradient` falla porque las articulaciones vibran**: las aceleraciones medias son de más de 1.000 rad/s² (los motores de posición, muelles duros con amortiguador, corrigen sin parar a escala de pocos pasos). La diferencia centrada **promedia** la pendiente de antes y la de después, y cuando la velocidad cambia 2 rad/s de un paso al siguiente, ese promedio se aleja de la velocidad del instante.
 
-Moraleja: para derivar datos, **conoce cómo se generaron**. Con datos de un simulador, la fórmula que coincide con su integrador es exacta; con datos de un robot real (ruidosos, NB41), ninguna derivada numérica es exacta, y suele hacer falta **filtrar** antes (P2: filtro paso bajo). (Como la simulación es determinista, NB45, la nueva simulación repite exactamente la trayectoria de la sección 2.)
+Moraleja: para derivar datos, **conoce cómo se generaron**. Con datos de un simulador, la fórmula que coincide con su integrador es exacta; con datos de un robot real (ruidosos, NB41), ninguna derivada numérica es exacta, y suele hacer falta **filtrar** antes (P2: filtro paso bajo). (Como MuJoCo es determinista, algo que comprobarás en el NB45, la nueva simulación repite exactamente la trayectoria de la sección 2.)
 </details>
 
 <details>
@@ -681,7 +683,7 @@ def energia(qd: np.ndarray, I: np.ndarray) -> float:
     return float(0.5 * np.sum(I * qd ** 2))
 ```
 
-`I * qd ** 2` es elemento a elemento, y `np.sum` suma. (Si `I` fuera la matriz de masas completa, la energía cinética sería `0.5 * qd @ M @ qd`, NB45.)
+`I * qd ** 2` es elemento a elemento, y `np.sum` suma. (Si `I` fuera la matriz de masas completa, la energía cinética sería `0.5 * qd @ M @ qd`, con la M de la sección 7; lo verás en el NB45.)
 </details>
 
 <details>

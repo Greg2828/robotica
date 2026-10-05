@@ -33,7 +33,7 @@ En la industria se usan las dos. Boston Dynamics hizo andar y saltar a Atlas dur
 
 Hoy construiremos los cuatro controladores clásicos y los **mediremos** unos contra otros, en un banco de pruebas: una pierna de Zancudo colgada de un soporte.
 
-En el hilo de Python, una pregunta de diseño: ¿cómo se organiza una **familia** de cosas intercambiables (aquí, controladores) para que el resto del código funcione con cualquiera de ellas? Respuesta: **clases abstractas**, **protocolos**, **composición** y el **patrón estrategia**.
+En el hilo de Python, una pregunta de diseño: ¿cómo se organiza una **familia** de cosas intercambiables (aquí, controladores) para que el resto del código funcione con cualquiera de ellas? Las piezas ya las conoces del puente (**clases abstractas** y **protocolos** del P5, **composición** y `__call__` del P3, *callbacks* del P2); hoy las juntamos en un diseño completo, el **patrón estrategia**, que en el P2 solo asomó en su forma más simple.
 """),
 
 code(r"""import os
@@ -166,7 +166,7 @@ md(r"""¡Los límites se han convertido en ±0,027 rad! MuJoCo leyó `-1.57 1.57
 **Regla:** pon **siempre** `<compiler angle="radian"/>` en tus MJCF. Y cuando un modelo se comporte de forma rara, mira `jnt_range`: es la comprobación más rápida. (Esto solo afecta a los ángulos **del fichero**: `qpos` y todo lo que MuJoCo calcula está siempre en radianes.)
 """),
 
-md(r"""## 3 · Python profesional: una familia de controladores
+md(r"""## 3 · Python profesional: una familia de controladores (repaso del P2, P3 y P5)
 
 ### El problema de diseño
 
@@ -174,11 +174,11 @@ Vamos a escribir cuatro controladores, y queremos **una sola** función `simular
 
 La idea clave: `simular` **no necesita saber qué controlador es**. Solo necesita poder **pedirle los pares**: "dados el modelo y los datos de ahora, ¿qué pongo en `ctrl`?". Si todos los controladores responden a esa misma pregunta de la misma forma, son **intercambiables**. A esa "forma común de responder" se le llama una **interfaz**.
 
-Este diseño tiene nombre: el **patrón estrategia** (*strategy pattern*). La "estrategia" (el controlador) se elige desde fuera y se le pasa al código que la usa (`simular`), que solo conoce la interfaz. Lo usas sin saberlo desde el NB34: `PPO("MlpPolicy", ...)` recibe la política como estrategia, y Gymnasium define una interfaz (`reset`, `step`) que todos los entornos cumplen (NB25).
+Este diseño tiene nombre: el **patrón estrategia** (*strategy pattern*; en el P2 lo viste en su versión mínima, con un diccionario de funciones). La "estrategia" (el controlador) se elige desde fuera y se le pasa al código que la usa (`simular`), que solo conoce la interfaz. Lo usas sin saberlo desde el NB34: `PPO("MlpPolicy", ...)` recibe la política como estrategia, y Gymnasium define una interfaz (`reset`, `step`) que todos los entornos cumplen (NB25).
 
-### Clases abstractas
+### Clases abstractas (repaso del NB25 y del P5)
 
-En Python, la forma más explícita de definir una interfaz es una **clase abstracta**, con el módulo `abc` (*abstract base classes*) de la biblioteca estándar:
+En Python, la forma más explícita de definir una interfaz es una **clase abstracta**, con el módulo `abc` (*abstract base classes*) de la biblioteca estándar. Ya la usaste en el NB25 para las políticas, y en el P5 la comparaste con `Protocol`:
 """),
 
 code(r'''from abc import ABC, abstractmethod
@@ -190,13 +190,13 @@ class Controlador(ABC):
     def __call__(self, modelo: mujoco.MjModel, datos: mujoco.MjData) -> np.ndarray:
         """Devuelve el vector de controles (uno por motor)."""'''),
 
-md(r"""Tres cosas nuevas:
+md(r"""Tres cosas que ya conoces, juntas:
 
 - **`class Controlador(ABC)`**: hereda de `ABC`, lo que la convierte en clase abstracta.
 - **`@abstractmethod`**: marca un método como **obligatorio**. La clase abstracta no lo implementa (solo tiene la docstring); cada clase hija **tiene que** implementarlo.
-- **`__call__`**: un método especial que hace que los objetos se puedan **llamar como funciones**: si `c` es un controlador, `c(modelo, datos)` ejecuta `c.__call__(modelo, datos)`. Es muy natural para cosas que "son" una función con memoria (como una política: `politica(observacion)`, NB43).
+- **`__call__`** (P3): el método especial que hace que los objetos se puedan **llamar como funciones**: si `c` es un controlador, `c(modelo, datos)` ejecuta `c.__call__(modelo, datos)`. Es muy natural para cosas que "son" una función con memoria (como una política: `politica(observacion)`, NB43).
 
-¿Qué gana uno con una clase abstracta? Dos protecciones. La primera: **no se puede crear** un "controlador" genérico, que no sabría qué hacer:
+Recordemos qué gana uno con una clase abstracta: dos protecciones. La primera: **no se puede crear** un "controlador" genérico, que no sabría qué hacer:
 """),
 
 code_err(r"""Controlador()"""),
@@ -248,11 +248,11 @@ md(r"""El vaivén mueve la cadera y la rodilla a la vez (±0,5 rad alrededor de 
 
 `np.zeros_like(q)` crea un array de ceros con la misma forma y tipo que `q`. Y `tuple[float, ...]` es la anotación de "una tupla de decimales, de cualquier longitud" (los `...` son literales: forman parte de la sintaxis). Usamos tuplas, no arrays, como valores por defecto: son inmutables (NB21), y una dataclass **no permite** arrays ni listas como valores por defecto, precisamente por la trampa de los mutables (NB23, NB46).
 
-### Protocolos: interfaces sin herencia
+### Protocolos: interfaces sin herencia (repaso del P5)
 
-`PosturaFija` y `Vaiven` no heredan de ninguna clase común, y sin embargo son intercambiables: las dos tienen un método `en(t)`. Python funciona así desde siempre: "si anda como un pato y hace cua como un pato, es un pato". Es el **tipado de pato** (*duck typing*): lo que importa es lo que un objeto **sabe hacer**, no de qué clase es.
+`PosturaFija` y `Vaiven` no heredan de ninguna clase común, y sin embargo son intercambiables: las dos tienen un método `en(t)`. Es el **tipado de pato** (*duck typing*) que viste en el P5: "si anda como un pato y hace cua como un pato, es un pato"; lo que importa es lo que un objeto **sabe hacer**, no de qué clase es.
 
-Para **documentar** (y que mypy pueda comprobar) esas interfaces "de pato", Python tiene los **protocolos**, en el módulo `typing`:
+Y, como en el P5, para **documentar** (y que mypy pueda comprobar) esas interfaces "de pato" usamos un **protocolo**, del módulo `typing`:
 """),
 
 code(r"""from typing import Protocol
@@ -262,7 +262,7 @@ class Trayectoria(Protocol):
 
 md(r"""Un `Protocol` dice "una `Trayectoria` es **cualquier cosa** que tenga un método `en(t)` que devuelva tres arrays". `PosturaFija` y `Vaiven` **cumplen** el protocolo sin haberlo mencionado nunca: no heredan de él. (Los `...` del cuerpo son literales: el protocolo solo describe, no implementa.)
 
-¿Cuándo usar cada cosa?
+Recordatorio de la tabla del P5: ¿cuándo usar cada cosa?
 
 | | Clase abstracta (ABC) | Protocolo |
 |---|---|---|
@@ -311,7 +311,7 @@ def simular(modelo: mujoco.MjModel, controlador: Controlador, segundos: float,
 md(r"""Detalles:
 
 - **`controlador: Controlador`**: la anotación dice "cualquier cosa que cumpla la interfaz de `Controlador`". `simular` solo hace `controlador(modelo, datos)`. Nada más. No sabe ni le importa si es un PD o un par calculado.
-- **`al_paso=None`**: un argumento opcional que es **una función** (NB23: las funciones son objetos y se pueden pasar). Si nos la dan, se llama en cada paso con los datos: nos servirá para mover el marcador verde o para hacer fotos. A este tipo de función que "se engancha" al proceso se le llama ***callback*** (de "llamar de vuelta"). SB3 usa callbacks para lo mismo (NB55).
+- **`al_paso=None`**: un argumento opcional que es **una función** (NB23 y P2: las funciones son objetos y se pueden pasar). Si nos la dan, se llama en cada paso con los datos: nos servirá para mover el marcador verde o para hacer fotos. Es un ***callback*** (de "llamar de vuelta"), como los del P2. SB3 usa callbacks para lo mismo (NB55).
 - **Al final, `np.array(lista_de_arrays)`** convierte la lista de 2.000 arrays de 3 números en **un** array de 2.000 × 3. Acumular en listas y convertir al final es mucho más rápido que ir pegando arrays de NumPy en cada paso.
 
 Y una función para medir el error de seguimiento, en las dos articulaciones que se mueven (cadera y rodilla). Usamos la **raíz del error cuadrático medio** (*RMS*, NB18): la medida estándar.
@@ -399,7 +399,7 @@ md(r"""**Error cero**: la pierna se queda exactamente donde debe. El término de
 Y fíjate en el `print`: gracias a los `__repr__`, la composición se describe sola, `PD(...) + Gravedad()`. Dos detalles más:
 
 - **`*partes`** en el `__init__` (NB23): acepta **cualquier número** de controladores, que llegan como una tupla. `Suma(a, b, c)` funciona igual que `Suma(a, b)`.
-- **`sum(parte(modelo, datos) for parte in self.partes)`**: una **expresión generadora** (NB21; las veremos a fondo en el NB48) que va llamando a cada parte; `sum` suma los arrays que devuelven.
+- **`sum(parte(modelo, datos) for parte in self.partes)`**: una **expresión generadora** (NB21; la viste a fondo en el P4) que va llamando a cada parte; `sum` suma los arrays que devuelven.
 """),
 
 md(r"""## 6 · Controlador 3: el par calculado
@@ -423,9 +423,9 @@ Si el modelo es **exacto**, la dinámica inversa consigue que la aceleración re
    ë  +  Kd · ė  +  Kp · e  =  0
 ```
 
-¡La ecuación de un **muelle con amortiguador** (NB40), **igual para todas las articulaciones** y **sin** gravedad, sin inercias, sin acoplamientos! Toda la complicación de la física ha desaparecido: el controlador la ha **cancelado** con el modelo. Por eso este método se llama también **linealización por realimentación** (*feedback linearization*): convierte un sistema complicado (no lineal) en uno sencillo (lineal), que se sabe ajustar con fórmulas.
+¡La ecuación de un **muelle con amortiguador** (NB39b, NB40), **igual para todas las articulaciones** y **sin** gravedad, sin inercias, sin acoplamientos! Toda la complicación de la física ha desaparecido: el controlador la ha **cancelado** con el modelo. Por eso este método se llama también **linealización por realimentación** (*feedback linearization*): convierte un sistema complicado (no lineal) en uno sencillo (lineal), que se sabe ajustar con fórmulas.
 
-En particular, las ganancias tienen ahora un significado limpio: el error se comporta como un oscilador con **frecuencia natural** ω = √Kp y **amortiguamiento** ζ = Kd / (2√Kp). Con nuestras ganancias de cadera y rodilla (Kp = 100, Kd = 20): ω = 10 rad/s y ζ = 1, el **amortiguamiento crítico**: el error vuelve a cero lo más rápido posible **sin oscilar**. (Cuidado con las unidades: aquí Kp multiplica radianes para dar **aceleraciones**, rad/s², no pares. Usamos los mismos números que en el PD para comparar, pero no significan lo mismo.)
+En particular, las ganancias tienen ahora un significado limpio, y ya lo conoces del NB39b: el error se comporta como un oscilador con **frecuencia natural** ω = √Kp y **amortiguamiento** ζ = Kd / (2√Kp) (las fórmulas del muelle, ω = √(k/m) y ζ = c / (2·√(k·m)), con k = Kp, c = Kd y una "masa" de 1, porque aquí controlamos directamente la aceleración). Con nuestras ganancias de cadera y rodilla (Kp = 100, Kd = 20): ω = 10 rad/s y ζ = 1, el **amortiguamiento crítico**: el error vuelve a cero lo más rápido posible **sin oscilar**. (Cuidado con las unidades: aquí Kp multiplica radianes para dar **aceleraciones**, rad/s², no pares. Usamos los mismos números que en el PD para comparar, pero no significan lo mismo.)
 
 Para llamar a `mj_inverse` sin estropear los datos de la simulación, el controlador lleva sus **propios datos** de trabajo (NB46: funciones "puras"). Y le pasamos, como opción, el **modelo que el controlador cree** que tiene el robot: lo usaremos en la sección 8.
 """),
@@ -486,7 +486,7 @@ print("frecuencia:      " + "".join(f"{f:>9.2f}" for f in frecuencias))
 for nombre, errores in resultados.items():
     print(f"{nombre:<16} " + "".join(f"{e:9.4f}" for e in errores))"""),
 
-md(r"""(`fabricar` es una pequeña **fábrica**, *factory*: una función que crea objetos a partir de un nombre. Es la pareja natural del patrón estrategia: el resto del código elige la estrategia por su nombre, por ejemplo desde un fichero de configuración, NB53.)
+md(r"""(`fabricar` es una pequeña **fábrica**, *factory*: una función que crea objetos a partir de un nombre. En el P2 fabricabas **funciones** con cierres; aquí fabricamos **objetos**. Es la pareja natural del patrón estrategia: el resto del código elige la estrategia por su nombre, por ejemplo desde un fichero de configuración, NB53.)
 
 Dibujado (con el eje vertical **logarítmico**, porque los errores van de 0,0000 a 0,2):
 """),
@@ -647,7 +647,7 @@ A cambio, el error del tobillo sube un poquito (de 7,0 a 7,7 mm RMS): el par que
 
 md(r"""### Verlo
 
-Grabamos el controlador con orientación. Usamos el *callback* `al_paso` de `simular` para **dos** cosas a la vez: mover el marcador verde al punto del círculo donde **debería** estar el tobillo (con `mocap_pos`) y hacer una foto cada 10 pasos. Como son dos cosas, escribimos una pequeña clase con `__call__` (¡un objeto que se llama como una función, igual que los controladores!):
+Grabamos el controlador con orientación. Usamos el *callback* `al_paso` de `simular` para **dos** cosas a la vez: mover el marcador verde al punto del círculo donde **debería** estar el tobillo (con `mocap_pos`) y hacer una foto cada 10 pasos. Como son dos cosas, escribimos una pequeña clase con `__call__` (P3: ¡un objeto que se llama como una función, igual que los controladores!):
 """),
 
 code(r"""import imageio
@@ -710,7 +710,7 @@ md(r"""## 11 · Resumen de la lección
 6. **Par calculado**: `mj_inverse` con a = q̈_d + Kp·e + Kd·ė. Si el modelo es exacto, el error obedece ë + Kd·ė + Kp·e = 0 (**linealización por realimentación**): ω = √Kp, ζ = Kd/(2√Kp). Sigue bien a cualquier velocidad.
 7. Con el **modelo equivocado** (+30 % de masa), el par calculado pierde casi toda su ventaja: el control con modelo es tan bueno como su modelo.
 8. **Espacio de la tarea**: τ = Jᵀ·F + gravedad, con F un "PD del punto"; sin cinemática inversa; la orientación del pie con el jacobiano de rotación.
-9. Python profesional: **clases abstractas** (`ABC`, `@abstractmethod`: error al crear si falta un método), **`__call__`**, **protocolos** (`typing.Protocol`, tipado de pato documentado), **composición** frente a herencia (`Suma`), **patrón estrategia** y **fábrica**, ***callbacks*** (`al_paso`), acumular en listas y convertir al final, arrays de trabajo reutilizados. `mj_step1`/`mj_step2` para controlar con los datos del instante actual.
+9. Python profesional (repaso del P2, P3 y P5, ahora en un diseño completo): **clases abstractas** (`ABC`, `@abstractmethod`: error al crear si falta un método), **`__call__`**, **protocolos** (`typing.Protocol`, tipado de pato documentado), **composición** frente a herencia (`Suma`), **patrón estrategia** y **fábrica**, ***callbacks*** (`al_paso`), acumular en listas y convertir al final, arrays de trabajo reutilizados. `mj_step1`/`mj_step2` para controlar con los datos del instante actual.
 
 ### Palabras nuevas de hoy
 
@@ -840,7 +840,7 @@ class ControladorLlamable(Protocol):
     def __call__(self, modelo: mujoco.MjModel, datos: mujoco.MjData) -> np.ndarray: ...
 ```
 
-Las funciones normales y los objetos con `__call__` (como nuestros controladores) cumplen ese protocolo. (Para algo tan sencillo, también vale `Callable[[mujoco.MjModel, mujoco.MjData], np.ndarray]`, del módulo `typing`.) Así se tiene lo mejor de los dos mundos: la clase abstracta para **nuestros** controladores, y el protocolo para **aceptar** cualquier cosa que sepa comportarse como uno.
+Las funciones normales y los objetos con `__call__` (como nuestros controladores) cumplen ese protocolo; es lo mismo que hacía la `Politica` del P5. (Para algo tan sencillo, también vale `Callable[[mujoco.MjModel, mujoco.MjData], np.ndarray]`, del P5.) Así se tiene lo mejor de los dos mundos: la clase abstracta para **nuestros** controladores, y el protocolo para **aceptar** cualquier cosa que sepa comportarse como uno.
 </details>
 
 <details>
@@ -874,7 +874,7 @@ md(r"""## 13 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-En el **NB48** abrimos la caja negra de los **contactos**: cómo detecta MuJoCo qué toca qué, cómo calcula las fuerzas de contacto (el modelo "blando" de `solref` y `solimp`), el rozamiento y su cono, los distintos solucionadores, y cómo medir las fuerzas de reacción del suelo y el **centro de presiones** (el ZMP del NB39, ¡medido de verdad!). En Python: generadores e iteradores, `Enum`, `NamedTuple` e `itertools`.
+En el **NB48** abrimos la caja negra de los **contactos**: cómo detecta MuJoCo qué toca qué, cómo calcula las fuerzas de contacto (el modelo "blando" de `solref` y `solimp`), el rozamiento y su cono, los distintos solucionadores, y cómo medir las fuerzas de reacción del suelo y el **centro de presiones** (el ZMP del NB39, ¡medido de verdad!). En Python, repasaremos en acción lo del P3 y el P4: generadores e iteradores, `NamedTuple` e `itertools`.
 """),
 
 ]

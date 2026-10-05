@@ -71,7 +71,7 @@ Segunda simplificación, y esta es la buena. Cuando un péndulo invertido normal
          (es siempre el mismo pie; tres momentos distintos)
 ```
 
-Fíjate en tu propia forma de andar: tu cabeza sube y baja muy poco, unos pocos centímetros. Y muchos robots humanoides andan con las rodillas **siempre un poco dobladas** precisamente para mantener el CdM a altura constante. A este modelo se le llama **péndulo invertido lineal** (en inglés, *Linear Inverted Pendulum Model*, **LIPM**). Lo propuso el ingeniero japonés **Shuuji Kajita** en 2001, y desde entonces está detrás de casi todos los robots bípedos.
+Fíjate en tu propia forma de andar: tu cabeza sube y baja muy poco, unos pocos centímetros. Y muchos robots humanoides andan con las rodillas **siempre un poco dobladas** precisamente para mantener el CdM a altura constante. A este modelo se le llama **péndulo invertido lineal** (en inglés, *Linear Inverted Pendulum Model*, **LIPM**). Lo propuso el ingeniero japonés **Shuuji Kajita** (con Kazuo Tani) en 1991, y en 2001 publicó su versión en 3D. Desde entonces está detrás de casi todos los robots bípedos.
 
 ¿Por qué "lineal"? Porque, como vamos a ver, con la altura constante la ecuación del movimiento se queda **sin senos**: es una recta, como la del NB11. Vamos a deducirla.
 """),

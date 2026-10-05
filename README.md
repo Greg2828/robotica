@@ -29,6 +29,11 @@ Los notebooks están en `notebooks/`, numerados de forma continua (`NB00`, `NB01
 un prefijo de fase. Cada fase termina con una **prueba de salida** cuyo resultado se guarda
 en `portafolio/`.
 
+**Orden de lectura:** por número. Las lecciones con **b** (`NB03b`, `NB28b`, `NB39b`…) son
+intermedias y se leen justo **después** de la de su número (rellenan matemáticas, física o
+Python que hacen falta a continuación). Entre el `NB44` y el `NB45` va el **puente de Python**,
+siete lecciones (`NB44p1` … `NB44p7`, llamadas P1…P7 en el texto).
+
 ## Dónde se ejecuta cada cosa
 
 - **Raspberry Pi 5 / portátil sin GPU (CPU):** fundamentos, MuJoCo en CPU, PyTorch en CPU,

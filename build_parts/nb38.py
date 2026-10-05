@@ -252,7 +252,7 @@ print(round(angulo_critico, 1), "grados")"""),
 
 md(r"""(Aquí `atan2(lado, altura)` da el ángulo **desde la vertical**, con las coordenadas cambiadas de papel, igual que el seno y el coseno se cambiaban de papel en el NB36, sección 7.)
 
-**18,4°**. La regla predice: inclinado menos de 18,4°, vuelve; inclinado más, vuelca. Que lo diga MuJoCo. Escribimos un plano con un suelo y un bloque libre (una `freejoint`: una "articulación" que deja a la pieza moverse y girar en todas direcciones, como un objeto suelto), inclinado θ grados con `euler` y colocado con la arista justo encima del suelo:
+**18,4°**. La regla predice: inclinado menos de 18,4°, vuelve; inclinado más, vuelca. Que lo diga MuJoCo. Escribimos un plano con un suelo y un bloque libre (una `freejoint`: una "articulación" que deja a la pieza moverse y girar en todas direcciones, como un objeto suelto), inclinado θ grados con `euler` y colocado con la arista justo encima del suelo. (Ojo: en el plano MJCF, `euler` va en **grados**, no en radianes: es lo que MuJoCo usa por defecto al leer ángulos de un plano, aunque por dentro trabaje en radianes. Lo verás en el NB42.)
 """),
 
 code(r"""def soltar_bloque(grados):

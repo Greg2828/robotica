@@ -149,7 +149,7 @@ La misma fuerza produce más o menos **giro** según **lo lejos del eje** que la
    par  =  fuerza  ×  brazo
 ```
 
-donde el **brazo** (o **brazo de palanca**) es la **distancia** del eje al punto donde empujas. Su unidad es **newton por metro**: **N·m**.
+donde el **brazo** (o **brazo de palanca**) es la **distancia** del eje al punto donde empujas. Su unidad es el **newton metro** (newton multiplicado por metro): **N·m**.
 
 ```
      bisagra                          pomo

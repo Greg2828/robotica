@@ -336,6 +336,8 @@ class PaloDeEscobaEnv(gym.Env):
 
 md(r"""(El docstring va con comillas simples triples, `'''`, por cómo están construidos estos cuadernos; en tus programas puedes usar cualquiera de las dos.)
 
+(Y el `dtype=np.float32` que aparece tres veces: le dice a NumPy en qué **formato** guardar los decimales. `float32` usa la mitad de memoria que el normal (`float64`) a cambio de menos cifras exactas (unas 7 en vez de 16), y es el que usan las redes neuronales y, por costumbre, Gymnasium. Lo verás a fondo en el NB27; por ahora, basta saber que los espacios y las observaciones tienen que usar el **mismo** formato, o el verificador de abajo se queja.)
+
 Fíjate en lo que **no** hace: no cuenta los pasos ni trunca a los 500. Eso se lo dejaremos a Gymnasium, que tiene una herramienta para ello (lo verás en un momento).
 
 Gymnasium trae un **verificador** oficial, `check_env`, que comprueba que el entorno cumple el contrato: que `reset` y `step` devuelven lo que deben, que las observaciones encajan

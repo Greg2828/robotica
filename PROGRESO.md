@@ -1,33 +1,20 @@
 # Progreso
 
-## ▶ PARA RETOMAR (sesión guardada 2026-10-02)
-- Hechos y subidos a GitHub: **NB00–NB31** (Parte 0 conceptual, Parte 1 primeros pasos, Parte 2 matemáticas, Parte 3 Python de verdad, Parte 4 RL hasta PyTorch), todos EXIT 0.
-- 2026-10-01: NB00–NB02 **revisados y ampliados** con datos verificados del Humanoid-v5
-  (17 motores reales sin tobillos, 3 ms/paso, 67 decisiones/s, cae en ~0,33 s al azar) y
-  conceptos que faltaban (subactuación, centro de masas, sensores, inercia, pelota a mano,
-  aleatorizar el mundo). Cada NB cierra con **Resumen + Palabras nuevas de hoy**.
-- **NB04 HECHO** → **✅ PARTE 0 COMPLETA (NB00–NB04)**.
-- **PARTE 1 en marcha:** NB05 (primer código), NB06 (variables), NB07 (bucles) HECHOS, EXIT 0.
-  `nbbuild.py` tiene ahora `code_err()` (etiqueta `raises-exception`) para enseñar errores REALES
-  sin romper la verificación. OJO: en Jupyter los NameError muestran `---->` (no `^^^^`) y no
-  sale el "Did you mean"; verificar siempre el texto contra la salida real.
-- NB08 (if), NB09 (listas), NB10 (funciones), NB11 (PROYECTO palo de escoba) HECHOS → **✅ PARTE 1 COMPLETA
-  (NB05–NB11)**. NB11 = entorno de RL desde cero (ficha, random+seed, paso/episodio/evaluar, 4 políticas,
-  diagnóstico por trayectoria, búsqueda aleatoria de 2 ruedecillas, generalización en semillas nuevas).
-- **PARTE 2 en marcha:** NB12 vectores, NB13 producto escalar, NB14 matrices, NB15 NumPy + humanoide REAL — HECHOS, EXIT 0.
-- NB16 pendientes, NB17 ascenso por gradiente, NB18 aprender imitando, NB19 redes neuronales — HECHOS, EXIT 0.
-  **Parte 2 tiene ya todas las piezas matemáticas de una red** (vector → producto escalar → matriz → NumPy → pendiente →
-  gradiente → regla de la cadena/retropropagación → activación ReLU).
-- **PARTE 3 · PYTHON DE VERDAD (NB20–NB27) ✅ COMPLETA** (pedido del usuario 2026-10-02: "no dejes nada de python por saber,
-  quiero trabajar de esto"). pytest instalado en el venv (añadido a requirements/fase0.txt). Las prácticas con ficheros van
-  a `notebooks/practica_nb26/` y `practica_nb27/` (en .gitignore; NB27 usa el palo.py que crea NB26).
-- **PARTE 4 · RL de verdad, en marcha**: NB28 probabilidad, NB29 REINFORCE, NB30 ruido/crítico/descuento, NB31 PyTorch — HECHOS,
-  EXIT 0. **PyTorch 2.14.1+cpu instalado en el venv** (anotado en requirements/fase0.txt).
-- **Siguiente: NB32 · Actor-crítico con redes de PyTorch** sobre el entorno Gymnasium propio (PaloDeEscoba-v0 del NB25):
-  actor = red que da la media (y σ aprendible), crítico = red V(s), ventaja con bootstrap paso a paso (TD), entrenamiento con
-  Adam; luego NB33 PPO desde cero (recorte, varias épocas por lote, GAE), NB34 Stable-Baselines3, NB35 proyecto Walker2d/Hopper.
-- Para continuar, dile a Claude: **«sigamos con robótica, NB32»**.
-- Rutina activa: tras cada notebook verificado → commit + push (repo privado Greg2828/robotica).
+## ▶ PARA RETOMAR (actualizado 2026-10-05)
+- **Hechos, verificados (EXIT 0) y subidos: NB00–NB50 + puente P1–P7 + 10 lecciones de relleno** (todo el
+  Bloque A de simulación a fondo incluido).
+- **Relleno de huecos tras la auditoría del 2026-10-04 (8 revisores leyeron NB00-NB50):** checklist en
+  `PLAN_HUECOS.md`. Los 10 notebooks nuevos están HECHOS (las "b" se leen justo después de su número):
+  NB03b números · NB04b letras y ecuaciones · NB05b ordenador por dentro y terminal · NB11b Python que vas a ver ·
+  NB15b exponencial y logaritmo · NB17b reglas de derivación · **NB28b matemáticas del gradiente de la política** ·
+  **NB38b energía, trabajo y potencia** · **NB39b muelles, amortiguadores y ecuaciones diferenciales** ·
+  **NB44p7 álgebra lineal para robótica** (último del puente).
+- Erratas, notas breves y repaso editorial del orden nuevo (puente P1-P6 sin dar por sabido NB45-NB50;
+  NB45-NB50 citando el puente como repaso): HECHOS. **Plan de huecos COMPLETO.**
+- **Orden de lectura:** … NB44 → P1 … P7 → NB45 … NB50 → (siguiente) NB51.
+- **Siguiente tras cerrar el plan de huecos: NB51 · Planificar pasos** (LIPM analítico, punto de captura, plan de
+  pasos, trayectorias del pie), Bloque B. Para continuar, dile a Claude: **«sigamos con robótica»**.
+- Rutina: tras cada notebook verificado → commit + push (repo GitHub público Greg2828/robotica).
 
 ## ⚠ GIRO DE ENFOQUE (2026-09-30)
 Gregori leyó los NB00–NB01 antiguos y le parecieron **demasiado código, demasiado pronto**:
@@ -650,6 +637,8 @@ no eran de nivel cero. Norma nueva del curso:
 ## Historial
 | Fecha | Hito | Nota |
 |---|---|---|
+| 2026-10-05 | NB28b, NB38b, NB39b, NB44p7 + erratas y notas de la auditoría | Los 10 NB de relleno, completos |
+| 2026-10-04 | Auditoría NB00-NB50 + NB03b, NB04b, NB05b, NB11b, NB15b, NB17b | Plan de huecos (PLAN_HUECOS.md) |
 | 2026-09-29 | NB00–NB03 antiguos (Fase 0) | Archivados en `_archivo/` tras el giro de enfoque |
 | 2026-09-30 | Giro a "nivel cero de verdad" + NB00 nuevo | Teoría primero, código en microdosis |
 | 2026-10-03 | NB34 Stable-Baselines3 + 1.er robot MuJoCo | Péndulo invertido 1000/1000, GIF |

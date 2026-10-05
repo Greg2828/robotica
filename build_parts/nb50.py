@@ -75,7 +75,7 @@ md(r"""## 2 · Clases de valores por defecto
 
 En el NB42 pusimos a Zancudo un `<default>` con valores para **todas** las articulaciones, formas y motores. Pero en un robot real no todas las piezas son iguales: las articulaciones de las piernas tienen un motor grande y las de los brazos uno pequeño; las suelas de los pies tienen más rozamiento que el resto del cuerpo; las mallas visuales no deben chocar... Con un único `<default>`, tendrías que repetir las diferencias pieza a pieza.
 
-La solución son las **clases**: `<default class="nombre">` dentro de otro `<default>`. Funcionan como la **herencia** de Python (NB24):
+La solución son las **clases**: `<default class="nombre">` dentro de otro `<default>`. Funcionan como la **herencia** de Python (NB24 y P3):
 
 - Una clase **hereda** todos los valores de su clase madre, y puede **cambiar** algunos.
 - Una pieza usa una clase con el atributo `class="nombre"`.
@@ -709,11 +709,11 @@ print("todos los .xml (en subcarpetas también):", sorted(p.name for p in AQUI.r
 
 md(r"""- **`.with_suffix(...)`** y **`.with_name(...)`** dan una ruta **nueva** cambiando la extensión o el nombre (no tocan ningún fichero: un `Path` es solo una dirección, NB26). Perfecto para "guarda el resultado al lado, con otro nombre".
 - **`.stat()`** da información del fichero: tamaño (`st_size`), fecha de modificación (`st_mtime`)...
-- **`.rglob("*.xml")`** busca **recursivamente** (en todas las subcarpetas); `.glob` busca solo en la carpeta. Devuelven un **generador** (NB48), por eso lo pasamos por `sorted`.
+- **`.rglob("*.xml")`** busca **recursivamente** (en todas las subcarpetas); `.glob` busca solo en la carpeta. Devuelven un **generador** (NB48 y P4), por eso lo pasamos por `sorted`.
 
 ### Carpetas temporales
 
-Para pruebas que escriben ficheros (como las de la sección 12), lo limpio es usar una carpeta **temporal**, que se borra sola al terminar. El módulo `tempfile` la da como **gestor de contexto** (NB49):
+Para pruebas que escriben ficheros (como las de la sección 12), lo limpio es usar una carpeta **temporal**, que se borra sola al terminar. El módulo `tempfile` la da como **gestor de contexto** (P4 y NB49):
 """),
 
 code(r"""import tempfile
@@ -852,7 +852,7 @@ m = spec.compile()
 print("sensores:", [m.sensor(i).name for i in range(m.nsensor)])
 print("posturas:", [m.key(i).name for i in range(m.nkey)], "| integrador:", mujoco.mjtIntegrator(m.opt.integrator).name)"""),
 
-md(r"""El patrón es siempre el mismo: **`add_...`** en el sitio donde va la pieza. Los sites y formas se añaden a un **cuerpo** (`cuerpo.add_site`, `cuerpo.add_geom`, `cuerpo.add_body`, `cuerpo.add_joint`); los sensores, actuadores, posturas y tendones, al **spec** (`spec.add_sensor`, `spec.add_actuator`, `spec.add_key`...). Los argumentos se llaman como los atributos del MJCF, y los tipos se dan con las enumeraciones de MuJoCo (`mjtGeom`, `mjtSensor`, `mjtObj`: NB48, son `IntEnum`).
+md(r"""El patrón es siempre el mismo: **`add_...`** en el sitio donde va la pieza. Los sites y formas se añaden a un **cuerpo** (`cuerpo.add_site`, `cuerpo.add_geom`, `cuerpo.add_body`, `cuerpo.add_joint`); los sensores, actuadores, posturas y tendones, al **spec** (`spec.add_sensor`, `spec.add_actuator`, `spec.add_key`...). Los argumentos se llaman como los atributos del MJCF, y los tipos se dan con las enumeraciones de MuJoCo (`mjtGeom`, `mjtSensor`, `mjtObj`: NB48, son `IntEnum`, que conoces del P3).
 
 El site `planta_d` es una caja de 22 × 8 × 7 cm (`size` da las **mitades**) que envuelve la cápsula del pie; el sensor `touch` suma la fuerza normal de todos los contactos cuyo punto cae dentro. Probémoslo todo:
 """),
@@ -980,7 +980,7 @@ Cuando un objeto tiene **muchas** opciones (la mayoría con un valor razonable p
 modelo = ConstructorBipedo().piernas(0.5, 0.5).torso(15).motores(kp=400, kv=25).construir()
 ```
 
-A esto se le llama **interfaz fluida** (*fluent interface*). Lo verás en muchas bibliotecas (en pandas, `df.dropna().sort_values(...).head()`; las propias `MjSpec` usan algo parecido).
+A esto se le llama **interfaz fluida** (*fluent interface*); ya te la presentó el P5 (apartado 6) al hablar de `Self`. Lo verás en muchas bibliotecas (en pandas, `df.dropna().sort_values(...).head()`; las propias `MjSpec` usan algo parecido).
 """),
 
 code(r"""from typing import Self
@@ -1056,7 +1056,7 @@ md(r"""Lo importante del diseño:
 
 - **Los métodos públicos** (`piernas`, `torso`, `motores`) solo **guardan** opciones y devuelven `self`. No fabrican nada todavía: así el orden en que se llamen da igual.
 - **`construir()`** es el único que fabrica. Y lo hace **delegando** en métodos privados (con `_` delante, NB24: "uso interno") que hacen una cosa cada uno. Una función de 60 líneas se convierte en cuatro de 10-15, cada una con un nombre que explica qué hace.
-- **`-> Self`** (de `typing`, desde Python 3.11): la anotación de "devuelve un objeto de esta misma clase". Si alguien crea una subclase (`class ConstructorHumanoide(ConstructorBipedo)`), el editor sabrá que `.piernas(...)` devuelve un `ConstructorHumanoide`, no un `ConstructorBipedo`.
+- **`-> Self`** (de `typing`, desde Python 3.11; repaso del P5, apartado 6): la anotación de "devuelve un objeto de esta misma clase". Si alguien crea una subclase (`class ConstructorHumanoide(ConstructorBipedo)`), el editor sabrá que `.piernas(...)` devuelve un `ConstructorHumanoide`, no un `ConstructorBipedo`.
 - **`motor.set_to_position(kp=..., kv=...)`**: el atajo `position` en versión `MjSpec`. Rellena `gainprm`, `biasprm` y `biastype` como en la sección 4 (hay también `set_to_motor`, `set_to_velocity`...).
 - Fíjate en el `damping=[1, 0, 0]`: en esta versión de MuJoCo, la amortiguación de una articulación es un **vector** de 3 números (admite amortiguación que crece con la velocidad), y el primero es el `damping` de siempre. Si pones un número suelto, `MjSpec` protesta.
 
@@ -1184,7 +1184,7 @@ md(r"""## 15 · Resumen de la lección (y del Bloque A)
 8. **Mallas**: la colisión usa la **envolvente convexa**. Geometría visual (malla) separada de la de colisión (formas sencillas o piezas convexas).
 9. **Python**: `pathlib` a fondo (`resolve`, `parents`, `relative_to`, `with_suffix`, `rglob`, `stat`, `tempfile`); `xml.etree` (`parse`, `iter`, `find`/`findall` con XPath, `get`/`set`, `write`) y sus límites.
 10. **MjSpec**: el modelo editable antes de compilar: `from_file`, `add_*`, `attach`, `delete`, `compile`, `recompile` (conserva el estado), `to_xml`.
-11. **Patrón constructor** con interfaz fluida (`return self`, `-> Self`): fabricar familias de robots; barridos de morfología.
+11. **Patrón constructor** con interfaz fluida (`return self`, `-> Self`, que ya conocías del P5): fabricar familias de robots; barridos de morfología.
 
 **El Bloque A completo**: sabes qué hay dentro de MuJoCo (modelo y datos, ecuación del movimiento, cinemática, dinámica inversa, contactos, integradores) y cómo se describe un robot profesional y se fabrica desde Python. Estás listo para hacer **andar** a Zancudo con física pura.
 
@@ -1384,7 +1384,7 @@ md(r"""## 17 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Con esto se cierra el **Bloque A: MuJoCo por dentro**. Empieza el **Bloque B: andar sin RL**. En el **NB51**, planificar los pasos: el **péndulo invertido lineal** (LIPM) resuelto a mano, el **punto de captura** (NB39) con fórmulas exactas, un plan de pasos y las trayectorias del pie en el aire. En Python: NumPy **vectorizado** a fondo (por qué un bucle de Python es 100 veces más lento que una operación de NumPy) y gráficas profesionales con matplotlib.
+Con esto se cierra el **Bloque A: MuJoCo por dentro**. Empieza el **Bloque B: andar sin RL**. En el **NB51**, planificar los pasos: el **péndulo invertido lineal** (LIPM) resuelto a mano, el **punto de captura** (NB39) con fórmulas exactas, un plan de pasos y las trayectorias del pie en el aire. En Python: NumPy **vectorizado**, que ya conoces del P6, puesto a prueba con números (por qué un bucle de Python es 100 veces más lento que una operación de NumPy) y gráficas profesionales con matplotlib.
 """),
 
 ]

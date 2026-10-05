@@ -2,8 +2,8 @@
 
 Detección: pares de geoms, fase amplia/estrecha, exclusión madre-hija,
 contype/conaffinity (regla de bits), la estructura contact (pos, frame, dist).
-Python: generadores (yield, perezosos, protocolo iterador), NamedTuple,
-IntEnum, itertools/collections. Contactos blandos: por qué (LCP frente a
+Python (repaso del P3/P4): generadores (yield, perezosos, protocolo iterador),
+NamedTuple, itertools/collections. Contactos blandos: por qué (LCP frente a
 optimización convexa), solref (timeconst, dampratio), penetración que no
 depende de la masa, impacto; solimp. Rebote: dampratio y solref negativo.
 Rozamiento: Coulomb, plano inclinado (umbral arctan μ), deslizamiento lento
@@ -33,7 +33,7 @@ Los contactos son, con diferencia, **la parte más difícil** de un motor de fí
 - "¿Cómo medirías la fuerza de reacción del suelo y el centro de presiones de un robot?"
 - "Tu robot simulado resbala despacio en una rampa en la que no debería. ¿Qué tocas?"
 
-Hoy contestaremos a todas con experimentos. Y en el hilo de Python: **generadores** (la forma de recorrer cosas "a demanda"), `NamedTuple`, `Enum` y los módulos `itertools` y `collections`.
+Hoy contestaremos a todas con experimentos. Y en el hilo de Python, un **repaso en acción** de lo que estudiaste en el P3 y el P4: **generadores** (la forma de recorrer cosas "a demanda"), `NamedTuple` y los módulos `itertools` y `collections`, ahora aplicados a los contactos.
 """),
 
 code(r"""import os
@@ -126,11 +126,11 @@ md(r"""- **`geom1`, `geom2`**: las dos geometrías (aquí, el suelo y el pie der
 Las 4 posiciones son el talón y la punta de cada pie: una cápsula sobre un plano da **un** punto de contacto por cada extremo que toca. (Una caja sobre un plano daría hasta 4, uno por esquina.)
 """),
 
-md(r"""## 2 · Python a fondo: generadores
+md(r"""## 2 · Python: generadores (repaso del P4)
 
 ### Recorrer contactos con comodidad
 
-Para trabajar con los contactos vamos a escribir a menudo "recorre los contactos, quédate con los que te interesan, y saca unos datos de cada uno". Podríamos hacer una función que devuelva una **lista**. Pero hay una herramienta de Python mejor para esto: un **generador**.
+Para trabajar con los contactos vamos a escribir a menudo "recorre los contactos, quédate con los que te interesan, y saca unos datos de cada uno". Podríamos hacer una función que devuelva una **lista**. Pero hay una herramienta de Python mejor para esto, que estudiaste a fondo en el P4: un **generador**. Repasémosla con un caso real.
 """),
 
 code(r"""from typing import NamedTuple, Iterator
@@ -151,11 +151,11 @@ def contactos(modelo: mujoco.MjModel, datos: mujoco.MjData) -> Iterator[Contacto
 for contacto in contactos(zancudo, datos):
     print(contacto)"""),
 
-md(r"""Dos cosas nuevas.
+md(r"""Dos cosas que ya conoces (del P3 y del P4), ahora en acción.
 
-**`NamedTuple`** (del módulo `typing`): una **tupla con nombres**. Se define como una dataclass (campos con anotaciones), pero es una tupla de verdad: **inmutable**, ligera, y se puede usar por posición (`contacto[2]`) **o** por nombre (`contacto.posicion`), y desempaquetar (`g1, g2, pos, dist = contacto`). Es perfecta para "registros" pequeños que no van a cambiar. ¿Dataclass o NamedTuple? Dataclass si necesitas métodos, valores por defecto mutables o que sea modificable; NamedTuple para datos sencillos e inmutables que quieres poder desempaquetar.
+**`NamedTuple`** (del módulo `typing`, P3): recuerda, una **tupla con nombres**. Se define como una dataclass (campos con anotaciones), pero es una tupla de verdad: **inmutable**, ligera, y se puede usar por posición (`contacto[2]`) **o** por nombre (`contacto.posicion`), y desempaquetar (`g1, g2, pos, dist = contacto`). Es perfecta para "registros" pequeños que no van a cambiar. ¿Dataclass o NamedTuple? Dataclass si necesitas métodos, valores por defecto mutables o que sea modificable; NamedTuple para datos sencillos e inmutables que quieres poder desempaquetar.
 
-**`yield`**: esta es la palabra clave de los **generadores**. Una función con `yield` dentro no es una función normal: al llamarla, **no se ejecuta**. Devuelve un objeto **generador**, que irá ejecutando el cuerpo de la función **a trozos**, cada vez que le pidan el siguiente elemento: corre hasta el `yield`, **entrega** ese valor, y se **queda congelada** ahí, con todas sus variables, hasta que le pidan el siguiente. Mira:
+**`yield`** (P4): la palabra clave de los **generadores**. Repaso rápido: una función con `yield` dentro no es una función normal; al llamarla, **no se ejecuta**. Devuelve un objeto **generador**, que irá ejecutando el cuerpo de la función **a trozos**, cada vez que le pidan el siguiente elemento: corre hasta el `yield`, **entrega** ese valor, y se **queda congelada** ahí, con todas sus variables, hasta que le pidan el siguiente. Mira:
 """),
 
 code(r"""generador = contactos(zancudo, datos)
@@ -165,14 +165,14 @@ print(next(generador).posicion)        # sigue desde ahí hasta el segundo"""),
 
 md(r"""`next(generador)` pide **el siguiente** elemento. Cuando ya no quedan, `next` lanza una excepción especial, `StopIteration`, que es la forma en que un generador dice "se acabó". El bucle `for` hace exactamente eso por dentro: llama a `next` una y otra vez hasta que recibe `StopIteration`.
 
-### ¿Por qué generadores y no listas?
+### ¿Por qué generadores y no listas? (recordatorio del P4)
 
 1. **Pereza** (*lazy evaluation*): un generador no calcula nada hasta que se lo piden. Si solo te interesa el **primer** contacto del pie izquierdo, el generador se detiene ahí, sin procesar los demás.
 2. **Memoria**: una lista guarda **todos** los elementos a la vez; un generador, **uno** cada vez. Para recorrer las 10 millones de líneas de un fichero de registro de un entrenamiento, la diferencia es entre que quepa en memoria o no.
 3. **Pueden ser infinitos**: un generador que produce números al azar, o que lee un sensor, puede no acabar nunca, y el que lo usa decide cuándo parar.
 4. **Encadenarse**: se pueden pasar de uno a otro, como una cadena de montaje, sin crear listas intermedias.
 
-Un aviso importante: **un generador se gasta**. Una vez recorrido, está vacío:
+Y la trampa que ya conoces del P4: **un generador se gasta**. Una vez recorrido, está vacío:
 """),
 
 code(r"""generador = contactos(zancudo, datos)
@@ -183,7 +183,7 @@ md(r"""La segunda vez, **cero**. Si necesitas recorrerlo varias veces, conviért
 
 ### Expresiones generadoras
 
-Igual que hay **listas por comprensión** (NB21), `[x * 2 for x in datos]`, hay **expresiones generadoras**, con paréntesis en vez de corchetes: `(x * 2 for x in datos)`. Son generadores escritos en una línea. Ya usamos una en el NB47, dentro de `sum(...)`. Por ejemplo, la penetración máxima:
+Igual que hay **listas por comprensión** (NB21), `[x * 2 for x in datos]`, hay **expresiones generadoras** (P4), con paréntesis en vez de corchetes: `(x * 2 for x in datos)`. Son generadores escritos en una línea. Ya usamos una en el NB47, dentro de `sum(...)`. Por ejemplo, la penetración máxima:
 """),
 
 code(r"""print("penetración máxima:", max(-c.distancia for c in contactos(zancudo, datos)) * 1000, "mm")"""),
@@ -192,11 +192,11 @@ md(r"""(Cuando la expresión generadora es el único argumento de una función, 
 
 ### El protocolo iterador
 
-Lo que hace que algo se pueda recorrer con `for` es un **protocolo** (como los del NB47): tener un método `__iter__` que devuelva un **iterador**, que es un objeto con un método `__next__`. Las listas, las tuplas, los diccionarios, los ficheros, los `range`... todos lo cumplen. Y los generadores son la forma más fácil de **fabricar** iteradores: Python les pone esos dos métodos automáticamente.
+Como viste en el P4, lo que hace que algo se pueda recorrer con `for` es un **protocolo** (como los del P5 y el NB47): tener un método `__iter__` que devuelva un **iterador**, que es un objeto con un método `__next__`. Las listas, las tuplas, los diccionarios, los ficheros, los `range`... todos lo cumplen. Y los generadores son la forma más fácil de **fabricar** iteradores: Python les pone esos dos métodos automáticamente.
 
 ### itertools y collections
 
-La biblioteca estándar trae dos módulos llenos de herramientas para trabajar con iteradores. Unas pocas, aplicadas a los contactos:
+Los dos módulos de la biblioteca estándar que exploraste en el P4. Unas pocas de sus herramientas, aplicadas a los contactos:
 """),
 
 code(r"""from collections import Counter
@@ -217,7 +217,7 @@ md(r"""- **`Counter`** cuenta cuántas veces aparece cada cosa: dos contactos po
 - **`islice(iterable, n)`** es como `lista[:n]`, pero para cualquier iterable, y **sin** generar lo que sobra.
 - **`groupby(iterable, key=...)`** agrupa los elementos **seguidos** que tienen la misma clave. ¡Ojo!, solo los seguidos: si los datos no vienen ordenados por la clave, hay que ordenarlos antes (`sorted(..., key=...)`). Aquí funciona porque MuJoCo da los contactos de cada pie juntos.
 
-Otros de `itertools` que verás en código profesional: `chain` (pegar varios iterables uno detrás de otro), `product` (todas las combinaciones, como bucles anidados: lo usaremos para barridos de parámetros en el NB55), `pairwise` (pares seguidos: (a, b), (b, c)...), `accumulate` (sumas acumuladas).
+Otros de `itertools` que ya viste en el P4 y que encontrarás en código profesional: `chain` (pegar varios iterables uno detrás de otro), `product` (todas las combinaciones, como bucles anidados: lo usaremos para barridos de parámetros en el NB55), `pairwise` (pares seguidos: (a, b), (b, c)...), `accumulate` (sumas acumuladas).
 """),
 
 md(r"""## 3 · Contactos blandos: por qué se atraviesan
@@ -232,7 +232,7 @@ En el mundo real, dos sólidos **no se atraviesan**. Y el rozamiento es "todo o 
 
 ### La solución de MuJoCo
 
-MuJoCo hace algo distinto, y es una de las claves de su éxito en robótica: plantea los contactos como un problema de **optimización convexa** (NB17: un problema con un único "fondo de valle", que siempre tiene solución y se encuentra de forma fiable), y a cambio **permite** que los cuerpos se atraviesen un poquito. Los contactos son "**blandos**": se comportan como un **muelle con amortiguador** (NB40) muy rígido, que empuja con más fuerza cuanto más se atraviesan.
+MuJoCo hace algo distinto, y es una de las claves de su éxito en robótica: plantea los contactos como un problema de **optimización convexa** (un problema con un único "fondo de valle", como el de los valles del NB17 pero sin valles falsos: siempre tiene solución y se encuentra de forma fiable), y a cambio **permite** que los cuerpos se atraviesen un poquito. Los contactos son "**blandos**": se comportan como un **muelle con amortiguador** (NB39b) muy rígido, que empuja con más fuerza cuanto más se atraviesan.
 
 Eso explica los 0,6 mm de penetración de los pies de Zancudo. No es un error: es el **diseño**. Y tiene ventajas enormes: la simulación es **estable**, **suave** (las fuerzas varían de forma continua, lo que ayuda al RL y a los métodos que usan derivadas, NB59) y **rápida**.
 
@@ -241,7 +241,7 @@ Eso explica los 0,6 mm de penetración de los pies de Zancudo. No es un error: e
 ¿Cómo de rígido es ese muelle? Lo decide el parámetro **`solref`** (*solver reference*), con dos números: `solref="timeconst dampratio"`, por defecto `"0.02 1"`.
 
 - **`timeconst`** (constante de tiempo): **lo rápido** que el contacto corrige una penetración, en segundos. Con 0,02, en unas pocas centésimas de segundo. Más pequeño = contacto más **duro**.
-- **`dampratio`** (razón de amortiguamiento, la ζ del NB47): con 1, amortiguamiento crítico: corrige **sin rebotar**.
+- **`dampratio`** (razón de amortiguamiento): es la **ζ** del muelle con amortiguador que estudiaste en el NB39b (y que usamos en el NB47). Con 1, amortiguamiento crítico: corrige **sin rebotar**; por debajo de 1, oscila (rebota).
 
 Hagamos un experimento: dejamos caer una caja de 10 kg desde 30 cm (su centro; la caja mide 20 cm, así que su base cae 20 cm) y medimos dos cosas: cuánto se hunde **en el impacto** (lo máximo) y cuánto queda hundida **en reposo**:
 """),
@@ -434,7 +434,7 @@ Una vez detectados los contactos, MuJoCo plantea el problema de optimización de
 
 - **PGS** (*projected Gauss-Seidel*): el más sencillo; va ajustando las fuerzas de una en una. Muchas iteraciones, cada una muy barata.
 - **CG** (gradiente conjugado): un término medio.
-- **Newton** (el valor por defecto): usa segundas derivadas (NB17); **muy** pocas iteraciones, cada una más cara. Suele ser el más rápido y preciso.
+- **Newton** (el valor por defecto): usa segundas derivadas (el método de Newton del NB17b); **muy** pocas iteraciones, cada una más cara. Suele ser el más rápido y preciso.
 
 Comparémoslos con Zancudo de pie durante 10 segundos: velocidad y número medio de iteraciones por paso:
 """),
@@ -611,7 +611,7 @@ Para terminar, lo que tiene que saber un ingeniero de simulación sobre contacto
 2. **Geometrías de colisión sencillas.** Cápsulas, esferas y cajas para los pies, aunque el robot real tenga formas complicadas. Mallas solo para ver (NB50, NB58). Los contactos malla-malla son lentos y "saltarines".
 3. **El número y la posición de los puntos de contacto importan.** Un pie de cápsula tiene dos puntos (talón y punta); uno de caja, cuatro. Los modelos profesionales a veces ponen pequeñas esferas en las esquinas de la suela para tener contactos estables.
 4. **Para robots con patas**: cono `elliptic`, `impratio` alto (10 es habitual en los modelos de MuJoCo Playground), y vigilar el deslizamiento lento.
-5. **Pasito de tiempo** y contactos van de la mano: contactos más duros (`timeconst` pequeño) necesitan pasitos más pequeños. La documentación de MuJoCo recomienda que `timeconst` sea, al menos, el doble del pasito. Lo veremos en el NB49.
+5. **Pasito de tiempo** y contactos van de la mano: contactos más duros (`timeconst` pequeño) necesitan pasitos más pequeños. La documentación de MuJoCo recomienda que `timeconst` sea, al menos, el doble del pasito. La idea de fondo ya la viste en el NB39b (un muelle muy rápido, con ω grande, pide pasito·ω pequeño); en el NB49 la veremos con los integradores de MuJoCo.
 6. **Medir** las fuerzas de contacto y el CdP en simulación sirve para **depurar** (¿por qué se cae mi robot?), para **recompensas** (castigar golpes fuertes al apoyar el pie, NB54) y como **observación** (los robots reales tienen sensores de contacto o los estiman).
 """),
 
@@ -619,7 +619,7 @@ md(r"""## 10 · Resumen de la lección
 
 1. **Detección** en dos fases (amplia con cajas, estrecha con fórmulas exactas). Se excluyen las parejas de un mismo cuerpo y madre-hija, las de `<exclude>` y las que no pasan **`contype & conaffinity`** (en cualquiera de los dos sentidos).
 2. `datos.contact`: `geom1`, `geom2`, `pos`, `dist` (negativa = atravesados), `dim` y `frame` (fila 0 = normal).
-3. Python: **generadores** (`yield`, perezosos, se gastan, `next`, `StopIteration`), expresiones generadoras, el protocolo iterador, `NamedTuple`, `Counter`, `islice`, `groupby` (¡solo agrupa seguidos!).
+3. Python (repaso del P3 y el P4): **generadores** (`yield`, perezosos, se gastan, `next`, `StopIteration`), expresiones generadoras, el protocolo iterador, `NamedTuple`, `Counter`, `islice`, `groupby` (¡solo agrupa seguidos!).
 4. **Contactos blandos**: optimización convexa en vez de complementariedad; se atraviesan un poquito, a cambio de estabilidad y suavidad. **`solref`** = (timeconst, dampratio): lo rápido que se corrige la penetración y si rebota. La penetración **no depende de la masa** (salvo con `solref` negativo = rigidez y amortiguamiento físicos). **`solimp`**: cuánto cede según la penetración.
 5. **Rebote**: dampratio < 1, o `solref` negativo con poco amortiguamiento.
 6. **Rozamiento** de Coulomb: como mucho μ·N; cono de rozamiento; en una rampa, desliza si tan θ > μ. **Deslizamiento lento** por los contactos blandos: se quita con cono **elíptico** + **`impratio`** + **noslip**. **`condim`** 1, 3, 4, 6; `friction` = (deslizar, girar, rodar).
@@ -653,7 +653,7 @@ md(r"""## 11 · Ejercicios
 
 **E2.** Repite el experimento de `dejar_caer` con `timeconst` de 0,001, 0,002, 0,004 y 0,008 (con `dampratio` 1). ¿Cómo cambia la penetración en reposo?
 
-**E3.** Escribe una función que encuentre el μ **mínimo** para que la caja **no** deslice en una rampa de 35°, por **búsqueda binaria** (como la bisección del NB17: si con μ desliza, el crítico es mayor; si no, menor). Compárala con tan(35°).
+**E3.** Escribe una función que encuentre el μ **mínimo** para que la caja **no** deslice en una rampa de 35°, por **búsqueda binaria** (probar en la mitad del intervalo y quedarte con la mitad donde está la respuesta, como al buscar una palabra en un diccionario: si con μ desliza, el crítico es mayor; si no, menor). Compárala con tan(35°).
 
 **E4.** Escribe un generador `fuerza_por_pie(modelo, datos)` que dé parejas `(pie, fuerza_vertical_total)` sumando los contactos de cada pie, usando `fuerzas_del_suelo`. Úsalo con Zancudo empujado hacia delante con 10 N. ¿Cambia el reparto entre los dos pies? ¿Por qué?
 
@@ -740,7 +740,7 @@ print(list(fuerza_por_pie(zancudo, d)))      # [('pie_d', 115.76), ('pie_i', 115
 
 **Los dos cargan lo mismo**, 115,76 N (la mitad del peso). El empuje es hacia **delante** (x) y Zancudo es simétrico de izquierda a derecha: lo que cambia es el reparto entre **talón y punta** de cada pie (el CdP avanza, sección 8), no entre pies. Para cargar más un pie habría que empujar de lado... y Zancudo, que es plano, ni siquiera puede caerse de lado (NB53).
 
-Dos cosas de Python: `yield from iterable` entrega, uno a uno, todos los elementos de otro iterable (aquí, las parejas del diccionario); y `dict.get(clave, 0.0)` da el valor guardado o 0,0 si la clave aún no está (otra forma de hacerlo: `collections.defaultdict(float)`).
+Dos cosas de Python (repaso del P4): `yield from iterable` entrega, uno a uno, todos los elementos de otro iterable (aquí, las parejas del diccionario); y `dict.get(clave, 0.0)` da el valor guardado o 0,0 si la clave aún no está (otra forma de hacerlo: `collections.defaultdict(float)`).
 </details>
 
 <details>

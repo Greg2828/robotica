@@ -20,9 +20,9 @@ cells = [
 
 md(r"""# NB44·P2 · Puente de Python (2): funciones como piezas
 
-**Puente de Python — Lección 2 de 6**
+**Puente de Python — Lección 2 de 7**
 
-> En el NB23 viste, de pasada, que las funciones son objetos, que se pueden fabricar (cierres) y envolver (decoradores). Fue una presentación rápida, con un ejemplo de cada cosa. Después, en el NB47 y el NB49, esas ideas volvieron convertidas en controladores intercambiables, decoradores con argumentos y `functools.partial`... sin escalones intermedios.
+> En el NB23 viste, de pasada, que las funciones son objetos, que se pueden fabricar (cierres) y envolver (decoradores). Fue una presentación rápida, con un ejemplo de cada cosa. En el NB47 y el NB49 esas ideas volverán convertidas en controladores intercambiables, decoradores con argumentos y `functools.partial`... y te harán falta los escalones intermedios.
 
 Hoy subimos esa escalera **peldaño a peldaño**, con mucha práctica. Todo gira alrededor de una idea:
 
@@ -99,7 +99,7 @@ for nombre, controlador in controladores.items():
 
 md(r"""`simular` no sabe **qué** controlador va a usar: lo recibe como argumento y lo **llama** en cada paso. Con "nada", el péndulo oscila (con su pequeña amortiguación); con "frenar", se para colgando (ángulo ~0); con "subir", lo lleva hasta arriba (π = 3,14 rad) y lo mantiene, como el péndulo invertido del NB34.
 
-Si mañana quieres un controlador nuevo, escribes la función y la añades al diccionario. `simular` no cambia. Este es el **patrón estrategia** del NB47, en su forma más simple: sin clases, solo funciones.
+Si mañana quieres un controlador nuevo, escribes la función y la añades al diccionario. `simular` no cambia. Este es el **patrón estrategia** (lo verás con clases en el NB47), en su forma más simple: sin clases, solo funciones.
 """),
 
 md(r"""## 2 · Funciones que reciben funciones
@@ -108,7 +108,7 @@ md(r"""## 2 · Funciones que reciben funciones
 
 Hemos pasado una función a `simular` para que **decida**. Otro uso, aún más común, es pasar una función para que la otra **te avise** de lo que pasa: un **callback** ("llamada de vuelta"). Tú le dices a la simulación: "en cada paso, llama a esta función mía", y dentro de tu función haces lo que quieras (guardar datos, dibujar, parar...).
 
-Es exactamente lo que hacen los *callbacks* de Stable-Baselines3 (NB47) o el `key=` de `sorted` (NB21). Vamos a darle a `simular` un parámetro opcional `al_paso`:
+Es exactamente lo que hace el `key=` de `sorted` (NB21), y lo que harán el `al_paso` del NB47 y los *callbacks* de Stable-Baselines3 más adelante. Vamos a darle a `simular` un parámetro opcional `al_paso`:
 """),
 
 code(r"""def simular(controlador, segundos: float = 3.0, q0: float = 1.0, al_paso=None) -> float:
@@ -169,7 +169,7 @@ print(list(filter(lambda a: a > 30, angulos_grados)))
 print([math.radians(a) for a in angulos_grados])
 print([a for a in angulos_grados if a > 30])"""),
 
-md(r"""Las dos formas hacen lo mismo. En Python moderno se prefieren las **comprensiones** (más legibles), pero `map` y `filter` aparecen mucho en código ajeno, y `map` es la que usa el multiproceso del NB49 (`repartidor.map(funcion, lista)`). (Devuelven un objeto "perezoso", por eso el `list(...)`: lo verás a fondo en el P4.)
+md(r"""Las dos formas hacen lo mismo. En Python moderno se prefieren las **comprensiones** (más legibles), pero `map` y `filter` aparecen mucho en código ajeno, y `map` es la que usará el multiproceso del NB49 (`repartidor.map(funcion, lista)`). (Devuelven un objeto "perezoso", por eso el `list(...)`: lo verás a fondo en el P4.)
 """),
 
 md(r"""## 3 · Parámetros solo por posición y solo por nombre
@@ -292,7 +292,7 @@ print(contar(), contar(), contar())"""),
 
 md(r"""Sin `nonlocal`, la línea `cuenta += 1` (que es una **asignación**: `cuenta = cuenta + 1`) haría que Python considerara `cuenta` una variable local nueva... y tendríamos el `UnboundLocalError` de la predicción 6 del P1. **`nonlocal cuenta`** le dice a Python: "esta variable es la de la función que me envuelve; cuando la cambie, cámbiala allí".
 
-Un ejemplo útil en robótica: un **filtro paso bajo** (NB41), que suaviza una señal ruidosa mezclando cada medida nueva con el valor filtrado anterior: `filtrado = α·medida + (1 − α)·filtrado_anterior`. Necesita **recordar** el valor anterior:
+Un ejemplo útil en robótica: un **filtro paso bajo** (pariente de la media móvil del NB41, pero sin guardar una ventana de medidas), que suaviza una señal ruidosa mezclando cada medida nueva con el valor filtrado anterior: `filtrado = α·medida + (1 − α)·filtrado_anterior`. Necesita **recordar** el valor anterior:
 """),
 
 code(r"""def crear_filtro(alfa: float):
@@ -394,7 +394,7 @@ Hay un problema escondido. ¿Cómo se llama ahora `simular_largo`?
 code(r"""print(simular_largo.__name__)
 print(simular_largo.__doc__)"""),
 
-md(r"""Se llama `envoltorio`, y ha perdido su documentación: el nombre `simular_largo` apunta al envoltorio, no a la función original. Eso confunde a `help`, a los mensajes de error, a los perfiladores (NB49)... El arreglo, **siempre**, es `functools.wraps`, que copia el nombre, la documentación y las anotaciones de la original en el envoltorio:
+md(r"""Se llama `envoltorio`, y ha perdido su documentación: el nombre `simular_largo` apunta al envoltorio, no a la función original. Eso confunde a `help`, a los mensajes de error, a los perfiladores (herramientas que miden cuánto tarda cada función; los verás en el NB49)... El arreglo, **siempre**, es `functools.wraps`, que copia el nombre, la documentación y las anotaciones de la original en el envoltorio:
 """),
 
 code(r"""import functools
@@ -473,7 +473,7 @@ print(pd_bruto(0.0, 0.0), pd_bruto(0.49, 0.0))"""),
 
 md(r"""Léelo desde fuera: `@recortar(-10, 10)` = `pd_bruto = recortar(-10, 10)(pd_bruto)`. Primero, `recortar(-10, 10)` devuelve `decorador` (un cierre que recuerda −10 y 10). Después, `decorador(pd_bruto)` devuelve `envoltorio`. Tres niveles, y cada uno recuerda lo del anterior.
 
-El PD bruto pediría 100 N·m (0,5 rad de error × 200), pero el recorte lo deja en 10. Con un error de 0,01 rad pide 2 N·m, dentro del rango, y pasa sin tocar. Es el **mismo patrón** que `@medir(repeticiones=5)` del NB49 y `@pytest.mark.parametrize(...)` del NB46.
+El PD bruto pediría 100 N·m (0,5 rad de error × 200), pero el recorte lo deja en 10. Con un error de 0,01 rad pide 2 N·m, dentro del rango, y pasa sin tocar. Es el **mismo patrón** que encontrarás en `@pytest.mark.parametrize(...)` (NB46) y en `@medir(repeticiones=5)` (NB49).
 
 ### Escalón 7: apilar decoradores
 
@@ -495,7 +495,7 @@ md(r"""## 7 · functools: partial y la caché
 
 ### partial frente a lambda
 
-`functools.partial(funcion, argumentos...)` crea una función nueva con algunos argumentos **ya puestos** (NB49). Es como una fábrica instantánea:
+`functools.partial(funcion, argumentos...)` crea una función nueva con algunos argumentos **ya puestos** (lo usarás en el NB49). Es como una fábrica instantánea:
 """),
 
 code(r"""simular_corto = functools.partial(simular, segundos=0.5, q0=2.0)
@@ -505,12 +505,12 @@ print(simular_corto.func.__name__, simular_corto.keywords)"""),
 md(r"""Lo mismo se podría hacer con `lambda c: simular(c, segundos=0.5, q0=2.0)`. ¿Por qué `partial`, entonces?
 
 1. Se **inspecciona**: `.func` y `.keywords` dicen qué función envuelve y qué argumentos ha fijado. Una `lambda` es una caja cerrada.
-2. Se puede enviar a **otro proceso** (NB49): `pickle` sabe guardar un `partial` de una función con nombre, pero **no** una `lambda`.
+2. Se puede enviar a **otro proceso** (el multiproceso del NB49): `pickle` sabe guardar un `partial` de una función con nombre, pero **no** una `lambda`.
 3. No tiene la trampa del cierre en un bucle: `partial` guarda los **valores** en el momento de crearse.
 
 ### lru_cache: no recalcular
 
-`functools.lru_cache` (y su versión sin límite, `functools.cache`) guarda los resultados de una función para no recalcularlos si se repiten los argumentos (NB49). El ejemplo clásico es una función recursiva que repite muchísimo trabajo:
+`functools.lru_cache` (y su versión sin límite, `functools.cache`) guarda los resultados de una función para no recalcularlos si se repiten los argumentos (volverá en el NB49). El ejemplo clásico es una función recursiva que repite muchísimo trabajo:
 """),
 
 code(r"""llamadas = 0
@@ -530,7 +530,7 @@ print(fib(25), "|", fib.cache_info())"""),
 
 md(r"""Fibonacci (cada número es la suma de los dos anteriores) escrito "tal cual" llama a `fib_lenta(23)` dos veces, a `fib_lenta(22)` tres veces... en total, **242.785 llamadas** para n = 25. Con la caché, cada `fib(n)` se calcula **una sola vez**: 26 cálculos (*misses*) y 23 veces que se reutiliza un resultado guardado (*hits*).
 
-Recuerda las dos condiciones para usar una caché (NB49): (1) que la función dé **siempre lo mismo** para los mismos argumentos (una **función pura**, NB46: sin azar, sin depender de nada de fuera); (2) que los argumentos se puedan usar como **claves de diccionario** (números, textos, tuplas: no listas ni arrays de NumPy). Y cuidado si devuelve objetos **modificables**: todos los que la llamen recibirán **el mismo**.
+Hay dos condiciones para usar una caché: (1) que la función dé **siempre lo mismo** para los mismos argumentos (una **función pura**: sin azar, sin depender de nada de fuera); (2) que los argumentos se puedan usar como **claves de diccionario** (números, textos, tuplas: no listas ni arrays de NumPy). Y cuidado si devuelve objetos **modificables**: todos los que la llamen recibirán **el mismo**.
 """),
 
 md(r"""## 8 · Resumen
@@ -560,7 +560,7 @@ md(r"""## 9 · Laboratorio
 
 **R1.** Escribe una tabla de despacho `operaciones` con cuatro funciones (`"sumar"`, `"restar"`, `"multiplicar"`, `"dividir"`) y una función `calcular(nombre, a, b)` que use la tabla. Si el nombre no existe, debe lanzar un `ValueError` con la lista de nombres válidos (como el `KeyError` amable de MuJoCo del P1).
 
-**R2.** Escribe un callback para `simular` que guarde la **energía** del péndulo en cada paso (pista: `datos.energy` necesita `<flag energy="enable"/>`, NB49... o calcúlala tú: cinética ½·I·qd² con I = m·L²/3 y potencial m·g·(L/2)·(1 − cos q)). ¿Baja con el controlador "nada"? ¿Por qué?
+**R2.** Escribe un callback para `simular` que guarde la **energía** del péndulo en cada paso (pista: `datos.energy` necesita `<flag energy="enable"/>` dentro de `<option>`, lo verás en el NB45... o calcúlala tú: cinética ½·I·qd² con I = m·L²/3 y potencial m·g·(L/2)·(1 − cos q)). ¿Baja con el controlador "nada"? ¿Por qué?
 
 **R3.** ★ Predice la salida y explica: `fs = [lambda: i for i in range(3)]; print([f() for f in fs])`.
 
@@ -570,7 +570,7 @@ md(r"""## 9 · Laboratorio
 
 **R6.** ★ Escribe un cierre `crear_media_movil(n)` que devuelva una función que reciba números de uno en uno y devuelva la media de los **n últimos**. (Pista: guarda una lista; o mejor, mira `collections.deque(maxlen=n)`, que verás en el P4.)
 
-**R7.** Escribe un decorador `@contar_llamadas` (sin mirar el E3 del NB49) usando `nonlocal` en vez de un atributo de la función. ¿Qué inconveniente tiene frente a la versión del NB49?
+**R7.** Escribe un decorador `@contar_llamadas` usando `nonlocal` en vez de un atributo de la función (`envoltorio.llamadas`, la versión que verás en el NB49). ¿Qué inconveniente tiene frente a la del atributo?
 
 **R8.** Escribe un decorador con argumentos `@repetir(n)` que llame a la función `n` veces y devuelva la **lista** de resultados. Pruébalo con una función que devuelve un número al azar.
 
@@ -621,7 +621,7 @@ simular(nada, segundos=10, al_paso=guardar_energia)
 print(f"energía al principio: {energias[0]:.3f} J; al final: {energias[-1]:.3f} J")
 ```
 
-Baja muchísimo: de 1,127 J a **0,003 J** en 10 segundos, porque la articulación tiene `damping="0.05"`: un amortiguador que convierte energía de movimiento en "calor" en cada oscilación. Con `damping="0"`, se mantendría casi constante (NB49: el integrador semiimplícito apenas pierde energía). (`I = m·L²/3` es la inercia de una varilla que gira por un extremo, NB37; la geometría es una cápsula y MuJoCo la calcula algo distinta, así que tu energía puede diferir un poco de `datos.energy`.)
+Baja muchísimo: de 1,127 J a **0,003 J** en 10 segundos, porque la articulación tiene `damping="0.05"`: un amortiguador que convierte energía de movimiento en "calor" en cada oscilación. Con `damping="0"`, se mantendría casi constante (el integrador de MuJoCo apenas pierde energía; lo verás en el NB45 y el NB49). (`I = m·L²/3` es la inercia de una varilla que gira por un extremo, NB37; la geometría es una cápsula y MuJoCo la calcula algo distinta, así que tu energía puede diferir un poco de `datos.energy`.)
 </details>
 
 <details>
@@ -704,7 +704,7 @@ def contar_llamadas(funcion):
     return envoltorio
 ```
 
-Funciona, pero la cuenta queda **encerrada**: desde fuera no hay forma limpia de leerla (salvo imprimiéndola, como aquí, o con el truco de `__closure__`). La versión del NB49, con un atributo (`envoltorio.llamadas`), deja leerla con `funcion.llamadas`. Si el estado tiene que verse desde fuera, un atributo (o una clase) es mejor que `nonlocal`.
+Funciona, pero la cuenta queda **encerrada**: desde fuera no hay forma limpia de leerla (salvo imprimiéndola, como aquí, o con el truco de `__closure__`). La versión con un atributo (`envoltorio.llamadas`, la del NB49) deja leerla con `funcion.llamadas`. Si el estado tiene que verse desde fuera, un atributo (o una clase) es mejor que `nonlocal`.
 </details>
 
 <details>

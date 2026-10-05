@@ -5,11 +5,11 @@ datos (MjData, lo que cambia y todo lo calculado). Python envuelve una
 biblioteca de C: los arrays de MjData son VISTAS a memoria de C. Acceso por
 nombre. Coordenadas generalizadas: qpos/qvel, nq ≠ nv (free 7/6, ball 4/3),
 jnt_qposadr/jnt_dofadr. El estado completo, mj_getState/mj_setState y el
-determinismo. Python a fondo: vistas vs copias (el bug de la trayectoria
+determinismo. Python (repaso del P6): vistas vs copias (el bug de la trayectoria
 repetida), np.shares_memory, .copy(), copy.copy(MjData). El pipeline de mj_step
 (posición, velocidad, actuación, aceleración, integración), mj_kinematics,
 mj_forward, mj_step1/mj_step2. La ecuación del movimiento M q̈ + c = τ + Jᵀf
-comprobada con números (mj_fullM, qfrc_*). Energía. Python profesional: type
+comprobada con números (mj_fullM, qfrc_*). Energía. Python (repaso aplicado de P3/P5): type
 hints, dataclasses (frozen, slots, field, la trampa de __eq__ con arrays),
 @property, @classmethod, __repr__: una clase Simulacion. Velocidad de MuJoCo.
 """
@@ -35,15 +35,15 @@ En una entrevista para un puesto de simulación o de locomoción te van a pregun
 
 Al final de este notebook sabrás contestar a todas, y no de memoria: **lo habrás comprobado con números**.
 
-Empieza también hoy una forma nueva de trabajar. Me pediste que, en esta parte, el **Python** se explique a **nivel profesional**, a fondo. Así que cada notebook de la Parte 6 tiene **dos hilos** que se entrelazan:
+Empieza también hoy una forma nueva de trabajar. Me pediste que, en esta parte, el **Python** sea de **nivel profesional**. La base ya la tienes: la construiste en el puente de Python (P1…P7). Así que cada notebook de la Parte 6 tiene **dos hilos** que se entrelazan, y el de Python **repasa y aplica** lo del puente (con algún tema nuevo de vez en cuando):
 
 | Hilo de MuJoCo | Hilo de Python |
 |---|---|
 | modelo y datos | Python como "envoltorio" de C |
-| coordenadas generalizadas, estado | **vistas y copias** (el bug más común con MuJoCo) |
+| coordenadas generalizadas, estado | **vistas y copias** (repaso del P6: el bug más común con MuJoCo) |
 | el pipeline de `mj_step` | |
 | la ecuación del movimiento | |
-| | **type hints**, **dataclasses**, `@property`, `@classmethod`, `__repr__` |
+| | repaso aplicado: **type hints** (P5), **dataclasses**, `@property`, `@classmethod`, `__repr__` (P3) |
 | | diseñar una clase de verdad: `Simulacion` |
 
 No son dos asignaturas separadas: el Python aparecerá justo cuando lo necesitemos para entender o para manejar MuJoCo.
@@ -147,7 +147,7 @@ print("integrador:      ", mujoco.mjtIntegrator(modelo.opt.integrator).name)""")
 
 md(r"""El pasito de **0,002 s** (500 por segundo, NB42), la gravedad de 9,81 m/s² hacia abajo (−z) y el **integrador**, que es el método numérico que usa MuJoCo para avanzar en el tiempo: `mjINT_EULER`, el de Euler (el de la pelota del NB07, ¡con un pequeño truco que veremos en la sección 6!). En el NB49 compararemos los cinco integradores que tiene MuJoCo.
 
-`mujoco.mjtIntegrator(0)` convierte el número 0 en un nombre legible. Es una **enumeración** (*enum*): una lista de valores con nombre. MuJoCo tiene muchas, todas con el prefijo `mjt`: `mjtIntegrator`, `mjtJoint` (tipos de articulación), `mjtGeom` (tipos de geometría)... Las enumeraciones de Python las veremos a fondo en el NB48.
+`mujoco.mjtIntegrator(0)` convierte el número 0 en un nombre legible. Es una **enumeración** (*enum*): una lista de valores con nombre. MuJoCo tiene muchas, todas con el prefijo `mjt`: `mjtIntegrator`, `mjtJoint` (tipos de articulación), `mjtGeom` (tipos de geometría)... Las enumeraciones de Python (`Enum`, `IntEnum`) ya las conoces del P3; las de MuJoCo se usan de forma muy parecida.
 """),
 
 md(r"""### Acceso por nombre
@@ -349,7 +349,7 @@ Si restauras el estado sin restaurar el warmstart, el solucionador arranca desde
 ¿Y las dos líneas con `.copy()` del experimento? Son la clave de la sección siguiente.
 """),
 
-md(r"""## 5 · Python a fondo: vistas y copias
+md(r"""## 5 · Python: vistas y copias (repaso del P6, ahora con memoria de C)
 
 ### El bug de la trayectoria repetida
 
@@ -377,7 +377,7 @@ print("¿comparten memoria con datos.qpos?        ", np.shares_memory(trayectori
 
 md(r"""### Qué es una vista
 
-En el NB27 vimos las **vistas** de NumPy: un array que **no tiene sus propios números**, sino que mira a los de otro. Por ejemplo, `a[2:5]` es una vista de `a`: si cambias la vista, cambias `a`.
+En el NB27, y a fondo en el P6, viste las **vistas** de NumPy: un array que **no tiene sus propios números**, sino que mira a los de otro. Por ejemplo, `a[2:5]` es una vista de `a`: si cambias la vista, cambias `a`.
 
 Con MuJoCo es igual, pero más extremo: `datos.qpos` es una **vista a la memoria de C** de MuJoCo. No hay ningún array "de Python" con los números: Python solo tiene una ventana que mira a donde MuJoCo los guarda. Esto es así **a propósito**, por velocidad: si cada vez que escribes `datos.qpos` se copiaran los números, todo sería mucho más lento, y escribir `datos.ctrl[:] = ...` no llegaría a MuJoCo.
 
@@ -412,7 +412,7 @@ datos.ctrl = np.ones(6)                 # ¿reasigna, o escribe dentro?
 print(ventana)                          # la vista de antes ve los unos: ¡ha escrito dentro!
 print("¿sigue siendo la misma memoria?", np.shares_memory(ventana, datos.ctrl))"""),
 
-md(r"""La vista antigua ve los unos: `datos.ctrl = ...` ha **copiado** los valores **dentro** de la memoria de MuJoCo. ¿Cómo es posible, si en Python `=` siempre cambia a dónde apunta un nombre? Porque `ctrl` no es un atributo normal: es una **propiedad** con un *setter*, un método que Python llama automáticamente al asignar, y que MuJoCo ha programado para copiar. Veremos las propiedades en la sección 9.
+md(r"""La vista antigua ve los unos: `datos.ctrl = ...` ha **copiado** los valores **dentro** de la memoria de MuJoCo. ¿Cómo es posible, si en Python `=` siempre cambia a dónde apunta un nombre? Porque `ctrl` no es un atributo normal: es una **propiedad** con un *setter*, un método que Python llama automáticamente al asignar, y que MuJoCo ha programado para copiar. Las propiedades con *setter* las viste en el P3; las repasamos en la sección 9.
 
 Como copia dentro de un array de tamaño fijo, si le das un número de valores equivocado, se queja:
 """),
@@ -527,7 +527,7 @@ velocidad nueva = velocidad + aceleración × dt
 posición nueva  = posición + velocidad (NUEVA) × dt
 ```
 
-Parece un cambio insignificante, pero hace que la simulación sea **mucho más estable**: con la versión del NB07, un muelle o un péndulo van ganando energía poco a poco hasta "explotar"; con la de MuJoCo, no. Se llama **Euler semiimplícito** (o **simpléctico**), y es la base de casi todos los motores de física de videojuegos. En el NB49 lo comprobaremos con un péndulo.
+Parece un cambio insignificante, pero hace que la simulación sea **mucho más estable**: con la versión del NB07, un muelle o un péndulo van ganando energía poco a poco hasta "explotar"; con la de MuJoCo, no. Se llama **Euler semiimplícito** (o **simpléctico**), y es la base de casi todos los motores de física de videojuegos. Ya lo probaste en el NB39b con un muelle (estable mientras pasito·ω < 2); en el NB49 lo comprobaremos con un péndulo dentro de MuJoCo.
 """),
 
 md(r"""## 7 · La ecuación del movimiento
@@ -738,11 +738,11 @@ md(r"""Tres momentos:
 
 md(r"""## 9 · Python profesional: diseñar una clase de verdad
 
-Hasta aquí hemos manejado `modelo` y `datos` sueltos, repitiendo siempre lo mismo: cargar, `mj_forward`, bucle de `mj_step`, copiar... En un proyecto de verdad, ese código se **organiza** en una clase. Y aprovechando, vamos a aprender las herramientas con las que un programador de Python profesional escribe clases hoy en día: **anotaciones de tipo**, **dataclasses**, **propiedades**, **métodos de clase** y **`__repr__`**.
+Hasta aquí hemos manejado `modelo` y `datos` sueltos, repitiendo siempre lo mismo: cargar, `mj_forward`, bucle de `mj_step`, copiar... En un proyecto de verdad, ese código se **organiza** en una clase. Y aprovechando, vamos a **repasar aplicándolas** las herramientas con las que un programador de Python profesional escribe clases hoy en día, y que ya estudiaste en el puente: **anotaciones de tipo** (P5), **dataclasses**, **propiedades**, **métodos de clase** y **`__repr__`** (P3). Si alguna te suena lejana, aquí la tienes otra vez, ahora al servicio de MuJoCo.
 
-### Anotaciones de tipo (*type hints*)
+### Anotaciones de tipo (*type hints*): repaso del P5
 
-En el NB24 vimos que en Python una variable puede guardar cualquier cosa, y que eso es cómodo pero peligroso. Desde hace unos años, Python permite **anotar** qué tipo de cosa esperamos, con dos puntos y una flecha:
+En el NB24 vimos que en Python una variable puede guardar cualquier cosa, y que eso es cómodo pero peligroso. Y en el P5 aprendiste a **anotar** qué tipo de cosa esperamos, con dos puntos y una flecha. Recordatorio rápido:
 """),
 
 code(r"""def energia_potencial(masa: float, altura: float, g: float = 9.81) -> float:
@@ -765,7 +765,7 @@ Entonces, ¿para qué sirven? Para tres cosas, y las tres importan en un trabajo
 
 1. **Leer el código.** `def paso(n: int) -> None` te dice de un vistazo qué entra y qué sale, sin leer el cuerpo de la función.
 2. **El editor te ayuda.** VS Code, PyCharm... usan las anotaciones para autocompletar y para subrayar en rojo los errores **antes** de ejecutar: el `"ja"` de arriba saldría subrayado.
-3. **Comprobadores automáticos.** Herramientas como **mypy** o **pyright** leen todo tu proyecto y te avisan de cada sitio donde los tipos no encajan, sin ejecutar nada. En muchas empresas, el código no se acepta si no pasa mypy.
+3. **Comprobadores automáticos.** Herramientas como **mypy** o **pyright** leen todo tu proyecto y te avisan de cada sitio donde los tipos no encajan, sin ejecutar nada. En muchas empresas, el código no se acepta si no pasa mypy (ya lo pasaste por tu código en el P5).
 
 Las anotaciones más comunes:
 
@@ -780,9 +780,9 @@ Las anotaciones más comunes:
 | `mujoco.MjModel` | un objeto de esa clase (¡cualquier clase sirve como tipo!) |
 """),
 
-md(r"""### Dataclasses: clases para guardar datos
+md(r"""### Dataclasses: clases para guardar datos (repaso del P3)
 
-En el NB24 escribimos clases a mano, con su `__init__` lleno de `self.x = x`. Para las clases cuyo trabajo principal es **guardar datos**, Python tiene un atajo profesional: el **decorador** `@dataclass` (los decoradores, a fondo, en el NB49; por ahora: una línea con `@` encima de una clase que la "mejora" automáticamente).
+En el NB24 escribimos clases a mano, con su `__init__` lleno de `self.x = x`. Para las clases cuyo trabajo principal es **guardar datos**, Python tiene un atajo profesional que estudiaste a fondo en el P3: el **decorador** `@dataclass` (los decoradores en general los viste en el P2: una línea con `@` encima que "mejora" automáticamente lo que hay debajo).
 
 Vamos a hacer una **instantánea** del estado de una simulación: el tiempo, las posiciones y las velocidades:
 """),
@@ -853,7 +853,7 @@ code_err(r"""foto.qpos[0] = 123.0"""),
 
 md(r"""Ahora sí: `ValueError: assignment destination is read-only`. La instantánea es una **foto** de verdad.
 
-### @classmethod: constructores alternativos
+### @classmethod: constructores alternativos (repaso del P3)
 
 `@classmethod` convierte un método en un **método de clase**: no recibe una instancia (`self`) como primer argumento, sino **la propia clase** (por convención, `cls`). Se llama sobre la clase, no sobre una instancia: `Instantanea.de(datos)`.
 
@@ -866,7 +866,7 @@ Su uso más típico es el de hoy: ofrecer **otras formas de construir** objetos.
 
 md(r"""### La trampa de == con arrays
 
-Ya que estamos, otra trampa que muerde a mucha gente. El `__eq__` que fabrica `@dataclass` compara los campos **uno a uno**, encadenados con `and`: más o menos, `self.tiempo == otra.tiempo and self.qpos == otra.qpos and self.qvel == otra.qvel`. Pero con arrays de NumPy, `==` no da **un** `True` o `False`: da **un array** de `True`/`False`, casilla a casilla (NB15). Y `and` necesita saber si eso es "verdadero"... Mira lo que pasa al comparar dos instantáneas idénticas:
+Ya que estamos, una trampa que muerde a mucha gente (ya te avisé de ella en el P3; aquí la ves con MuJoCo). El `__eq__` que fabrica `@dataclass` compara los campos **uno a uno**, encadenados con `and`: más o menos, `self.tiempo == otra.tiempo and self.qpos == otra.qpos and self.qvel == otra.qvel`. Pero con arrays de NumPy, `==` no da **un** `True` o `False`: da **un array** de `True`/`False`, casilla a casilla (NB15). Y `and` necesita saber si eso es "verdadero"... Mira lo que pasa al comparar dos instantáneas idénticas:
 """),
 
 code_err(r"""a = Instantanea(0.0, np.zeros(3), np.zeros(3))
@@ -882,12 +882,12 @@ Las soluciones profesionales:
 
 ### slots=True: más ligeras
 
-Una última opción de `@dataclass` que verás en código profesional: `slots=True`. Normalmente, cada objeto de Python guarda sus atributos en un diccionario interno (`__dict__`), lo que permite añadirle atributos nuevos en cualquier momento... y gasta memoria. Con `slots`, la clase declara de antemano sus atributos y no admite otros: los objetos ocupan menos y son algo más rápidos. Útil cuando creas **millones** de objetos pequeños (por ejemplo, una instantánea por paso de un entrenamiento largo).
+Una última opción de `@dataclass` del P3 que verás en código profesional: `slots=True`. Normalmente, cada objeto de Python guarda sus atributos en un diccionario interno (`__dict__`), lo que permite añadirle atributos nuevos en cualquier momento... y gasta memoria. Con `slots`, la clase declara de antemano sus atributos y no admite otros: los objetos ocupan menos y son algo más rápidos. Útil cuando creas **millones** de objetos pequeños (por ejemplo, una instantánea por paso de un entrenamiento largo).
 """),
 
 md(r"""### @property: atributos calculados
 
-Ahora la clase grande: una **`Simulacion`** que junte modelo, datos y las operaciones de siempre. Antes, la última herramienta: **`@property`**. Convierte un método en algo que se **lee como un atributo**, sin paréntesis:
+Ahora la clase grande: una **`Simulacion`** que junte modelo, datos y las operaciones de siempre. Antes, repasemos la última herramienta (P3): **`@property`**. Convierte un método en algo que se **lee como un atributo**, sin paréntesis:
 """),
 
 code(r"""class Robot:
@@ -1025,7 +1025,7 @@ md(r"""## 11 · Resumen de la lección
 7. **`mj_step` = `mj_forward` + integrar**. Cinco etapas: posición (cinemática, M, colisiones), velocidad (sesgo, pasivas), actuación, aceleración (con el solucionador de restricciones) e integración (Euler **semiimplícito**). `mj_kinematics` coloca las piezas; tras cambiar `qpos` a mano, calcula antes de leer.
 8. **M(q)q̈ + c(q,q̇) = τ + Jᵀf**, comprobada con un error de 10⁻¹³. M es simétrica y definida positiva; su diagonal es la "masa" de cada articulación (23,6 kg para avanzar el robot entero). En reposo, el sesgo es la gravedad: 231,516 N = el peso.
 9. **Energía**: potencial y cinética; en caída libre la total baja un 0,4 % por el error del integrador; en el choque, la caja pierde toda su energía cinética. Si la energía **sube** sola, la simulación está mal.
-10. Python profesional: **anotaciones de tipo** (documentación, no se comprueban al ejecutar; mypy), **dataclasses** (`frozen`, `slots`, la trampa de `==` con arrays), **`@classmethod`** (constructores alternativos), **`@property`** (atributos calculados), **`__repr__`**, docstrings, banderas de bits (`|`, `&`, `~`), `time.perf_counter`.
+10. Python profesional (repaso aplicado del P3, P5 y P6): **anotaciones de tipo** (documentación, no se comprueban al ejecutar; mypy), **dataclasses** (`frozen`, `slots`, la trampa de `==` con arrays), **`@classmethod`** (constructores alternativos), **`@property`** (atributos calculados), **`__repr__`**, docstrings, banderas de bits (`|`, `&`, `~`), `time.perf_counter`.
 
 ### Palabras nuevas de hoy
 
@@ -1192,7 +1192,7 @@ md(r"""## 13 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-En el **NB46** seguimos dentro de MuJoCo con la **cinemática**: cómo se describen posiciones y giros en 3D (matrices de rotación, cuaterniones de verdad, ángulos de Euler), qué es un **jacobiano** (la J de la ecuación de hoy) y cómo se usa para la **cinemática inversa**: "quiero el pie aquí; ¿qué ángulos pongo?". Y en el hilo de Python: NumPy para álgebra lineal a fondo, funciones puras, docstrings profesionales y pruebas con pytest.
+En el **NB46** seguimos dentro de MuJoCo con la **cinemática**: cómo se describen posiciones y giros en 3D (matrices de rotación, cuaterniones de verdad, ángulos de Euler), qué es un **jacobiano** (la J de la ecuación de hoy) y cómo se usa para la **cinemática inversa**: "quiero el pie aquí; ¿qué ángulos pongo?". Y en el hilo de Python: NumPy para álgebra lineal (aplicando lo del P6 y el P7), funciones puras, docstrings profesionales y pruebas con pytest.
 """),
 
 ]

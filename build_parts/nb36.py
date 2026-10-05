@@ -145,7 +145,7 @@ code(r"""print(360 / (2 * math.pi), "grados en 1 radián")"""),
 
 md(r"""### ¿Por qué complicarse con radianes?
 
-Porque con radianes **muchas fórmulas se vuelven sencillísimas**. La más importante: si un punto está a una distancia **r** del centro y gira un ángulo **θ** (la letra griega "zeta", la que se usa casi siempre para los ángulos) en radianes, recorre un trozo de borde (un **arco**) de largo:
+Porque con radianes **muchas fórmulas se vuelven sencillísimas**. La más importante: si un punto está a una distancia **r** del centro y gira un ángulo **θ** (la letra griega "theta", que se pronuncia "zeta" en español y es la que se usa casi siempre para los ángulos) en radianes, recorre un trozo de borde (un **arco**) de largo:
 
 ```
    arco  =  r × θ

@@ -105,7 +105,7 @@ md(r"""Lo que dice el plano:
 - **`world`** no es una pieza del robot: es el **mundo** (el suelo), que MuJoCo cuenta como pieza número 0, con masa 0.
 - Cuatro piezas de verdad: **torso, muslo, pierna y pie**, unas 16 kg en total.
 - **Tres motores**, uno en cada bisagra (NB01): cadera, rodilla y tobillo. El **multiplicador** (*gear*, "engranaje") de 200 significa que una acción de 1 se convierte en un par de giro de 200 (NB01:
-  el "par" es la fuerza de giro de un motor). Por eso las acciones van de −1 a 1: el robot dice "cuánto de su fuerza máxima" usa cada motor.
+  el "par" es la fuerza de giro de un motor; en el NB37 verás exactamente qué es y en qué se mide). Por eso las acciones van de −1 a 1: el robot dice "cuánto de su fuerza máxima" usa cada motor.
 
 Ahora, lo que **ve** y lo que **hace**:
 """),

@@ -11,8 +11,9 @@ diferencias finitas, mj_jacSite (y la trampa de mj_comPos), velocidad = J·q̇
 frente a mj_objectVelocity, Jᵀf (fuerza ↔ par). Singularidades: número de
 condición y valores singulares. Cinemática inversa: Newton con pseudoinversa,
 mínimos cuadrados amortiguados, objetivo inalcanzable, límites; el pie dibuja
-un círculo (GIF). Python: numpy.linalg a fondo (solve vs inv, pinv, lstsq, svd,
-cond), funciones puras, docstrings estilo NumPy, numpy.typing y alias de tipo,
+un círculo (GIF). Python: repaso aplicado de numpy.linalg (P6/P7: solve vs inv,
+pinv, lstsq, svd, cond), funciones puras (P2), docstrings estilo NumPy,
+numpy.typing y alias de tipo (P5),
 %%writefile, un módulo cinematica.py con tests de pytest (parametrize,
 assert_allclose, pruebas con azar sembrado).
 """
@@ -34,9 +35,9 @@ Hoy aprenderás las tres herramientas de cinemática que usa cualquier ingeniero
 2. **El jacobiano**: la matriz que convierte velocidades de las articulaciones en velocidades del pie (y fuerzas del pie en pares de los motores). Es la **J** de la ecuación del NB45.
 3. **La cinemática inversa**: "quiero el pie **aquí**; ¿qué ángulos pongo?". La pregunta que hay detrás de cualquier robot que coloca un pie o una mano.
 
-En el hilo de Python, el álgebra lineal de NumPy **a fondo** (`np.linalg`), y tres hábitos de profesional: **funciones puras**, **docstrings** en el formato estándar, y **tests** de verdad con pytest para el código numérico.
+En el hilo de Python, el álgebra lineal de NumPy (`np.linalg`) que estudiaste en el P6 y el P7, ahora **aplicada** a robots de verdad, y tres hábitos de profesional: **funciones puras**, **docstrings** en el formato estándar, y **tests** de verdad con pytest para el código numérico.
 
-Una advertencia: este notebook tiene bastantes matemáticas. Todas se construyen sobre lo que ya sabes (vectores y matrices, NB12-NB14; pendientes, NB16; senos y cosenos, NB36), y todas se **comprueban** con números de MuJoCo. Si una sección se hace dura, léela con calma y ejecuta sus celdas: ver los números ayuda mucho.
+Una advertencia: este notebook tiene bastantes matemáticas. Todas se construyen sobre lo que ya sabes (vectores y matrices, NB12-NB14 y el P7; pendientes, NB16; senos y cosenos, NB36), y todas se **comprueban** con números de MuJoCo. Si una sección se hace dura, léela con calma y ejecuta sus celdas: ver los números ayuda mucho.
 """),
 
 code(r"""import os
@@ -137,8 +138,8 @@ md(r"""### Tres propiedades que hay que saber
 
 Una matriz de rotación no es una matriz cualquiera. Cumple siempre tres cosas, y conviene saberlas para la entrevista y para **detectar errores**:
 
-1. **Sus columnas tienen longitud 1 y son perpendiculares entre sí** (los ejes del cuerpo son ejes de verdad: ni se estiran ni se tuercen). En fórmula: **RᵀR = I** (la traspuesta por ella misma da la identidad). A las matrices así se las llama **ortogonales**.
-2. **Su determinante vale +1** (no −1: eso sería un **espejo**, que cambia la izquierda por la derecha; ningún giro hace eso).
+1. **Sus columnas tienen longitud 1 y son perpendiculares entre sí** (los ejes del cuerpo son ejes de verdad: ni se estiran ni se tuercen). En fórmula: **RᵀR = I** (la traspuesta por ella misma da la identidad; traspuesta e identidad, P7). A las matrices así se las llama **ortogonales**.
+2. **Su determinante vale +1** (no −1: eso sería un **espejo**, que cambia la izquierda por la derecha, como viste en el P7; ningún giro hace eso).
 3. **Su inversa es su traspuesta**: deshacer un giro es tan fácil como trasponer la matriz. Rᵀ "desgira".
 """),
 
@@ -150,7 +151,7 @@ print("¿la inversa es la traspuesta?", np.allclose(np.linalg.inv(R), R.T))"""),
 
 md(r"""Las tres se cumplen (salvo el ruido de los decimales, del orden de 10⁻¹⁶, NB06).
 
-La tercera es muy práctica. Calcular la **inversa** de una matriz cualquiera es caro y delicado (sección 6); trasponer es gratis. Cada vez que tengas que "deshacer" un giro, traspón.
+La tercera es muy práctica. Calcular la **inversa** de una matriz cualquiera es caro y delicado (P6, y lo repasamos en la sección 8); trasponer es gratis. Cada vez que tengas que "deshacer" un giro, traspón.
 
 ### Componer giros: el orden importa
 
@@ -587,8 +588,8 @@ En el jacobiano, una singularidad se ve como una matriz que "se aplasta": sus co
 
 Midámoslo con el trozo del jacobiano que nos importa: filas x y z, columnas cadera y rodilla (un jacobiano de 2 × 2). Y con dos medidas de `np.linalg`:
 
-- **`np.linalg.svd(..., compute_uv=False)`** da los **valores singulares**: cuánto se mueve el tobillo (por radián) en la dirección **más fácil** y en la **más difícil**. Si el más pequeño es cero, hay una dirección imposible.
-- **`np.linalg.cond`** da el **número de condición**: el cociente entre el mayor y el menor valor singular. Cuanto más grande, más "aplastado" está, y más se amplifican los errores al resolver ecuaciones con esa matriz (sección 8).
+- **`np.linalg.svd(..., compute_uv=False)`** da los **valores singulares** (la SVD del P7: el círculo que se convierte en elipse): cuánto se mueve el tobillo (por radián) en la dirección **más fácil** y en la **más difícil**. Si el más pequeño es cero, hay una dirección imposible.
+- **`np.linalg.cond`** da el **número de condición** (P7): el cociente entre el mayor y el menor valor singular. Cuanto más grande, más "aplastado" está, y más se amplifican los errores al resolver ecuaciones con esa matriz (sección 8).
 """),
 
 code(r"""print(" rodilla  |  determinante  | valores singulares |  condición")
@@ -613,13 +614,13 @@ md(r"""A medida que la rodilla se estira:
 **¿Por qué importan las singularidades en un bípedo?** Porque las personas (y muchos robots) **andan con la rodilla casi estirada**, ¡justo al lado de la singularidad! Ahí, como viste con Jᵀf, sostener el peso cuesta poco par. Pero controlar la **posición** del pie se vuelve delicado: cualquier método que necesite "invertir" el jacobiano (la sección siguiente) se vuelve inestable. Por eso muchos robots humanoides andan con las rodillas un poco dobladas (NB39 lo explicaba con el péndulo invertido lineal; aquí tienes la otra razón).
 """),
 
-md(r"""## 8 · Python a fondo: álgebra lineal con NumPy
+md(r"""## 8 · Python: álgebra lineal con NumPy (repaso del P6 y el P7)
 
-Antes de la cinemática inversa, que es resolver ecuaciones con el jacobiano, repasemos con calma las herramientas de `np.linalg`, porque usarlas bien es lo que distingue el código numérico profesional del de aficionado.
+Antes de la cinemática inversa, que es resolver ecuaciones con el jacobiano, repasemos las herramientas de `np.linalg` que ya conoces del P6 y el P7, porque usarlas bien es lo que distingue el código numérico profesional del de aficionado. Será un recordatorio rápido, con los mismos experimentos, para tenerlo fresco justo antes de usarlo.
 
 ### Resolver A·x = b: solve, no inv
 
-El problema más común del álgebra lineal: conocemos una matriz **A** y un vector **b**, y buscamos **x** tal que **A · x = b**. En el instituto se enseña "x = A⁻¹ · b": calcular la **inversa** y multiplicar. En el ordenador, **casi nunca se hace así**. Se usa `np.linalg.solve(A, b)`, que resuelve directamente (con el método de eliminación de Gauss, en su versión "factorización LU"). Comparemos con una matriz bien difícil, la de **Hilbert** (cuyas casillas son 1/(i + j + 1)), famosa por estar casi singular:
+El problema más común del álgebra lineal: conocemos una matriz **A** y un vector **b**, y buscamos **x** tal que **A · x = b**. En el instituto se enseña "x = A⁻¹ · b": calcular la **inversa** y multiplicar. En el ordenador, **casi nunca se hace así**. Se usa `np.linalg.solve(A, b)`, que resuelve directamente (con el método de eliminación de Gauss, en su versión "factorización LU"). Repitamos el experimento del P6 con una matriz bien difícil, la de **Hilbert** (cuyas casillas son 1/(i + j + 1)), famosa por estar casi singular:
 """),
 
 code(r"""n = 10
@@ -648,7 +649,7 @@ Además, `solve` es más **rápido** (calcular la inversa entera hace más cuent
 La inversa solo tiene sentido si la necesitas **en sí misma** (y casi nunca es así).
 """),
 
-md(r"""(La línea de la matriz de Hilbert usa **difusión** (*broadcasting*, NB27): `np.arange(n)[:, None]` es una columna (0, 1, ..., 11) y `np.arange(n)[None, :]` una fila; al sumarlas, NumPy las "estira" hasta formar la tabla de 12 × 12 de todas las sumas i + j. `None` dentro de los corchetes añade un eje de tamaño 1; también se escribe `np.newaxis`.)
+md(r"""(La línea de la matriz de Hilbert usa **difusión** (*broadcasting*, NB27 y P6): `np.arange(n)[:, None]` es una columna (0, 1, ..., 9) y `np.arange(n)[None, :]` una fila; al sumarlas, NumPy las "estira" hasta formar la tabla de 10 × 10 de todas las sumas i + j. `None` dentro de los corchetes añade un eje de tamaño 1; también se escribe `np.newaxis`.)
 
 ### Cuando A no es cuadrada: mínimos cuadrados y pseudoinversa
 
@@ -656,7 +657,7 @@ En robótica, el jacobiano casi nunca es cuadrado. Si tienes **más ecuaciones q
 
 Si tienes **más incógnitas que ecuaciones** (un humanoide con 30 articulaciones que solo quiere colocar un pie: 3 ecuaciones), hay **infinitas** soluciones. La más usada es la de **norma mínima**: la que mueve las articulaciones **lo menos posible**.
 
-Las dos cosas las hace a la vez la **pseudoinversa** (de Moore-Penrose), `np.linalg.pinv(A)`: la "mejor inversa posible" de una matriz que no tiene inversa. Para una matriz cuadrada y no singular, coincide con la inversa:
+Las dos cosas las hace a la vez la **pseudoinversa** (de Moore-Penrose, P7), `np.linalg.pinv(A)`: la "mejor inversa posible" de una matriz que no tiene inversa. Para una matriz cuadrada y no singular, coincide con la inversa:
 """),
 
 code(r"""A = np.array([[1.0, 2.0],
@@ -859,7 +860,7 @@ md(r"""## 10 · Python profesional: funciones puras, docstrings y tests
 
 `ik_pseudoinversa` e `ik_amortiguada` funcionan, pero tienen un defecto de diseño serio: **modifican `datos`**, una variable **global** (definida fuera de la función). Después de llamarlas, el robot ha cambiado de postura, aunque la función solo debía "calcular unos ángulos". Eso se llama un **efecto secundario** (*side effect*), y causa errores muy difíciles de encontrar: una función que llamaste para "preguntar algo" te ha cambiado el mundo por debajo.
 
-Una **función pura** es una que:
+Una **función pura** (ya salió en el P2, al hablar de cachés) es una que:
 
 1. solo depende de sus **argumentos** (no lee variables globales que puedan cambiar), y
 2. no tiene **efectos secundarios** (no modifica nada de fuera: ni globales, ni sus argumentos, ni ficheros...).
@@ -877,9 +878,9 @@ Por tanto, con los mismos argumentos, **siempre** devuelve lo mismo, como una fu
 
 En el NB45 escribimos una docstring sencilla. En proyectos científicos de Python, el estándar es el **estilo NumPy**: secciones con títulos subrayados (`Parameters`, `Returns`, `Raises`, `Examples`...), que herramientas como Sphinx convierten en páginas web de documentación automáticamente (así está hecha la documentación de NumPy, SciPy, scikit-learn...). Lo verás en el módulo de la sección siguiente.
 
-### Tipos para arrays: numpy.typing
+### Tipos para arrays: numpy.typing (repaso del P5)
 
-Para anotar arrays con más precisión que `np.ndarray`, NumPy trae el módulo `numpy.typing`, con `NDArray[np.float64]`: "un array de NumPy de decimales de 64 bits". Y como escribir eso muchas veces es pesado, se crea un **alias de tipo**: un nombre corto para un tipo largo, `Vector = NDArray[np.float64]`. En Python 3.12 en adelante hay una sintaxis especial para eso: `type Vector = NDArray[np.float64]`.
+Recuerda del P5: para anotar arrays con más precisión que `np.ndarray`, NumPy trae el módulo `numpy.typing`, con `NDArray[np.float64]`: "un array de NumPy de decimales de 64 bits". Y como escribir eso muchas veces es pesado, se crea un **alias de tipo**: un nombre corto para un tipo largo, `Vector = NDArray[np.float64]`. En Python 3.12 en adelante hay una sintaxis especial para eso: `type Vector = NDArray[np.float64]`.
 """),
 
 md(r"""### Un módulo de verdad
@@ -1039,11 +1040,11 @@ md(r"""Los mismos ángulos que antes, y **`q_inicial` no ha cambiado**: la funci
 
 En el NB27 escribimos nuestros primeros tests con pytest. El código numérico tiene sus propias técnicas de test, y vamos a usar las tres más importantes:
 
-1. **Comparar con tolerancia**: `np.testing.assert_allclose(a, b, atol=...)`. Como `pytest.approx`, pero para arrays, y cuando falla te dice **qué casillas** difieren y cuánto.
+1. **Comparar con tolerancia**: `np.testing.assert_allclose(a, b, atol=...)`. Como `pytest.approx` (o el `np.isclose` del P6), pero para arrays, y cuando falla te dice **qué casillas** difieren y cuánto.
 2. **Comparar con otro método independiente**: el jacobiano de MuJoCo contra diferencias finitas. Si dos formas distintas de calcular lo mismo coinciden, es muy improbable que las dos estén mal de la misma manera.
 3. **Probar con muchos casos al azar** (*property-based testing*, en su versión sencilla): en vez de una postura escogida a mano, 20 posturas aleatorias... pero con una **semilla fija** (NB28), para que el test sea **reproducible**: si falla, falla siempre igual.
 
-Y una herramienta nueva de pytest: **`@pytest.mark.parametrize`**, que ejecuta el mismo test con varios valores, como si fueran varios tests.
+Y una herramienta nueva de pytest: **`@pytest.mark.parametrize`** (un decorador con argumentos, el patrón que conociste en el P2), que ejecuta el mismo test con varios valores, como si fueran varios tests.
 """),
 
 code(r'''%%writefile practica_nb46/test_cinematica.py
@@ -1154,7 +1155,7 @@ md(r"""## 11 · Resumen de la lección
 5. **Cinemática directa** de la pierna de Zancudo a mano = MuJoCo. Marca los puntos de interés con **sites**.
 6. **Jacobiano** J (3 × nv): pendientes de la posición respecto a cada articulación. `mj_jacSite` (¡después de `mj_forward`, o devuelve ceros!). **v = J·q̇**; **τ = Jᵀ·f** (trabajo virtual): con la rodilla casi estirada, sostener el peso cuesta muy poco par.
 7. **Singularidades**: el jacobiano pierde rango (columnas paralelas, determinante 0, número de condición infinito). La pierna estirada lo es.
-8. **np.linalg**: `solve` mejor que `inv`; `lstsq`/`pinv` para matrices no cuadradas; `cond` y `svd` para diagnosticar.
+8. **np.linalg** (repaso del P6 y el P7): `solve` mejor que `inv`; `lstsq`/`pinv` para matrices no cuadradas; `cond` y `svd` para diagnosticar.
 9. **Cinemática inversa**: Newton con la pseudoinversa (rápida, pero explota cerca de singularidades y con objetivos imposibles) o **mínimos cuadrados amortiguados**, Δq = Jᵀ(JJᵀ + λ²I)⁻¹e: el método estándar. Arrancar desde la solución anterior al seguir trayectorias.
 10. Python profesional: **funciones puras** (datos propios), docstrings **estilo NumPy**, `numpy.typing.NDArray` y **alias de tipo**, `%%writefile`, programación defensiva (`assert`, `raise ValueError`), argumentos opcionales con `None`, y **tests numéricos** (assert_allclose, comparar con otro método, azar con semilla, fixtures, parametrize, `pytest.raises`).
 

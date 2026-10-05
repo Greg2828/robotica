@@ -96,7 +96,7 @@ plt.legend()
 plt.grid(alpha=0.3)
 plt.show()"""),
 
-md(r"""Con la campana, correr a 4 m/s ya no paga **nada** (e^(−9 / 0,25) ≈ 0), y quedarse quieto tampoco (e^(−1 / 0,25) ≈ 0,02). Lo que más paga es ir **justo** a 1 m/s. Este truco (premiar con una campana la cercanía a un objetivo) es el que usan casi todos los entornos de robots con patas modernos para que **sigan órdenes** de velocidad, como veremos en el NB46. Y vale para cualquier cosa que queramos **mantener cerca** de un valor: una altura, una inclinación, un ángulo...
+md(r"""Con la campana, correr a 4 m/s ya no paga **nada** (e^(−9 / 0,25) ≈ 0), y quedarse quieto tampoco (e^(−1 / 0,25) ≈ 0,02). Lo que más paga es ir **justo** a 1 m/s. Este truco (premiar con una campana la cercanía a un objetivo) es el que usan casi todos los entornos de robots con patas modernos para que **sigan órdenes** de velocidad, como veremos en el NB54. Y vale para cualquier cosa que queramos **mantener cerca** de un valor: una altura, una inclinación, un ángulo...
 """),
 
 md(r"""## 4 · Los cinco términos de Zancudo
@@ -677,7 +677,9 @@ md(r"""## 12 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Zancudo ya anda a la velocidad que le pedimos. Pero en el NB41 vimos lo frágiles que son las políticas entrenadas en un mundo perfecto, y en el NB43, cómo sufrían con los empujones. En el **NB45** lo haremos **robusto**: lo entrenaremos en mundos que cambian (masas distintas, suelos más o menos resbaladizos, motores más flojos, sensores con ruido y retraso) y recibiendo **empujones** mientras aprende. Es la **aleatorización de dominio** (NB02), la técnica que más ha hecho por llevar robots de la simulación a la realidad.
+Zancudo ya anda a la velocidad que le pedimos. Pero en el NB41 vimos lo frágiles que son las políticas entrenadas en un mundo perfecto, y en el NB43, cómo sufrían con los empujones. Más adelante, en el **NB55**, lo haremos **robusto**: lo entrenaremos en mundos que cambian (masas distintas, suelos más o menos resbaladizos, motores más flojos, sensores con ruido y retraso) y recibiendo **empujones** mientras aprende. Es la **aleatorización de dominio** (NB02), la técnica que más ha hecho por llevar robots de la simulación a la realidad.
+
+Antes, dos tramos de preparación. Primero, el **puente de Python** (P1-P7): siete lecciones para pasar del Python de principiante al de un profesional, y del "matriz por vector" al álgebra lineal de la robótica. Después, un bloque largo para entender la **simulación a fondo** (NB45-NB50): cómo piensa MuJoCo por dentro, cinemática, control con modelo, contactos, integradores y modelos profesionales. Es lo que te preguntarán en cualquier entrevista de simulación de robots.
 """),
 
 ]

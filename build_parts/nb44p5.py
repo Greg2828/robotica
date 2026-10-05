@@ -19,9 +19,9 @@ cells = [
 
 md(r"""# NB44·P5 · Puente de Python (5): tipos y errores profesionales
 
-**Puente de Python — Lección 5 de 6**
+**Puente de Python — Lección 5 de 7**
 
-> Desde el NB45, casi todas las funciones del curso llevan **anotaciones de tipo** (`def f(x: float) -> np.ndarray:`), y en el NB47 apareció `Protocol`, en el NB46 `numpy.typing`, en el NB50 `Self`... sin una lección que lo explicara de principio a fin. Lo mismo con los errores: en el NB22 aprendiste `try`/`except`/`raise`, pero el código profesional usa **excepciones propias**, cadenas de errores y `logging`. Hoy cerramos esos huecos.
+> Desde el NB45, casi todas las funciones del curso llevarán **anotaciones de tipo** (`def f(x: float) -> np.ndarray:`), y aparecerán `numpy.typing` (NB46), `Protocol` (NB47) o `Self` (NB50). Hoy lo aprendes de principio a fin, para que no te pille por sorpresa. Lo mismo con los errores: en el NB22 aprendiste `try`/`except`/`raise`, pero el código profesional usa **excepciones propias**, cadenas de errores y `logging`. Hoy cerramos esos huecos.
 
 Las dos mitades de la lección tienen el mismo objetivo: que tu código **avise** de los problemas **pronto** y **con claridad**. Los tipos avisan **antes** de ejecutar (cuando una herramienta los revisa); las excepciones y los registros (*logs*), **mientras** se ejecuta.
 """),
@@ -60,7 +60,7 @@ md(r"""`duplicar("ja")` da `"jaja"` sin ningún error: la anotación `x: int` es
 2. **El editor**: VS Code, PyCharm o Jupyter usan las anotaciones para **autocompletar** (escribes `modelo.` y te propone `opt`, `nq`...) y para subrayar errores mientras escribes.
 3. **Comprobadores de tipos** (*type checkers*), como **mypy** o **pyright**: programas que leen tu código **sin ejecutarlo** y encuentran incoherencias ("aquí pasas un texto donde se espera un número"). Es como un corrector ortográfico para el código. Lo usaremos en la sección 3.
 
-En las empresas, el código de Python moderno va **anotado**, y un comprobador de tipos se ejecuta automáticamente antes de aceptar cada cambio (junto a los tests, NB46). Por eso tiene sentido aprenderlo bien.
+En las empresas, el código de Python moderno va **anotado**, y un comprobador de tipos se ejecuta automáticamente antes de aceptar cada cambio (junto a los tests, NB23). Por eso tiene sentido aprenderlo bien.
 """),
 
 md(r"""## 2 · Los tipos básicos y los contenedores
@@ -211,7 +211,7 @@ md(r"""Ahora `crear_pd(...) -> Controlador` se lee como una frase: "fabrica un c
 
 ### Arrays de NumPy
 
-Para arrays, el tipo general es `np.ndarray`, pero con **`numpy.typing`** (NB46) se puede decir también el tipo de sus elementos:
+Para arrays, el tipo general es `np.ndarray`, pero con **`numpy.typing`** (lo usarás desde el NB46) se puede decir también el tipo de sus elementos:
 """),
 
 code(r"""import numpy.typing as npt
@@ -223,7 +223,7 @@ def normalizar(v: Vector) -> Vector:
 
 print(normalizar(np.array([3.0, 4.0])))"""),
 
-md(r"""`npt.NDArray[np.float64]` dice "un array de decimales de 64 bits". Lo que **no** se puede decir (todavía, de forma estándar) es la **forma**: "un vector de 3" o "una matriz de 6×9". Por eso es costumbre escribir la forma en la **docstring** o en un comentario (NB46: "docstrings estilo NumPy").
+md(r"""`npt.NDArray[np.float64]` dice "un array de decimales de 64 bits". Lo que **no** se puede decir (todavía, de forma estándar) es la **forma**: "un vector de 3" o "una matriz de 6×9". Por eso es costumbre escribir la forma en la **docstring** o en un comentario (en el NB46 verás las "docstrings estilo NumPy").
 
 ### Literal: solo estos valores
 
@@ -246,7 +246,7 @@ md(r"""## 5 · Protocol: si anda como un pato...
 
 ### Tipado nominal frente a estructural
 
-En el NB25 y el NB47 viste dos formas de decir "estas clases son intercambiables":
+Hay dos formas de decir "estas clases son intercambiables": la primera la viste en el NB25, y la segunda la encontrarás en el NB47:
 
 - **Herencia de una clase base abstracta** (`ABC`): `class PD(Controlador)`. Una clase "es un" controlador **porque lo dice** (hereda de él). Se llama tipado **nominal** (por el nombre).
 - **`Protocol`**: una clase "es un" controlador **si tiene los métodos adecuados**, aunque no herede de nada ni sepa que el protocolo existe. Se llama tipado **estructural** (por la estructura), y es la versión "oficial" del famoso **duck typing** de Python: *"si anda como un pato y hace cua como un pato, es un pato"*.
@@ -312,7 +312,7 @@ md(r"""`def ultimo[T](elementos: list[T]) -> T` se lee: "para cualquier tipo T, 
 
 ### Self
 
-Y el último tipo especial, que ya usaste en el NB50: **`Self`** ("el tipo de esta misma clase"), para métodos que devuelven el propio objeto (`return self`, la interfaz fluida) o una instancia nueva de la misma clase. Con `Self`, las subclases heredan la anotación correcta automáticamente:
+Y el último tipo especial, que verás en el NB50: **`Self`** ("el tipo de esta misma clase"), para métodos que devuelven el propio objeto (`return self`, la interfaz fluida) o una instancia nueva de la misma clase. Con `Self`, las subclases heredan la anotación correcta automáticamente:
 
 ```python
 from typing import Self
@@ -421,7 +421,7 @@ code(r"""def avanzar(modelo: mujoco.MjModel, datos: mujoco.MjData, pasos: int) -
 
 modelo_inestable = mujoco.MjModel.from_xml_path("robots/zancudo.xml")
 modelo_inestable.actuator_gainprm[:, 0] = 1e5           # kp absurdo...
-modelo_inestable.actuator_biasprm[:, 1] = -1e5          # ...en sus dos sitios (NB50)
+modelo_inestable.actuator_biasprm[:, 1] = -1e5          # ...en sus dos sitios (NB50: un motor de posición guarda kp dos veces)
 modelo_inestable.actuator_forcelimited[:] = 0           # y sin límite de fuerza
 
 for pasito in [0.002, 0.0005, 0.0001]:
@@ -435,7 +435,7 @@ for pasito in [0.002, 0.0005, 0.0001]:
     except ExplosionNumerica as e:
         print(f"pasito {pasito}: explota en el paso {e.paso}; pruebo uno más pequeño")"""),
 
-md(r"""Este bucle es un patrón real: **reintentar** con un pasito menor si la simulación explota (NB49: con un kp de cien mil, ω = √(kp/I) es enorme y la regla pasito·ω < 2 pide pasitos mucho menores). Un detalle instructivo: si **no** quitáramos el límite de fuerza (`forcelimited`), no explotaría ni con el pasito normal: el `forcerange` de ±150 N·m (NB42) recorta los pares absurdos. Los límites realistas también **protegen la simulación**. Fíjate en cómo el código de fuera usa `e.paso`: un dato, no un texto que habría que trocear.
+md(r"""Este bucle es un patrón real: **reintentar** con un pasito menor si la simulación explota (es la regla del NB39b: con un kp de cien mil, ω = √(kp/I) es enorme y pasito·ω < 2 pide pasitos mucho menores; en el NB49 la verás a fondo). Un detalle instructivo: si **no** quitáramos el límite de fuerza (`forcelimited`), no explotaría ni con el pasito normal: el `forcerange` de ±150 N·m (NB42) recorta los pares absurdos. Los límites realistas también **protegen la simulación**. Fíjate en cómo el código de fuera usa `e.paso`: un dato, no un texto que habría que trocear.
 
 (Si se te ocurre usar `RuntimeError` para todo, recuerda que **cualquier** cosa de dentro de MuJoCo o de NumPy podría lanzar también un `RuntimeError`, y tu `except` los capturaría confundiéndolos con los tuyos.)
 
@@ -608,7 +608,7 @@ md(r"""## 11 · Laboratorio
 
 **R7.** ★ Predice qué imprime, y en qué orden: un `try` que lanza `KeyError`, con `except LookupError` → imprime "A", `except KeyError` → imprime "B", y un `finally` → imprime "C".
 
-**R8.** Crea una excepción `Caida(ErrorSimulacion)` con atributos `tiempo` y `altura`, y una función `vigilar_altura(datos)` que la lance si la cadera baja de 0,55 m. Pruébala empujando a Zancudo con 40 N (`xfrc_applied`, NB48) y captúrala mostrando sus atributos.
+**R8.** Crea una excepción `Caida(ErrorSimulacion)` con atributos `tiempo` y `altura`, y una función `vigilar_altura(datos)` que la lance si la cadera baja de 0,55 m. Pruébala empujando a Zancudo con 40 N (`xfrc_applied`, NB42) y captúrala mostrando sus atributos.
 
 **R9.** Escribe `cargar_config(ruta) -> dict` que lea un JSON y, si el fichero no existe **o** el JSON está mal escrito, lance un `ConfigInvalida` (excepción tuya) encadenado (`from`) al error original. Pruébala con un fichero que no existe y con un fichero con `{"kp": 300,}` (coma de más).
 
@@ -780,7 +780,7 @@ except Caida as e:
     print(e, "|", e.tiempo, e.altura)
 ```
 
-Con 40 N (más del doble del vuelco del NB48, entre 15 y 16 N), Zancudo cae en menos de un segundo. El que captura puede usar `e.tiempo` para, por ejemplo, calcular la nota de un episodio.
+Con 40 N de empuje **constante** (no un golpe corto como el del NB42), Zancudo cae en menos de un segundo. (En el NB48 medirás que, empujado sin parar, ya vuelca con entre 15 y 16 N.) El que captura puede usar `e.tiempo` para, por ejemplo, calcular la nota de un episodio.
 </details>
 
 <details>
@@ -845,7 +845,7 @@ with tempfile.TemporaryDirectory() as carpeta:
     print(ruta.read_text())
 ```
 
-Pantalla: 3 mensajes (warning, error, critical). Fichero: los 5. Hay **dos** filtros: el nivel del **registrador** (lo que deja salir) y el de cada **manejador** (lo que acepta). `propagate = False` evita que los mensajes se repitan también por el manejador de `basicConfig` (los registradores forman un árbol y, por defecto, pasan sus mensajes hacia arriba). Y `getattr(entreno, nivel)` (NB49) llama al método por su nombre.
+Pantalla: 3 mensajes (warning, error, critical). Fichero: los 5. Hay **dos** filtros: el nivel del **registrador** (lo que deja salir) y el de cada **manejador** (lo que acepta). `propagate = False` evita que los mensajes se repitan también por el manejador de `basicConfig` (los registradores forman un árbol y, por defecto, pasan sus mensajes hacia arriba). Y `getattr(entreno, nivel)` busca el método por su nombre (un texto, como `"info"`) y lo devuelve, para llamarlo después.
 </details>
 
 <details>
@@ -877,7 +877,7 @@ md(r"""## 12 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-En el **P6**, el último escalón: **NumPy intermedio para robótica**. Trayectorias como arrays de forma (T, n), máscaras e índices avanzados, operaciones por **lotes** con broadcasting (rotar 1.000 puntos de una vez), el álgebra lineal de `np.linalg` que usan el NB46 y el NB47 (`norm`, `solve`, `inv`, `cross`, `outer`), vistas frente a copias (otra vez, ahora a fondo) y cómo comparar decimales sin caer en trampas (`isclose`, `allclose`, la precisión de la máquina).
+En el **P6**, el penúltimo escalón: **NumPy intermedio para robótica**. Trayectorias como arrays de forma (T, n), máscaras e índices avanzados, operaciones por **lotes** con broadcasting (rotar 1.000 puntos de una vez), el álgebra lineal de `np.linalg` que vas a usar en el NB46 y el NB47 (`norm`, `solve`, `inv`, `cross`, `outer`), vistas frente a copias (otra vez, ahora a fondo) y cómo comparar decimales sin caer en trampas (`isclose`, `allclose`, la precisión de la máquina).
 """),
 
 ]

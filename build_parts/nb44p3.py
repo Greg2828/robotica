@@ -20,9 +20,9 @@ cells = [
 
 md(r"""# NB44·P3 · Puente de Python (3): clases intermedias
 
-**Puente de Python — Lección 3 de 6**
+**Puente de Python — Lección 3 de 7**
 
-> En el NB24 y el NB25 aprendiste a escribir clases: `__init__`, `self`, métodos, `__repr__`, `@property`, herencia, `@dataclass`... Lo justo para escribir un entorno de Gymnasium. En el NB45, el NB47 y el NB48 aparecieron de golpe dataclasses congeladas, `@classmethod`, `__call__`, `NamedTuple`, `IntEnum`, composición... Hoy rellenamos el hueco.
+> En el NB24 y el NB25 aprendiste a escribir clases: `__init__`, `self`, métodos, `__repr__`, `@property`, herencia, `@dataclass`... Lo justo para escribir un entorno de Gymnasium. A partir del NB45, el código del curso usará sin parar dataclasses congeladas, `@classmethod`, `__call__`, `NamedTuple`, `IntEnum`, composición... Hoy lo aprendemos con calma, antes de que haga falta.
 
 La pregunta que guía la lección: **¿cómo consiguen los objetos de NumPy, de MuJoCo o de PyTorch comportarse como si fueran parte del propio Python?** ¿Cómo es que puedes escribir `len(array)`, `array[2:5]`, `for x in array`, `a + b` o `a == b` con objetos que no son listas ni números? La respuesta tiene nombre: el **modelo de datos** de Python, y la vas a dominar hoy.
 """),
@@ -97,7 +97,7 @@ code(r"""class Trayectoria:
 
     def grabar(self, tiempo: float, estado: np.ndarray) -> None:
         self.tiempos.append(float(tiempo))
-        self.estados.append(np.array(estado, dtype=float))     # ¡una COPIA! (trampa del alias, NB45)
+        self.estados.append(np.array(estado, dtype=float))     # ¡una COPIA! (trampa del alias, NB21 y NB27)
 
 
 def simular_pendulo(q0: float, segundos: float = 2.0) -> Trayectoria:
@@ -323,7 +323,7 @@ Para quien usa la clase, `kp` parece un atributo normal. Esa es la gracia: puede
 
 ### @classmethod: constructores alternativos
 
-Un **método de clase** recibe **la clase** (`cls`) en vez de un objeto (`self`). Su uso estrella (NB45): **constructores alternativos**, otras formas de crear objetos:
+Un **método de clase** recibe **la clase** (`cls`) en vez de un objeto (`self`). Su uso estrella: **constructores alternativos**, otras formas de crear objetos:
 """),
 
 code(r"""class Motor(Motor):
@@ -355,7 +355,7 @@ md(r"""## 5 · Dataclasses a fondo
 
 ### Lo que ya sabes, y lo que falta
 
-En el NB24 y el NB45 viste que `@dataclass` escribe por ti `__init__`, `__repr__` y `__eq__` a partir de los campos anotados. Vamos con todo lo demás, construyendo una **configuración de experimento**, el uso más típico de las dataclasses en robótica:
+En el NB24 viste que `@dataclass` escribe por ti `__init__`, `__repr__` y `__eq__` a partir de los campos anotados. Vamos con todo lo demás, construyendo una **configuración de experimento**, el uso más típico de las dataclasses en robótica:
 """),
 
 code(r"""from dataclasses import dataclass, field, asdict, replace
@@ -401,7 +401,7 @@ md(r"""- **`asdict(objeto)`**: convierte la dataclass (y las que tenga dentro) e
 
 ### frozen: inmutables (y hashables)
 
-Con `frozen=True`, los campos no se pueden reasignar después de crear el objeto (NB45). Y como ya no pueden cambiar, `@dataclass` puede darles un **`__hash__`** seguro: ¡se pueden meter en conjuntos y usar como claves!
+Con `frozen=True`, los campos no se pueden reasignar después de crear el objeto. Y como ya no pueden cambiar, `@dataclass` puede darles un **`__hash__`** seguro: ¡se pueden meter en conjuntos y usar como claves!
 """),
 
 code(r"""@dataclass(frozen=True)
@@ -436,11 +436,11 @@ md(r"""`field(compare=False)` saca un campo de las comparaciones (y de `==`): aq
 
 ### slots: más ligeras
 
-Con `slots=True` (NB45), la dataclass no guarda sus atributos en un diccionario (`__dict__`) sino en "huecos" fijos: ocupa menos memoria, es un poco más rápida, y **prohíbe añadir atributos que no son campos** (lo que caza errores de escritura como `e.kpp = 3`). Recomendable para clases de las que crearás muchísimos objetos.
+Con `slots=True`, la dataclass no guarda sus atributos en un diccionario (`__dict__`) sino en "huecos" fijos: ocupa menos memoria, es un poco más rápida, y **prohíbe añadir atributos que no son campos** (lo que caza errores de escritura como `e.kpp = 3`). Recomendable para clases de las que crearás muchísimos objetos.
 
 ### La trampa de __eq__ con arrays
 
-Y la trampa que viste en el NB45. Si un campo es un array de NumPy, el `==` automático **se comporta mal**:
+Y una trampa que te volverás a encontrar en el NB45. Si un campo es un array de NumPy, el `==` automático **se comporta mal**:
 """),
 
 code(r"""@dataclass
@@ -492,14 +492,14 @@ md(r"""- Cada opción es un objeto único (`Modo.ANDAR`), con un `.name` (su nom
 - Una errata da error **inmediatamente** (`AttributeError`), en vez de comportarse raro más tarde.
 - Se pueden recorrer (`for m in Modo`) y buscar por nombre (`Modo["CORRER"]`).
 
-**`IntEnum`** es igual, pero sus miembros **son también enteros**: se pueden comparar y operar con números. Las constantes de MuJoCo (`mjtIntegrator`, `mjtGeom`...) se comportan **como** un `IntEnum` (NB48), aunque por dentro son otra cosa: tipos fabricados por pybind11, la herramienta que conecta el C++ de MuJoCo con Python. Fíjate:
+**`IntEnum`** es igual, pero sus miembros **son también enteros**: se pueden comparar y operar con números. Las constantes de MuJoCo (`mjtIntegrator`, `mjtGeom`...) se comportan **como** un `IntEnum` (las usarás mucho a partir del NB45), aunque por dentro son otra cosa: tipos fabricados por pybind11, la herramienta que conecta el C++ de MuJoCo con Python. Fíjate:
 """),
 
 code(r"""print(isinstance(mujoco.mjtIntegrator.mjINT_RK4, int), int(mujoco.mjtIntegrator.mjINT_RK4))   # no ES un int, pero se convierte
-print(mujoco.mjtIntegrator(3).name)             # del número al nombre (lo hemos hecho mil veces)
+print(mujoco.mjtIntegrator(3).name)             # del número al nombre
 print(modelo.opt.integrator == mujoco.mjtIntegrator.mjINT_EULER)"""),
 
-md(r"""No **es** un `int` (`isinstance` da `False`), pero se **convierte** en uno con `int(...)`, se puede **comparar** con enteros (`modelo.opt.integrator`, que es un entero, `==` `mjINT_EULER`) y `mjtIntegrator(3)` traduce un número a su nombre. Para quien lo usa, es como un `IntEnum`. (Moraleja de introspección, P1: no te fíes del nombre; compruébalo con `type` e `isinstance`.)
+md(r"""No **es** un `int` (`isinstance` da `False`), pero se **convierte** en uno con `int(...)`, se puede **comparar** con enteros (`modelo.opt.integrator`, que es un entero, `==` `mjINT_EULER`) y `mjtIntegrator(3)` traduce un número a su nombre. Para quien lo usa, es como un `IntEnum`. (El **integrador** es el método con el que MuJoCo avanza el tiempo en cada paso; lo verás a fondo en el NB45 y el NB49. Aquí solo importa que es un número con nombre.) (Moraleja de introspección, P1: no te fíes del nombre; compruébalo con `type` e `isinstance`.)
 
 ### NamedTuple, dataclass o diccionario
 
@@ -517,7 +517,7 @@ print(c, c.fuerza, c[1])          # acceso por nombre Y por posición
 cuerpo, fuerza = c                # se desempaqueta como una tupla
 print(cuerpo)"""),
 
-md(r"""Una `NamedTuple` (NB48) es una **tupla con nombres**: inmutable, ligera, se desempaqueta y se indexa como una tupla. ¿Cuándo usar cada una?
+md(r"""Una `NamedTuple` (en el NB48 la usarás para describir contactos) es una **tupla con nombres**: inmutable, ligera, se desempaqueta y se indexa como una tupla. ¿Cuándo usar cada una?
 
 | | `dict` | `NamedTuple` | `@dataclass` |
 |---|---|---|---|
@@ -534,7 +534,7 @@ md(r"""## 7 · Composición frente a herencia
 
 ### "Es un" frente a "tiene un"
 
-En el NB25 aprendiste la **herencia**: una clase hija **es una** versión especial de la madre (`PaloDeEscobaEnv` **es un** `gym.Env`). Hay otra forma de reutilizar código: la **composición**, donde un objeto **tiene** otros objetos dentro y les **delega** trabajo (NB47: la clase `Suma` de controladores).
+En el NB25 aprendiste la **herencia**: una clase hija **es una** versión especial de la madre (`PaloDeEscobaEnv` **es un** `gym.Env`). Hay otra forma de reutilizar código: la **composición**, donde un objeto **tiene** otros objetos dentro y les **delega** trabajo (en el NB47 lo usarás para sumar controladores).
 
 Un robot no **es** un motor; un robot **tiene** motores. Escribirlo con herencia (`class Robot(Motor)`) sería absurdo. Con composición:
 """),
@@ -563,7 +563,7 @@ md(r"""La `Pierna` **tiene** tres motores, y cada uno puede ser de una clase o c
 
 ¿Por qué? Porque la herencia **acopla** mucho: la hija depende de todos los detalles internos de la madre, y las jerarquías profundas (`A → B → C → D`) se vuelven imposibles de entender ("¿de cuál de los cuatro viene este método?"). La composición deja las piezas **independientes**: cada una se prueba, se cambia y se reutiliza por separado.
 
-¿Cuándo herencia, entonces? Cuando la relación es de verdad **"es un"** y quieres que la hija se pueda usar **en lugar** de la madre: un entorno **es un** `gym.Env`; un controlador PD **es un** `Controlador` (NB47, con `ABC`). Y casi siempre, **un solo nivel**. Para todo lo demás, composición.
+¿Cuándo herencia, entonces? Cuando la relación es de verdad **"es un"** y quieres que la hija se pueda usar **en lugar** de la madre: un entorno **es un** `gym.Env`; un controlador PD **es un** `Controlador` (en el NB47 lo escribirás así, con `ABC`). Y casi siempre, **un solo nivel**. Para todo lo demás, composición.
 """),
 
 md(r"""## 8 · Resumen
@@ -798,7 +798,7 @@ def fase(fuerza_pie: float) -> Fase:
 print([fase(f).name for f in [0.0, 0.5, 115.8]])     # ['VUELO', 'VUELO', 'APOYO']
 ```
 
-Usamos un umbral (1 N) en vez de `== 0` porque los sensores reales (y los contactos blandos de MuJoCo, NB48) dan valores pequeños pero no nulos justo al despegar o aterrizar. En el Bloque B, la fase de cada pie decidirá qué hace el controlador.
+Usamos un umbral (1 N) en vez de `== 0` porque los sensores reales (y los contactos "blandos" de MuJoCo, que verás en el NB48) dan valores pequeños pero no nulos justo al despegar o aterrizar. En el Bloque B, la fase de cada pie decidirá qué hace el controlador.
 </details>
 
 <details>

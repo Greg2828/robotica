@@ -19,9 +19,9 @@ cells = [
 
 md(r"""# NB44·P4 · Puente de Python (4): iterar y gestionar recursos
 
-**Puente de Python — Lección 4 de 6**
+**Puente de Python — Lección 4 de 7**
 
-> En el NB23 viste los iteradores y los generadores en una sección cada uno, y en el NB26, `itertools.product` y `Counter` de pasada. Luego, en el NB48, los generadores volvieron como protagonistas (para recorrer contactos), con `itertools` y `collections`; y en el NB49, los gestores de contexto escritos con `contextlib`. Hoy lo asentamos todo, con calma y con muchos ejemplos.
+> En el NB23 viste los iteradores y los generadores en una sección cada uno, y en el NB26, `itertools.product` y `Counter` de pasada. Más adelante, en el NB48, los generadores serán protagonistas (para recorrer contactos), junto con `itertools` y `collections`; y en el NB49 usarás gestores de contexto escritos con `contextlib`. Hoy lo asentamos todo antes, con calma y con muchos ejemplos.
 
 Dos temas, unidos por una misma idea: **hacer las cosas a su debido tiempo**.
 
@@ -227,7 +227,7 @@ en_el_aire = solo_en_el_aire(estados)                    # filtro
 primeros = [next(en_el_aire) for _ in range(3)]
 print([(round(t, 3), round(float(h), 4)) for t, h in primeros])"""),
 
-md(r"""¡Interesante! Los primeros estados "en el aire" son los del **principio** de la simulación: Zancudo empieza con los pies **5 mm por encima del suelo** (NB48) y tarda unas centésimas en tocarlo (los 16 primeros pasos, hasta t = 0,032 s). Después, ya no despega nunca.
+md(r"""¡Interesante! Los primeros estados "en el aire" son los del **principio** de la simulación: Zancudo empieza con los pies **5 mm por encima del suelo** (el "medio centímetro de margen" del NB42) y tarda unas centésimas en tocarlo (los 16 primeros pasos, hasta t = 0,032 s). Después, ya no despega nunca.
 
 Y aquí hay una **trampa** muy seria, que me pasó de verdad preparando este notebook: si hubiéramos pedido **20** estados en el aire, en vez de 3, la celda se habría quedado **colgada para siempre**. La fuente es infinita, y el filtro sigue pidiéndole estados, uno tras otro, buscando un estado en el aire que **nunca** llega. Sin ningún error, sin ningún aviso: solo un programa que no termina. Moraleja: en una tubería con una fuente infinita y un **filtro**, pon siempre un **límite a la fuente** (con `itertools.islice`, sección 3: `solo_en_el_aire(islice(simular(...), 10_000))`). Entonces, si se acaba, `next(iterador, None)` devuelve `None` en vez de colgarse: con un segundo argumento, `next` entrega ese valor en lugar de lanzar `StopIteration`.
 
@@ -254,7 +254,7 @@ md(r"""- **`count(inicio, paso)`**: cuenta sin fin. **`cycle(iterable)`**: repit
 - **`accumulate`**: sumas acumuladas (el retorno acumulado de un episodio, NB29).
 - **`pairwise`** (Python 3.10+): cada elemento con el siguiente. Perfecto para **diferencias**: velocidades a partir de posiciones, intervalos entre tiempos.
 
-Y tres combinatorias, para barridos de parámetros (NB26, NB48):
+Y tres combinatorias, para barridos de parámetros (NB26):
 """),
 
 code(r"""kps, kvs = [100, 300], [10, 20]
@@ -263,7 +263,7 @@ print("combinations: ", list(it.combinations(["pie_d", "pie_i", "torso"], 2)))  
 print("permutations: ", len(list(it.permutations(range(4)))), "órdenes de 4 cosas")"""),
 
 md(r"""- **`product`**: el producto cartesiano, es decir, todas las combinaciones (un bucle anidado escrito en una línea). El barrido de ganancias de siempre.
-- **`combinations(iterable, k)`**: todos los grupos de k elementos **sin importar el orden** (las parejas de cuerpos que podrían chocar, NB48).
+- **`combinations(iterable, k)`**: todos los grupos de k elementos **sin importar el orden** (las parejas de cuerpos que podrían chocar; volverá en el NB48).
 - **`permutations`**: todas las **ordenaciones** (4! = 24).
 
 ### groupby: agrupar elementos consecutivos
@@ -292,7 +292,7 @@ for medida in [10, 20, 30, 40, 50]:
     ventana.append(medida)
     print(f"entra {medida}: ventana = {list(ventana)}, media = {sum(ventana) / len(ventana):.1f}")"""),
 
-md(r"""En robótica, las ventanas deslizantes están por todas partes: el historial de las últimas acciones que se le da a una política (para que "recuerde" lo que acaba de hacer, NB54), los últimos estados para estimar una velocidad, el retraso de un motor (¡el `nsample` del NB50 es exactamente una ventana de órdenes pasadas!).
+md(r"""En robótica, las ventanas deslizantes están por todas partes: el historial de las últimas acciones que se le da a una política (para que "recuerde" lo que acaba de hacer, NB54), los últimos estados para estimar una velocidad, el retraso de un motor (en el NB50 verás que la opción `nsample` de MuJoCo es exactamente una ventana de órdenes pasadas).
 
 Además, añadir o quitar por la **izquierda** (`appendleft`, `popleft`) es instantáneo en una `deque` y lento en una lista (la lista tiene que mover todos los demás elementos). Para una cola de tareas (FIFO: el primero que entra es el primero que sale), `deque`.
 
@@ -316,7 +316,7 @@ print("contactos totales:", pares.total())"""),
 
 md(r"""- `pares[clave] += 1` funciona aunque la clave **no exista** todavía: un `Counter` empieza en 0 para cualquier clave (a diferencia de un `dict`, que daría `KeyError`).
 - **`most_common(n)`**: los n más frecuentes. **`total()`**: la suma de todas las cuentas.
-- Resultado: los dos pies contra el suelo, con 2 contactos cada uno en cada paso (los dos extremos de la cápsula, NB48) durante los 1.000 pasos... menos los primeros pasos en los que aún no tocaban.
+- Resultado: los dos pies contra el suelo, con 2 contactos cada uno en cada paso (los dos extremos de la cápsula del pie; el porqué, en el NB48) durante los 1.000 pasos... menos los primeros pasos en los que aún no tocaban.
 
 ### defaultdict: diccionarios con valor inicial
 
@@ -400,7 +400,7 @@ md(r"""Primero se imprimen los mensajes de entrada y **de salida** (con el tipo 
 
 ### La forma corta: contextlib.contextmanager
 
-Escribir una clase con dos métodos para cada gestor es pesado. El decorador **`contextlib.contextmanager`** convierte un **generador con un solo `yield`** en un gestor de contexto (NB49):
+Escribir una clase con dos métodos para cada gestor es pesado. El decorador **`contextlib.contextmanager`** convierte un **generador con un solo `yield`** en un gestor de contexto (lo usarás en el NB49):
 
 - lo de **antes** del `yield` es la entrada (`__enter__`),
 - lo que se entrega con `yield` va al `as`,
@@ -411,7 +411,7 @@ code(r"""from contextlib import contextmanager
 
 @contextmanager
 def gravedad(modelo: mujoco.MjModel, g: float):
-    original = modelo.opt.gravity.copy()            # ¡.copy()! (si no, guardaríamos una vista, NB45)
+    original = modelo.opt.gravity.copy()            # ¡.copy()! (si no, guardaríamos una vista, NB27)
     modelo.opt.gravity[:] = [0, 0, -g]
     try:
         yield modelo
@@ -426,7 +426,7 @@ md(r"""¿Por qué el generador encaja tan bien? Porque un generador **se pausa**
 
 Dos detalles de este ejemplo que son trampas de verdad:
 
-1. **`.copy()`** al guardar la gravedad original: `modelo.opt.gravity` es una **vista** de la memoria de MuJoCo (NB45). Sin la copia, `original` cambiaría al cambiar la gravedad, y "restauraríamos" la gravedad de la Luna.
+1. **`.copy()`** al guardar la gravedad original: `modelo.opt.gravity` es una **vista** (NB27) de la memoria de MuJoCo (el porqué, en el NB45). Sin la copia, `original` cambiaría al cambiar la gravedad, y "restauraríamos" la gravedad de la Luna.
 2. **`gravity[:] = ...`** en vez de `gravity = ...`: escribe **dentro** del array de MuJoCo, en lugar de intentar sustituirlo.
 
 ### Dos gestores útiles de la biblioteca estándar
@@ -552,7 +552,7 @@ for t, v in it.islice(velocidades(simular(zancudo, decimar=10)), 5):
     print(f"t = {t:.2f} s: velocidad vertical {v:+.4f} m/s")
 ```
 
-La primera velocidad es negativa (cae los 5 mm hasta tocar el suelo), y después salen valores pequeños positivos y negativos: el pequeño rebote del contacto blando (NB48), que se va apagando. Fíjate en el **desempaquetado anidado** del `for`: cada elemento de `pairwise` es una pareja de estados, y cada estado una tupla de tres. ¡Y la tubería sigue siendo perezosa: `pairwise` también es un iterador!
+La primera velocidad es negativa (cae los 5 mm hasta tocar el suelo), y después salen valores pequeños positivos y negativos: el pequeño rebote del contacto, que en MuJoCo es algo "blando" (lo verás en el NB48), y que se va apagando. Fíjate en el **desempaquetado anidado** del `for`: cada elemento de `pairwise` es una pareja de estados, y cada estado una tupla de tres. ¡Y la tubería sigue siendo perezosa: `pairwise` también es un iterador!
 </details>
 
 <details>
@@ -575,7 +575,7 @@ alturas = [h for t, h in it.islice(simular_agachado(zancudo, 0.5, t_orden=0.5), 
 print(f"antes (0,4 s): {alturas[3]:.3f} m;  al final (2 s): {alturas[-1]:.3f} m")
 ```
 
-Antes de la orden, 0,859 m; tras agacharse, unos **0,75 m** (como el keyframe `agachado` del NB50: 0,751). Baja unos 11 cm.
+Antes de la orden, 0,859 m; tras agacharse, unos **0,75 m** (en el NB50, la postura agachada guardada en Zancudo v2 dará casi lo mismo: 0,751). Baja unos 11 cm.
 </details>
 
 <details>

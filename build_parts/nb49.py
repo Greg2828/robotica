@@ -7,9 +7,10 @@ implicitfast, RK4): energía, orden de convergencia (log-log: pendiente 1 y 4).
 Estabilidad: rigidez, la regla pasito·ω < 2, muelles y motores con kv; la
 explosión, el aviso BADQACC y el reinicio automático (bucles con contador).
 Zancudo: pasito máximo por integrador; elegir implicitfast. Determinismo y
-asociatividad de los decimales. Python: decoradores (cierres, functools.wraps,
-con argumentos), lru_cache y partial, gestores de contexto (__enter__/__exit__,
-contextlib.contextmanager, try/finally). Rendimiento: timeit, cProfile/pstats
+asociatividad de los decimales. Python (repaso del P2 y el P4, aplicado a medir):
+decoradores (cierres, functools.wraps, con argumentos), lru_cache y partial,
+gestores de contexto (__enter__/__exit__, contextlib.contextmanager,
+try/finally). Nuevo: rendimiento con timeit, cProfile/pstats
 (el entorno frente a PPO), el GIL, hilos (mujoco.rollout) y procesos
 (ProcessPoolExecutor, pickle del modelo).
 """
@@ -25,14 +26,14 @@ md(r"""# NB49 · El tiempo: integradores, estabilidad y rendimiento
 
 > Un simulador no ve el tiempo como tú: no fluye, **salta**. Cada `mj_step` avanza 0,002 segundos de golpe, y entre salto y salto no existe nada. Cómo se da ese salto (el **integrador**) y de qué tamaño (el **pasito**) decide si la simulación es precisa, si es estable... o si **explota**.
 
-En el NB07 lo vimos con la pelota (con un pasito grande, caía 0,725 m en vez de 0,75) y en el NB45, con la energía de la caja que bajaba un 0,4 % sin motivo. Hoy lo estudiamos a fondo, porque es una de las preguntas favoritas en las entrevistas de simulación:
+En el NB07 lo vimos con la pelota (con un pasito grande, caía 0,725 m en vez de 0,75) y en el NB45, con la energía de la caja que bajaba un 0,4 % sin motivo. Y en el NB39b (apartado 7) ya hiciste la teoría con lápiz y un muelle: Euler explícito frente a semiimplícito, y la regla de estabilidad. Hoy lo llevamos a MuJoCo y a nuestro robot, porque es una de las preguntas favoritas en las entrevistas de simulación:
 
 - "¿Qué integradores tiene MuJoCo? ¿Cuál usarías para un robot con patas y por qué?"
 - "Tu simulación explota. ¿Qué miras primero?"
 - "¿Cómo elegirías el pasito de tiempo?"
 - "Tu entrenamiento va lento. ¿Cómo encuentras el cuello de botella? ¿Cómo lo paralelizas?"
 
-Y cerramos el Bloque A con el **rendimiento**: medir, perfilar y simular en paralelo. En el hilo de Python, tres herramientas de nivel profesional: **decoradores**, **gestores de contexto** (`with`) y **multiproceso**.
+Y cerramos el Bloque A con el **rendimiento**: medir, perfilar y simular en paralelo. En el hilo de Python, **repasamos** dos herramientas que ya conoces a fondo del puente, **decoradores** (P2) y **gestores de contexto** (`with`, P4), ahora puestas a trabajar para medir y experimentar; y aprendemos una **nueva**: el **multiproceso**, junto con `timeit` y el perfilador `cProfile`.
 """),
 
 code(r"""import os
@@ -54,7 +55,7 @@ Recuerda el NB45: MuJoCo, por defecto, avanza con **Euler semiimplícito**: prim
    θ̈  =  −(g / L) · sen(θ)
 ```
 
-Y su energía (por unidad de masa): cinética ½·(L·θ̇)² más potencial g·L·(1 − cos θ). En la física de verdad, esa energía **no cambia nunca**.
+Y su energía (por unidad de masa): cinética ½·(L·θ̇)² más potencial g·L·(1 − cos θ), las dos que conociste en el NB38b (½·m·v² y m·g·h, divididas entre m). En la física de verdad, sin rozamiento, esa energía **no cambia nunca**: es la conservación de la energía del NB38b.
 """),
 
 code(r"""G, L = 9.81, 1.0
@@ -102,7 +103,7 @@ md(r"""### Qué acabamos de ver
 
 Los dos métodos hacen **las mismas cuentas**, solo que en distinto orden, y el resultado es completamente distinto:
 
-- **Euler explícito**: la energía empieza en 4,51 J/kg y a los 20 segundos vale **16,5**: más del **triple**. El péndulo, que debería subir siempre hasta la misma altura, sube cada vez un poco más, hasta dar vueltas completas. Nadie le ha dado energía: la ha **fabricado el método numérico**. Si lo dejaras correr más, seguiría creciendo sin límite.
+- **Euler explícito**: la energía empieza en 4,51 J/kg y a los 20 segundos vale **16,5**: más del **triple**. El péndulo, que debería subir siempre hasta la misma altura, sube cada vez un poco más, hasta dar vueltas completas. Nadie le ha dado energía: la ha **fabricado el método numérico**. Si lo dejaras correr más, seguiría creciendo sin límite. Es lo mismo que viste en el NB39b con el muelle: el explícito gana energía en cada pasito, **siempre**.
 - **Euler semiimplícito**: la energía se queda **pegada** a la verdadera (4,58 a los 20 s). No es exacta (sube y baja un poquito alrededor del valor verdadero, lo verás si haces zoom en la gráfica), pero **no se escapa nunca**.
 
 ¿Por qué? Una forma intuitiva de verlo: en el explícito, el péndulo avanza con la velocidad **de antes** de que la gravedad la frene. Cuando sube, frena "tarde", y llega un poco más alto de lo que debería. Cada vaivén, un poquito más. En el semiimplícito, la posición usa la velocidad **ya frenada**, y los errores de la subida y de la bajada se **compensan** en lugar de acumularse.
@@ -279,7 +280,7 @@ md(r"""### La regla se cumple
 
 Fíjate en dos detalles:
 
-1. Con k = 1.000 el ángulo máximo es 0,68, **más** que el inicial (0,5). La simulación no ha explotado, pero ya está cerca del límite y empieza a meter algo de energía falsa. Cerca del límite, la simulación es estable pero **mala**. En la práctica, se deja un margen: pasito·ω de 0,5 o menos.
+1. Con k = 1.000 el ángulo máximo es 0,68, **más** que el inicial (0,5). La simulación no ha explotado, pero ya está cerca del límite y empieza a meter algo de energía falsa. Cerca del límite, la simulación es estable pero **mala**: lo mismo que le pasaba al muelle del NB39b con h·ω = 1,9, cuya energía llegaba a 10 J en vez de 0,5. En la práctica, se deja un margen: pasito·ω de 0,5 o menos.
 2. El salto entre "va bien" y "explota" es **brusco**: no hay término medio. Por eso las explosiones sorprenden: subes un poco la rigidez de un motor y, de repente, todo vuela.
 
 **Qué hacer si una simulación explota** (pregunta de entrevista): por orden, (1) buscar qué tiene una rigidez enorme (un `kp` o `kv` gigante, un contacto con `solref` muy pequeño, NB48, una masa o inercia diminuta: ω = √(k / inercia), así que una inercia minúscula dispara ω igual que una rigidez enorme); (2) reducir el pasito; (3) cambiar a un integrador implícito si la rigidez viene de amortiguadores o `kv`.
@@ -329,7 +330,7 @@ Con `kp = 100` fijo:
 - Con **Euler**, `kv` = 5 y 10 van bien, pero con **kv = 20 la simulación explota** (y con 50 también).
 - Con **implicitfast**, **todos** van bien, incluso kv = 50. El ángulo máximo apenas cambia (0,45-0,49 rad).
 
-¿Por qué con kv = 20 Euler ya explota, si `kp = 100` es un muelle blandito? Porque un amortiguador también tiene su "ω": una fuerza de frenado kv · velocidad sobre una inercia I frena la velocidad a un ritmo kv / I. Aquí, 20 / 0,053 ≈ 375 por segundo, y 0,01 × 375 = 3,75: por encima de 2. Con kv = 10, 0,01 × 188 = 1,9: justo por debajo. Euler explícito frena **de más** en cada paso: la velocidad se pasa al otro lado, cada vez con más fuerza... y explota.
+¿Por qué con kv = 20 Euler ya explota, si `kp = 100` es un muelle blandito? Porque un amortiguador también tiene su "ω", como te adelantó el NB39b (apartado 7): una fuerza de frenado kv · velocidad sobre una inercia I frena la velocidad según v' = −(kv / I) · v, que es el decaimiento x' = −λ·x de aquel apartado con **λ = kv / I**. Y allí viste que Euler multiplica en cada pasito por (1 − pasito·λ), así que explota si pasito·λ > 2. Aquí, 20 / 0,053 ≈ 375 por segundo, y 0,01 × 375 = 3,75: por encima de 2. Con kv = 10, 0,01 × 188 = 1,9: justo por debajo. Euler explícito frena **de más** en cada paso: la velocidad se pasa al otro lado, cada vez con más fuerza... y explota.
 
 Un integrador **implícito** calcula el frenado con la velocidad **del final** del paso, y así nunca puede frenar "de más": como mucho, deja la velocidad en cero. Por eso es estable con cualquier `kv`. Y como solo hace implícitas las fuerzas que dependen de la velocidad (no los contactos ni los muelles de posición), `implicitfast` cuesta casi lo mismo que Euler.
 
@@ -391,13 +392,13 @@ md(r"""**La suma de decimales no es asociativa**: el orden en que sumas cambia e
 Para la reproducibilidad de verdad, un profesional apunta (y fija): las **versiones** de todo (MuJoCo, NumPy, PyTorch...: el `requirements` del NB26), las **semillas** (NB28) y el **hardware**. Y nunca da por buena una conclusión que dependa de una sola ejecución (NB34: varias semillas).
 """),
 
-md(r"""## 7 · Python profesional: decoradores
+md(r"""## 7 · Python: decoradores (repaso del P2)
 
 ### Una función que envuelve a otra
 
-En este notebook (y en el NB45) hemos medido tiempos muchas veces, siempre igual: `inicio = time.perf_counter()`, hacer algo, restar. Ese código repetido "alrededor" de otro código es lo que resuelven los **decoradores**. Ya los has usado (`@dataclass`, `@property`, `@classmethod`, `@abstractmethod`); hoy vamos a **escribirlos**.
+En este notebook (y en el NB45) hemos medido tiempos muchas veces, siempre igual: `inicio = time.perf_counter()`, hacer algo, restar. Ese código repetido "alrededor" de otro código es justo lo que resuelven los **decoradores**, que ya subiste escalón a escalón en el P2 (apartado 6). Ahora vamos a **usarlos de verdad** para medir nuestras simulaciones.
 
-Un decorador es, simplemente, **una función que recibe una función y devuelve otra función** (normalmente, una versión "envuelta" de la original). Todo se basa en una idea del NB23: las funciones son objetos, y se pueden pasar y devolver.
+Recuerda la idea: un decorador es **una función que recibe una función y devuelve otra función** (normalmente, una versión "envuelta" de la original). Todo se basa en que las funciones son objetos, y se pueden pasar y devolver (NB23 y P2).
 """),
 
 code(r"""import functools
@@ -422,17 +423,17 @@ def simular_zancudo(segundos: float) -> float:
 
 print("tiempo simulado:", simular_zancudo(2.0))"""),
 
-md(r"""Vamos por partes, porque aquí hay mucho:
+md(r"""Repasemos las piezas, que son las mismas de los escalones del P2:
 
-1. **`@cronometrar` encima de `def simular_zancudo`** es exactamente lo mismo que escribir, después de definir la función, `simular_zancudo = cronometrar(simular_zancudo)`. La `@` es solo una forma bonita de escribirlo. Desde ese momento, el nombre `simular_zancudo` ya no es la función original, sino el **envoltorio**.
-2. **`envoltorio`** es una función definida **dentro** de otra. Al llamarla, mide el tiempo, llama a la original con los mismos argumentos y devuelve su resultado. Para el que la usa, es como la original... pero con el cronómetro.
-3. **`*args, **kwargs`** (NB23): el envoltorio acepta **cualquier** combinación de argumentos (posicionales en la tupla `args`, con nombre en el diccionario `kwargs`) y se los pasa tal cual a la original. Así el decorador sirve para cualquier función.
-4. **El envoltorio "recuerda" `funcion`** aunque `cronometrar` ya haya terminado. A una función que recuerda variables del sitio donde se creó se le llama **cierre** (*closure*). Es lo que permite que cada función decorada tenga su propio envoltorio con su propia `funcion` dentro.
-5. **`@functools.wraps(funcion)`**: copia en el envoltorio el **nombre**, la **docstring** y las anotaciones de la original. Sin él, `simular_zancudo.__name__` sería `"envoltorio"`, y `help(simular_zancudo)` no mostraría su documentación. Ponlo **siempre** que escribas un decorador.
+1. **`@cronometrar` encima de `def simular_zancudo`** es lo mismo que escribir, después de definir la función, `simular_zancudo = cronometrar(simular_zancudo)` (escalón 2, la arroba). Desde ese momento, el nombre `simular_zancudo` ya no es la función original, sino el **envoltorio**.
+2. **`envoltorio`** es una función definida **dentro** de otra: mide el tiempo, llama a la original con los mismos argumentos y devuelve su resultado. Para el que la usa, es como la original... pero con el cronómetro.
+3. **`*args, **kwargs`** (escalón 3): el envoltorio acepta **cualquier** combinación de argumentos y se los pasa tal cual a la original. Así el decorador sirve para cualquier función.
+4. **El envoltorio "recuerda" `funcion`** aunque `cronometrar` ya haya terminado: es un **cierre** (*closure*, P2 apartado 4). Cada función decorada tiene su propio envoltorio con su propia `funcion` dentro.
+5. **`@functools.wraps(funcion)`** (escalón 4): copia en el envoltorio el **nombre**, la **docstring** y las anotaciones de la original. Sin él, `simular_zancudo.__name__` sería `"envoltorio"`. Ponlo **siempre**.
 
 ### Decoradores con argumentos
 
-¿Y si queremos medir varias veces y quedarnos con el **mejor** tiempo (que es lo correcto para medir velocidad: el mejor es el que menos "ruido" del sistema tiene)? Necesitamos pasarle al decorador un número: `@medir(repeticiones=5)`. Eso añade **un nivel más**: `medir(5)` es una función que **devuelve un decorador**:
+Es el escalón 6 del P2. ¿Y si queremos medir varias veces y quedarnos con el **mejor** tiempo (que es lo correcto para medir velocidad: el mejor es el que menos "ruido" del sistema tiene)? Necesitamos pasarle al decorador un número: `@medir(repeticiones=5)`. Eso añade **un nivel más**: `medir(5)` es una función que **devuelve un decorador**:
 """),
 
 code(r"""def medir(repeticiones: int = 3):
@@ -462,9 +463,9 @@ mil_pasos(zancudo)"""),
 
 md(r"""Tres niveles: `medir(5)` → devuelve `decorador` → que recibe `mil_pasos` → y devuelve `envoltorio`. Parece un trabalenguas, pero el patrón es siempre el mismo, y en cuanto lo escribes dos veces lo reconoces en cualquier biblioteca (`@pytest.mark.parametrize(...)` del NB46 es exactamente esto).
 
-### Dos decoradores de la biblioteca estándar: lru_cache y partial
+### lru_cache y partial (repaso del P2)
 
-**`functools.lru_cache`** guarda los resultados de una función para no recalcularlos (una **caché**): si la llamas otra vez con los mismos argumentos, devuelve el resultado guardado al instante. Perfecto para cosas caras y repetidas, como cargar un modelo desde un fichero:
+Del apartado 7 del P2 conoces dos herramientas de `functools`. **`functools.lru_cache`** guarda los resultados de una función para no recalcularlos (una **caché**): si la llamas otra vez con los mismos argumentos, devuelve el resultado guardado al instante. Perfecto para cosas caras y repetidas, como cargar un modelo desde un fichero:
 """),
 
 code(r"""@functools.lru_cache(maxsize=None)
@@ -479,7 +480,7 @@ print(cargar.cache_info())"""),
 
 md(r"""La segunda llamada no imprime "cargando": devuelve el **mismo** objeto. Pero ¡cuidado!, y esta es la trampa: **el mismo objeto** significa que si alguien modifica el modelo que le dio la caché (por ejemplo, `a.opt.timestep = 0.01`), **todos** los que lo pidan después lo recibirán modificado. Con objetos que se pueden cambiar (como `MjModel`), una caché es peligrosa; mejor cachear cosas inmutables (textos, tuplas, números) o devolver copias.
 
-**`functools.partial`** "congela" algunos argumentos de una función y te da una función nueva con menos argumentos. Por ejemplo, de `probar(integrador, dt, k, kp, kv)` sacamos una versión con el integrador y el motor ya fijados:
+**`functools.partial`** (también del P2) "congela" algunos argumentos de una función y te da una función nueva con menos argumentos. Por ejemplo, de `probar(integrador, dt, k, kp, kv)` sacamos una versión con el integrador y el motor ya fijados:
 """),
 
 code(r"""euler_con_motor = functools.partial(probar, "Euler", kp=100)
@@ -489,13 +490,13 @@ print(f"ángulo máximo {mayor:.2f} rad, avisos {avisos}")"""),
 md(r"""Muy útil para pasar funciones "a medida" a otras que esperan funciones con menos argumentos: `map`, los *callbacks* del NB47, o el multiproceso de la sección 10.
 """),
 
-md(r"""## 8 · Python profesional: gestores de contexto
+md(r"""## 8 · Python: gestores de contexto (repaso del P4)
 
 ### with
 
-Ya has usado `with` para abrir ficheros (NB26): `with open(ruta) as f: ...` garantiza que el fichero **se cierra** al terminar, pase lo que pase, incluso si hay un error dentro. Un objeto que se puede usar con `with` es un **gestor de contexto**: algo que hace una cosa al **entrar** en el bloque y otra al **salir**.
+Los gestores de contexto los estudiaste a fondo en el P4 (apartado 5); aquí los ponemos a trabajar en nuestros experimentos. Recuerda: `with open(ruta) as f: ...` (NB26) garantiza que el fichero **se cierra** al terminar, pase lo que pase, incluso si hay un error dentro. Un objeto que se puede usar con `with` es un **gestor de contexto**: algo que hace una cosa al **entrar** en el bloque y otra al **salir**.
 
-El patrón aparece cada vez que hay algo que **deshacer** o **liberar**: cerrar un fichero, liberar un recurso (la cámara de MuJoCo, NB46), soltar un candado, restaurar un ajuste... Y la forma de escribir uno es una clase con dos métodos especiales, `__enter__` y `__exit__`:
+El patrón aparece cada vez que hay algo que **deshacer** o **liberar**: cerrar un fichero, liberar un recurso (la cámara de MuJoCo, NB46), soltar un candado, restaurar un ajuste... Y, como viste en el P4, la forma larga de escribir uno es una clase con dos métodos especiales, `__enter__` y `__exit__`:
 """),
 
 code(r"""class Cronometro:
@@ -525,7 +526,7 @@ md(r"""- **`__enter__`** se llama al entrar en el `with`; lo que devuelve es lo 
 
 ### La forma corta: contextlib.contextmanager
 
-Escribir una clase para cada gestor de contexto es pesado. El módulo `contextlib` permite escribirlos como un **generador** (NB48) con un único `yield`: lo de antes del `yield` es la "entrada", y lo de después, la "salida". Vamos a escribir uno muy útil en simulación: **cambiar opciones del modelo temporalmente** y dejarlas como estaban al terminar:
+Escribir una clase para cada gestor de contexto es pesado. Como recordarás del P4, el módulo `contextlib` permite escribirlos como un **generador** (NB48 y P4) con un único `yield`: lo de antes del `yield` es la "entrada", y lo de después, la "salida". Vamos a escribir uno muy útil en simulación: **cambiar opciones del modelo temporalmente** y dejarlas como estaban al terminar:
 """),
 
 code(r"""from contextlib import contextmanager
@@ -547,7 +548,7 @@ with opciones(zancudo, timestep=0.01, integrator=mujoco.mjtIntegrator.mjINT_IMPL
     print("dentro: ", zancudo.opt.timestep, mujoco.mjtIntegrator(zancudo.opt.integrator).name)
 print("después:", zancudo.opt.timestep, mujoco.mjtIntegrator(zancudo.opt.integrator).name)"""),
 
-md(r"""Lo nuevo:
+md(r"""En qué fijarse:
 
 - **`getattr(objeto, "nombre")`** y **`setattr(objeto, "nombre", valor)`** leen y escriben un atributo cuyo nombre está en una **variable** (NB24). Así la función sirve para **cualquier** opción, sin escribir un `if` para cada una.
 - **`**cambios`** recoge los argumentos con nombre en un diccionario: `opciones(zancudo, timestep=0.01, integrator=...)` da `cambios = {"timestep": 0.01, "integrator": ...}`.
@@ -637,7 +638,7 @@ Conclusión: **en este entorno, la física manda**. Acelerar el Python apenas ga
 
 ### Pero ojo: depende de qué midas
 
-Si en vez de un episodio con una política lineal perfilas un **entrenamiento de PPO** completo (NB47), el cuadro cambia por completo. Lo medí aparte con 16.384 pasos de entrenamiento de Zancudo: de 26,3 segundos, `mj_step` solo se llevó **2,2** (un **8 %**). El resto, la red neuronal (PyTorch, al decidir cada acción y al aprender) y el pegamento de Stable-Baselines3. Ahí, acelerar la física no serviría de casi nada.
+Si en vez de un episodio con una política lineal perfilas un **entrenamiento de PPO** completo (NB33, NB34), el cuadro cambia por completo. Lo medí aparte con 16.384 pasos de entrenamiento de Zancudo: de 26,3 segundos, `mj_step` solo se llevó **2,2** (un **8 %**). El resto, la red neuronal (PyTorch, al decidir cada acción y al aprender) y el pegamento de Stable-Baselines3. Ahí, acelerar la física no serviría de casi nada.
 
 Esta es **la regla de oro del rendimiento**, y una respuesta de entrevista perfecta: *"no adivines: mide"*. La intuición sobre dónde se va el tiempo falla muchísimo. Primero se perfila, después se optimiza **solo** lo que pesa. (La frase famosa de Donald Knuth: "la optimización prematura es la raíz de todos los males".)
 
@@ -742,7 +743,7 @@ md(r"""## 11 · Resumen de la lección (y del Bloque A)
 4. **Estabilidad**: la rigidez hace explotar; regla pasito·ω < 2. Al explotar, MuJoCo avisa (`mjWARN_BADQACC`) y **reinicia los datos y el tiempo**: bucles con número fijo de pasos y vigilancia de avisos.
 5. **Zancudo**: con Euler necesita un pasito muy pequeño; con **`implicitfast`** aguanta pasitos mucho mayores al mismo coste. Es la elección habitual para robots con motores de posición.
 6. **Determinismo** solo en el mismo ordenador y versión: la suma de decimales no es asociativa. Fija versiones, semillas y hardware.
-7. Python: **decoradores** (funciones que envuelven funciones; cierres; `functools.wraps`; con argumentos = un nivel más), `lru_cache` (¡cuidado con objetos modificables!), `partial`; **gestores de contexto** (`__enter__`/`__exit__`, `contextlib.contextmanager`, `try/finally`), `getattr`/`setattr`.
+7. Python (repaso del P2 y el P4, ahora aplicado a medir y experimentar): **decoradores** (funciones que envuelven funciones; cierres; `functools.wraps`; con argumentos = un nivel más), `lru_cache` (¡cuidado con objetos modificables!), `partial`; **gestores de contexto** (`__enter__`/`__exit__`, `contextlib.contextmanager`, `try/finally`), `getattr`/`setattr`.
 8. **Rendimiento**: `timeit` para medir, `cProfile`/`pstats` para saber dónde se va el tiempo. Medir antes de optimizar.
 9. **Paralelo**: el **GIL** impide que dos hilos ejecuten Python a la vez. **Hilos en C** (`mujoco.rollout`) para órdenes ya decididas; **procesos** (`ProcessPoolExecutor`) para bucles con Python dentro.
 
@@ -760,13 +761,18 @@ md(r"""## 11 · Resumen de la lección (y del Bloque A)
 | **Estabilidad numérica** | Que los errores no crezcan sin límite. Regla: pasito·ω < 2. |
 | **NaN** | "No es un número": resultado de cuentas imposibles. Señal de explosión. |
 | **Asociatividad** | (a + b) + c = a + (b + c). Falla con decimales del ordenador. |
-| **Decorador** | Función que recibe una función y devuelve una versión envuelta. |
-| **Cierre (*closure*)** | Función que recuerda variables del sitio donde se creó. |
-| **Caché** | Guardar resultados para no recalcularlos. |
-| **Gestor de contexto** | Objeto usable con `with`: hace algo al entrar y al salir. |
 | **Perfilador** | Herramienta que mide cuánto tiempo pasa el programa en cada función. |
 | **GIL** | Candado de Python: un solo hilo ejecuta Python a la vez. |
 | **Hilo / proceso** | Comparten memoria (y el GIL) / independientes, con su memoria y su GIL. |
+
+Y de repaso (no son nuevas: las conoces del P2 y el P4), hoy han vuelto a salir:
+
+| Palabra | Qué significa |
+|---|---|
+| **Decorador** | Función que recibe una función y devuelve una versión envuelta (P2). |
+| **Cierre (*closure*)** | Función que recuerda variables del sitio donde se creó (P2). |
+| **Caché** | Guardar resultados para no recalcularlos (`lru_cache`, P2). |
+| **Gestor de contexto** | Objeto usable con `with`: hace algo al entrar y al salir (P4). |
 """),
 
 md(r"""## 12 · Ejercicios

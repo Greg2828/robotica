@@ -350,7 +350,7 @@ md(r"""## 9 · Comprobemos el NB02: pasos grandes contra pasos pequeños
 En el NB02 te conté algo que tuviste que **creerte**: que con pasos grandes el simulador se equivoca, y
 que con pasos más pequeños se acerca a la realidad. En concreto:
 
-- La física exacta dice que, a los **0,5 segundos**, la pelota está a **0,75 metros**.
+- La física exacta dice que, a los **0,5 segundos**, la pelota está a **0,75 metros** (la fórmula, h = h₀ − ½·g·t², la dedujimos en el NB04b).
 - Con pasos de 0,1 segundos, nuestra tabla dice 0,50 (un error de 25 cm).
 - Y te dije que con pasos de una milésima saldría **0,7475**.
 

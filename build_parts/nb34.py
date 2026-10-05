@@ -38,7 +38,7 @@ md(r"""## 1 · ¿Por qué usar una biblioteca si ya sé hacerlo?
 
 Buena pregunta, porque acabas de demostrar que sabes. Hay tres razones de peso:
 
-1. **Los fallos sutiles.** En el NB33 nos pasó: la primera versión del prototipo daba `nan` porque un minilote de **un solo dato** tenía desviación típica cero (cosas que solo se descubren
+1. **Los fallos sutiles.** Un ejemplo real: preparando el prototipo del NB33, una primera versión daba `nan` porque un minilote de **un solo dato** no tiene desviación típica (PyTorch divide entre n − 1, NB28b, y con n = 1 sale 0 entre 0: cosas que solo se descubren
    probando mucho). En RL, un fallo pequeño rara vez da un error: el robot simplemente aprende **peor**, y nunca sabes si es el algoritmo, los ajustes o un bicho. Una biblioteca usada por miles
    de personas ya ha cazado esos bichos.
 2. **Los trucos.** Las implementaciones profesionales llevan los trucos de la tabla del NB33 (bonus de entropía, recorte del gradiente, entornos vectorizados...) ya probados.
@@ -274,7 +274,7 @@ md(r"""**Ahí está tu NB33**, casi con las mismas palabras (en SB3, `th` es `to
 
 - `ratio = th.exp(log_prob - rollout_data.old_log_prob)`: la razón r = e^(log p nueva − log p vieja) (sección 3 del NB33).
 - `advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)`: normalizar las ventajas (NB30), incluso con el mismo `1e-8`. (Fíjate: SB3 normaliza **dentro de cada
-  minilote**. Por eso su `batch_size` nunca debe ser 1: daría el `nan` que nos encontramos en el prototipo del NB33.)
+  minilote**. Por eso su `batch_size` nunca debe ser 1: daría ese `nan` del que te hablé al principio.)
 - `policy_loss_2 = advantages * th.clamp(ratio, 1 - clip_range, 1 + clip_range)` y `-th.min(policy_loss_1, policy_loss_2).mean()`: el **mínimo** de r × ventaja y del recortado, con el signo
   menos. **Exactamente** tu recorte.
 - `loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss`: la pérdida total, con el bonus de entropía y la del crítico sumadas con sus pesos.
@@ -424,7 +424,7 @@ Gymnasium trae un entorno que es el primo profesional de nuestro palo: **`Invert
   caiga, como cuando sostienes una escoba en la palma de la mano.
 - **Observación**: 4 números (posición del carrito, ángulo del palo, y las velocidades de los dos).
 - **Acción**: 1 número, la fuerza sobre el carrito, entre −3 y 3.
-- **Recompensa**: +1 por cada paso con el palo de pie. El episodio termina si el palo se inclina más de 0,2 radianes (unos 11°), y se trunca a los 1.000 pasos: la nota máxima es **1.000**.
+- **Recompensa**: +1 por cada paso con el palo de pie. El episodio termina si el palo se inclina más de 0,2 radianes (unos 11°; el **radián** es otra forma de medir ángulos, la que usan los simuladores: una vuelta entera son unos 6,28 radianes. Lo verás a fondo en el NB36), y se trunca a los 1.000 pasos: la nota máxima es **1.000**.
 
 Todo con física real: masas, inercias, rozamientos, calculados por MuJoCo. Comprobémoslo (fíjate en el `float64` de la observación: MuJoCo calcula con decimales dobles, NB27):
 """),

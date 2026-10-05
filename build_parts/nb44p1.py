@@ -1,7 +1,7 @@
 """Construye NB44·P1 · Puente de Python (1): leer código como un profesional.
 
-Primer notebook del PUENTE entre la Parte 3 (Python de verdad, NB20-NB27) y el
-Python profesional del Bloque A (NB45-NB50). Repaso ACTIVO con "predice la
+Primer notebook del PUENTE de Python (P1-P7), que se lee justo después del
+NB44 y antes del Bloque A (NB45-NB50), donde el Python se vuelve profesional. Repaso ACTIVO con "predice la
 salida" (alias, porciones, get, comprensiones, default mutable, ámbito,
 formato, verdad/falsedad, //, try/else/finally). Leer código ajeno con método
 (de fuera a dentro, seguir los datos) aplicado a zancudo_env.py. Preguntarle a
@@ -19,11 +19,11 @@ cells = [
 
 md(r"""# NB44·P1 · Puente de Python (1): leer código como un profesional
 
-**Puente de Python — entre la Parte 3 (NB20-NB27) y el Bloque A (NB45-NB50) — Lección 1 de 6**
+**Puente de Python — entre el NB44 y el Bloque A (NB45-NB50) — Lección 1 de 7**
 
-> En la Parte 3 aprendiste Python "de verdad". Después vinieron 17 notebooks de aprendizaje por refuerzo y de física en los que **usabas** Python, pero ya no lo **estudiabas**. Y en el NB45 el ritmo cambió de golpe: dataclasses avanzadas, `Protocol`, decoradores con argumentos, gestores de contexto, generadores, multiproceso, tipado... cuatro o cinco ideas profesionales por notebook, mezcladas con la parte más difícil de MuJoCo.
+> En la Parte 3 aprendiste Python "de verdad". Después vinieron 17 notebooks de aprendizaje por refuerzo y de física (hasta que Zancudo aprendió a andar, en el NB43 y el NB44) en los que **usabas** Python, pero ya no lo **estudiabas**. A partir del NB45 el ritmo cambia: dataclasses avanzadas, `Protocol`, decoradores con argumentos, gestores de contexto, generadores, multiproceso, tipado... cuatro o cinco ideas profesionales por notebook, mezcladas con la parte más difícil de MuJoCo.
 
-Ese salto fue **demasiado brusco**. Este puente de **6 notebooks** lo arregla. La idea es subir del nivel de la Parte 3 al del Bloque A **por escalones**, con mucha más **práctica** que explicación nueva:
+Ese salto sería **demasiado brusco**. Este puente de **7 notebooks** lo evita. La idea es subir del nivel de la Parte 3 al del Bloque A **por escalones**, con mucha más **práctica** que explicación nueva:
 
 | Lección | Tema | Prepara para |
 |---|---|---|
@@ -33,8 +33,9 @@ Ese salto fue **demasiado brusco**. Este puente de **6 notebooks** lo arregla. L
 | P4 | Iterar y gestionar recursos: generadores, `itertools`, `collections`, `with` | NB48, NB49 |
 | P5 | Tipos y errores profesionales: anotaciones de tipo, excepciones propias, `logging` | NB45-NB50 |
 | P6 | NumPy intermedio para robótica: trayectorias, máscaras, lotes, álgebra lineal, decimales | NB45, NB46 |
+| P7 | Álgebra lineal para robótica: matrices como transformaciones, inversa, determinante, valores propios, SVD, pseudoinversa | NB45, NB46, NB47 |
 
-Si ya has leído NB45-NB50, este puente te servirá para **asentar** lo que allí pasó deprisa: cuando vuelvas a ellos, se leerán de otra manera. Si vienes directamente del NB44, haz el puente **antes** del NB45.
+Vienes del NB44, y el puente va **antes** del NB45: cuando llegues al Bloque A, el Python ya no será lo difícil, y podrás concentrarte en MuJoCo.
 
 Cada lección termina con un **laboratorio**: retos resueltos (ábrelos solo después de intentarlo), del estilo de los que te pondrían en una entrevista técnica de Python.
 
@@ -70,7 +71,7 @@ md(r"""<details>
 
 Imprime `[99, 0.2, 0.3]`. `copia = angulos` **no** copia la lista: crea un **segundo nombre** para la **misma** lista (un **alias**, NB21). Cambiar `copia[0]` cambia la única lista que hay. Para copiar de verdad: `angulos.copy()` o `list(angulos)`.
 
-Esta trampa es **la** trampa de MuJoCo: `datos.qpos` es un array al que apuntan muchos nombres, y si guardas `postura = datos.qpos` sin `.copy()`, tu "postura guardada" cambiará con cada `mj_step` (NB45).
+Esta trampa es **la** trampa de MuJoCo: `datos.qpos` es un array al que apuntan muchos nombres, y si guardas `postura = datos.qpos` sin `.copy()`, tu "postura guardada" cambiará con cada `mj_step` (en el NB45 verás por qué).
 </details>
 """),
 
@@ -187,7 +188,7 @@ md(r"""<details>
 - `+d`: entero con signo siempre visible.
 - `03d`: entero de 3 cifras rellenando con ceros.
 
-Todas las tablas de resultados de NB45-NB50 usan esto.
+Las tablas de resultados de los próximos notebooks (NB45-NB50) lo usarán todo el rato.
 </details>
 """),
 
@@ -330,9 +331,9 @@ code(r"""buscar("postura_base")"""),
 md(r"""<details>
 <summary>▶ Solución</summary>
 
-- **Se define** en `__init__`: `[0.3, -0.6, 0.3]` para cada pierna: cadera 0,3, rodilla −0,6, tobillo 0,3. Es la regla "rodilla = −2 × cadera" del NB50 (postura agachada con la planta plana), con a = 0,3.
+- **Se define** en `__init__`: `[0.3, -0.6, 0.3]` para cada pierna: cadera 0,3, rodilla −0,6, tobillo 0,3. Es la postura base del NB43: rodillas un poco dobladas y los tres ángulos sumando 0, para que la planta quede plana (NB36). Fíjate en el patrón: rodilla = −2 × cadera, con cadera = 0,3.
 - **Se usa** en `reset` (las articulaciones empiezan ahí, con un poco de azar, y los motores reciben esa orden) y en `step` (es el centro alrededor del cual se mueven las acciones).
-- Si fuera todo ceros, el robot empezaría con las **piernas rectas**. Pero ojo: en `reset` hay otra línea, `qpos[1] = -0.8 * (1 - np.cos(0.3))`, que baja el torso lo que corresponde a a = 0,3. Con las piernas rectas, ese descenso ya no tendría sentido: los pies empezarían **hundidos** 3,6 cm en el suelo, y el contacto blando (NB48) los empujaría hacia arriba de golpe. Es un **acoplamiento oculto**: dos sitios del código que dependen de lo mismo (el 0,3), y solo uno lo nombra. Un buen arreglo sería calcular ese descenso **a partir de** `postura_base`, en vez de repetir el número.
+- Si fuera todo ceros, el robot empezaría con las **piernas rectas**. Pero ojo: en `reset` hay otra línea, `qpos[1] = -0.8 * (1 - np.cos(0.3))`, que baja el torso lo que corresponde a a = 0,3. Con las piernas rectas, ese descenso ya no tendría sentido: los pies empezarían **hundidos** 3,6 cm en el suelo, y el suelo blando de MuJoCo (NB38) los empujaría hacia arriba de golpe. Es un **acoplamiento oculto**: dos sitios del código que dependen de lo mismo (el 0,3), y solo uno lo nombra. Un buen arreglo sería calcular ese descenso **a partir de** `postura_base`, en vez de repetir el número.
 
 Encontrar acoplamientos ocultos como este es **exactamente** para lo que sirve leer código con método.
 </details>
@@ -361,7 +362,7 @@ code(r"""for cosa in [modelo, datos, datos.qpos, datos.qpos[0], modelo.nq, mujoc
 
 md(r"""- **`type(cosa)`** da la **clase** del objeto. `.__name__` es su nombre y `.__module__`, el módulo donde está definida.
 - `modelo` es un `MjModel` del módulo `mujoco._structs` (el guion bajo indica que es un módulo interno: tú lo usas como `mujoco.MjModel`).
-- `datos.qpos` es un `numpy.ndarray`; pero **un elemento** de ese array, `datos.qpos[0]`, no es un `float` de Python, sino un **`numpy.float64`**. Por eso a veces ves `np.float64(0.5)` en las salidas (como en el NB49, donde lo arreglamos con `float(...)`).
+- `datos.qpos` es un `numpy.ndarray`; pero **un elemento** de ese array, `datos.qpos[0]`, no es un `float` de Python, sino un **`numpy.float64`**. Por eso a veces ves `np.float64(0.5)` en las salidas (se arregla con `float(...)`; lo harás en el NB49).
 - `mj_step` es una función "incorporada" (*builtin*): está escrita en C, no en Python.
 
 Para **comprobar** si algo es de un tipo, en el código se usa **`isinstance(cosa, Clase)`**, que también acepta las subclases (NB25):
@@ -381,7 +382,7 @@ print("nombres públicos de MjModel:", len(nombres))
 print("los que empiezan por 'actuator_':", [n for n in nombres if n.startswith("actuator_")][:12])
 print("¿los que tienen 'mass'?", [n for n in nombres if "mass" in n])"""),
 
-md(r"""Esto es **oro** cuando trabajas con MuJoCo. ¿Dónde guarda MuJoCo la masa de cada cuerpo? Un `dir` filtrado por `"mass"` y ahí está: `body_mass`, `body_subtreemass`... (el que usamos en el NB50). La convención de nombres de MuJoCo ayuda mucho: **`objeto_propiedad`** (`body_mass`, `geom_friction`, `jnt_range`, `actuator_gainprm`...).
+md(r"""Esto es **oro** cuando trabajas con MuJoCo. ¿Dónde guarda MuJoCo la masa de cada cuerpo? Un `dir` filtrado por `"mass"` y ahí está: `body_mass`, `body_subtreemass`... (`body_mass` ya lo usaste en el NB35 y el NB38). La convención de nombres de MuJoCo ayuda mucho: **`objeto_propiedad`** (`body_mass`, `geom_friction`, `jnt_range`, `actuator_gainprm`...).
 
 ### help y __doc__: ¿cómo se usa?
 """),
@@ -400,7 +401,7 @@ Es la **firma** de la función con sus **anotaciones de tipo** (las veremos a fo
 
 ### inspect: el código fuente
 
-El módulo **`inspect`** va más allá. `inspect.signature` da la firma de una función de Python, e `inspect.getsource`, ¡su **código fuente**! Lo usamos en el NB34 para leer las tripas de Stable-Baselines3. Probemos con algo nuestro y con algo de MuJoCo:
+El módulo **`inspect`** va más allá. `inspect.signature` da la firma de una función de Python, e `inspect.getsource`, ¡su **código fuente**! Lo usamos en el NB43 para leer, método a método, el entorno de Zancudo. Probemos con algo nuestro y con algo de MuJoCo:
 """),
 
 code(r"""import inspect
@@ -412,7 +413,7 @@ print(inspect.getsource(zancudo_env.Zancudo.close))"""),
 
 code_err(r"""inspect.getsource(mujoco.mj_step)"""),
 
-md(r"""Con nuestro código, funciona: firma y fuente. Con `mj_step`, **error**: `TypeError: module, class, method, function, traceback, frame, or code object was expected, got builtin_function_or_method`. Es decir: "esto no es código de Python, no tengo fuente que enseñarte". Las funciones de MuJoCo están escritas en **C** (NB45) y compiladas: Python solo ve una "caja negra" con su firma y su docstring.
+md(r"""Con nuestro código, funciona: firma y fuente. Con `mj_step`, **error**: `TypeError: module, class, method, function, traceback, frame, or code object was expected, got builtin_function_or_method`. Es decir: "esto no es código de Python, no tengo fuente que enseñarte". Las funciones de MuJoCo están escritas en **C** (lo verás en el NB45) y compiladas: Python solo ve una "caja negra" con su firma y su docstring.
 
 Moraleja: para bibliotecas escritas en Python (Gymnasium, Stable-Baselines3, PyTorch en su parte de Python), `getsource` te deja leer cómo funcionan por dentro. Para las partes en C (MuJoCo, NumPy por dentro), toca leer la **documentación**.
 
@@ -531,7 +532,7 @@ Consejos para leer documentación técnica:
 
 - **No la leas entera.** Busca (Ctrl+F) el nombre exacto de la función o del atributo.
 - **Mira primero el ejemplo**, después la explicación. Casi todas las páginas buenas tienen uno.
-- **Comprueba la versión.** La documentación de MuJoCo cambia con cada versión (en el NB50 vimos que la amortiguación de las articulaciones pasó a ser un vector de 3 números). Tu versión: `mujoco.__version__`.
+- **Comprueba la versión.** La documentación de MuJoCo cambia con cada versión (en el NB50 verás que la amortiguación de las articulaciones pasó a ser un vector de 3 números). Tu versión: `mujoco.__version__`.
 - Para MuJoCo, la **Referencia XML** es la página más útil: cada atributo de cada etiqueta, con su valor por defecto. Cuando dudes de qué hace `solimp` o `armature`, ahí está.
 
 ### Leer una firma de Python
@@ -622,7 +623,7 @@ fuerzas = [n for n in dir(datos) if n.startswith("qfrc_")]
 print(len(fuerzas), fuerzas)
 ```
 
-Son las **fuerzas generalizadas** del NB45 (una por grado de libertad): `qfrc_actuator` (los motores), `qfrc_bias` (gravedad y efectos de velocidad), `qfrc_passive` (muelles y amortiguadores de las articulaciones), `qfrc_constraint` (contactos y límites), `qfrc_applied` (las que pones tú)... En MuJoCo 3.14 son **12** (incluidas algunas que solo se usan con opciones especiales, como `qfrc_fluid` para el aire o el agua).
+Son las **fuerzas generalizadas** (una por grado de libertad; las estudiarás a fondo en el NB45): `qfrc_actuator` (los motores), `qfrc_bias` (gravedad y efectos de velocidad), `qfrc_passive` (muelles y amortiguadores de las articulaciones), `qfrc_constraint` (contactos y límites), `qfrc_applied` (las que pones tú)... En MuJoCo 3.14 son **12** (incluidas algunas que solo se usan con opciones especiales, como `qfrc_fluid` para el aire o el agua).
 </details>
 
 <details>
@@ -670,16 +671,16 @@ print([n for n in dir(modelo.opt) if "time" in n])    # ¡aquí está!
 modelo.opt.timestep = 0.005
 ```
 
-Está en **`modelo.opt`**, el objeto con las opciones de la física (la sección `<option>` del MJCF, NB45). La introspección a veces requiere **dos niveles**: si no lo encuentras en un objeto, mira en sus atributos que sean objetos. (Devuélvelo a 0,002 si vas a seguir usando el modelo: `modelo.opt.timestep = 0.002`.)
+Está en **`modelo.opt`**, el objeto con las opciones de la física (la sección `<option>` del MJCF, NB42). La introspección a veces requiere **dos niveles**: si no lo encuentras en un objeto, mira en sus atributos que sean objetos. (Devuélvelo a 0,002 si vas a seguir usando el modelo: `modelo.opt.timestep = 0.002`.)
 </details>
 
 <details>
 <summary>▶ Solución R8</summary>
 
-- `x is datos.qpos` → `True`: `x` no es una copia, es **otro nombre para el mismo objeto** array que da `datos.qpos` (y ese array mira directamente a la memoria de C de MuJoCo, NB45). Por eso `x` **ve los cambios** de `mj_step`. (Para preguntar "¿estos dos arrays miran a la misma memoria?", aunque sean objetos distintos, como una porción y su array original, la herramienta es `np.shares_memory(a, b)`.)
+- `x is datos.qpos` → `True`: `x` no es una copia, es **otro nombre para el mismo objeto** array que da `datos.qpos` (un adelanto: ese array mira directamente a la memoria de C de MuJoCo; lo estudiarás a fondo en el NB45). Por eso `x` **ve los cambios** de `mj_step`. (Para preguntar "¿estos dos arrays miran a la misma memoria?", aunque sean objetos distintos, como una porción y su array original, la herramienta es `np.shares_memory(a, b)`.)
 - `np.array_equal(y, datos.qpos)` → `False`, porque `y` es una **copia** hecha antes del paso: se quedó con los valores de entonces, y el paso ha movido el robot (aunque sea un poquito, porque cae hacia el suelo desde su postura inicial).
 
-Es la regla de oro del NB45: si quieres **guardar** un estado, `.copy()`; si quieres **vigilarlo**, basta el nombre.
+Será la regla de oro del NB45: si quieres **guardar** un estado, `.copy()`; si quieres **vigilarlo**, basta el nombre.
 </details>
 
 <details>
@@ -705,7 +706,7 @@ La docstring es larga; la parte importante está **al final** del código (las d
 <details>
 <summary>▶ Solución R11</summary>
 
-`False True True`. La suma de decimales del ordenador no es exacta (NB06, NB49): `0.1 + 0.2` es `0.30000000000000004`. Por eso **nunca** se comparan decimales con `==`, sino con una **tolerancia**: `abs(a - b) < 1e-9`, o mejor `math.isclose(a, b)` / `np.isclose(a, b)` (P6).
+`False True True`. La suma de decimales del ordenador no es exacta (NB06; volverá a salir en el NB49): `0.1 + 0.2` es `0.30000000000000004`. Por eso **nunca** se comparan decimales con `==`, sino con una **tolerancia**: `abs(a - b) < 1e-9`, o mejor `math.isclose(a, b)` / `np.isclose(a, b)` (P6).
 </details>
 
 <details>
@@ -729,7 +730,7 @@ md(r"""## 8 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-En el **P2**, las **funciones como piezas**: funciones que reciben funciones (*callbacks*), funciones que fabrican funciones (cierres, con `nonlocal`), y los **decoradores**, subiendo un escalón cada vez hasta los decoradores con argumentos del NB49. Más `functools` (`wraps`, `partial`, `lru_cache`) y los parámetros solo por posición y solo por nombre.
+En el **P2**, las **funciones como piezas**: funciones que reciben funciones (*callbacks*), funciones que fabrican funciones (cierres, con `nonlocal`), y los **decoradores**, subiendo un escalón cada vez hasta los decoradores con argumentos (los usarás en el NB49). Más `functools` (`wraps`, `partial`, `lru_cache`) y los parámetros solo por posición y solo por nombre.
 """),
 
 ]

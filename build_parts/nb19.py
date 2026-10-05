@@ -226,8 +226,42 @@ entrada no se tocan. Multiplicando los eslabones, para cada ejemplo:
    pendiente del peso de salida de j  = 2 × error × ReLU(z de j)
 ```
 
-(y luego, la **media** sobre todos los ejemplos). Lo escribimos con un bucle sobre las 8 neuronas (NumPy hace los 61 ejemplos a la vez). Es la celda más
-larga del curso hasta ahora, pero cada línea es algo que ya conoces; léela con los comentarios:
+(y luego, la **media** sobre todos los ejemplos).
+
+### Primero, con una sola neurona y un solo ejemplo
+
+Antes de lanzarnos con 8 neuronas y 61 ejemplos, comprobemos la cadena en el caso más pequeño posible: **una** neurona oculta y **un** ejemplo inventado. La
+inclinación es 5, el maestro querría un empuje de −20, y los pesos son números cualesquiera. Calculamos la pendiente del peso de entrada con la fórmula, eslabón
+a eslabón:
+"""),
+
+code(r"""x, objetivo = 5.0, -20.0                     # un ejemplo inventado
+w_entrada, b_oculto, w_salida, b_salida = 0.5, -1.0, 2.0, 0.0
+
+z = w_entrada * x + b_oculto                    # lo que suma la neurona: 1,5
+activacion = relu(z)                            # encendida: 1,5
+prediccion_1 = w_salida * activacion + b_salida # 3,0
+error_1 = prediccion_1 - objetivo               # 23,0
+encendida_1 = 1 if z > 0 else 0
+
+formula = 2 * error_1 * w_salida * encendida_1 * x
+print("pendiente con la cadena:", formula)"""),
+
+md(r"""2 × 23 × 2 × 1 × 5 = **460**. ¿Es verdad? Comprobémoslo "a lo bruto", como en el NB16: movemos el peso de entrada un poquito a cada lado y miramos cuánto cambia el
+error al cuadrado:
+"""),
+
+code(r"""def error_cuadrado(w):
+    return (w_salida * relu(w * x + b_oculto) + b_salida - objetivo) ** 2
+
+h = 0.0001
+print("pendiente medida:      ", (error_cuadrado(w_entrada + h) - error_cuadrado(w_entrada - h)) / (2 * h))"""),
+
+md(r"""**460** también. La cadena funciona con la ReLU dentro. (Prueba a cambiar `b_oculto` a −3: la neurona queda apagada, z < 0, y las dos pendientes valen **0**: un
+peso que no influyó no tiene culpa.)
+
+Ahora sí: lo mismo para 8 neuronas y los 61 ejemplos a la vez. Lo escribimos con un bucle sobre las 8 neuronas (NumPy hace los 61 ejemplos a la vez). Es la celda
+más larga del curso hasta ahora, pero cada línea es algo que ya conoces; léela con los comentarios:
 """),
 
 code(r"""ocultas = 8
