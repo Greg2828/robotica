@@ -583,7 +583,7 @@ md(r"""## 7 · Singularidades
 
 Una pregunta: ¿puede el tobillo de Zancudo moverse en **cualquier** dirección del plano x-z? Con la rodilla doblada, sí: combinando cadera y rodilla se puede ir a cualquier lado. Pero con la rodilla **completamente estirada**, el tobillo está a la máxima distancia de la cadera (0,8 m), y **no puede alejarse más**: solo puede moverse en perpendicular a la pierna. Ha perdido una dirección de movimiento. A esa postura se la llama **singularidad**.
 
-En el jacobiano, una singularidad se ve como una matriz que "se aplasta": sus columnas se vuelven **paralelas** (las dos articulaciones mueven el tobillo en la misma dirección) y su **determinante** se hace cero (NB14: el determinante mide cuánto "estira el área" una matriz; cero = aplasta el plano en una línea).
+En el jacobiano, una singularidad se ve como una matriz que "se aplasta": sus columnas se vuelven **paralelas** (las dos articulaciones mueven el tobillo en la misma dirección) y su **determinante** se hace cero (P7: el determinante mide cuánto "estira el área" una matriz; cero = aplasta el plano en una línea).
 
 Midámoslo con el trozo del jacobiano que nos importa: filas x y z, columnas cadera y rodilla (un jacobiano de 2 × 2). Y con dos medidas de `np.linalg`:
 

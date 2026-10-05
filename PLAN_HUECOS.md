@@ -4,7 +4,8 @@ HECHO (2026-10-04): NB03b números (era "NB04b" en el plan), NB04b álgebra (era
 HECHO (2026-10-05): NB28b (+ enlaces desde NB28/NB29/NB30, quitados los "los matemáticos demostraron").
 HECHO (2026-10-05): NB38b (+ enlaces NB38/NB39, NB45 energía "NB37"→NB38b).
 HECHO (2026-10-05): NB39b (+ enlaces NB39/NB40/NB49; P3 ω/ζ→NB39b y NB49 regla pasito·ω<2→NB39b ya arreglados).
-SIGUIENTE: NB44p7, y los arreglos pendientes de abajo.
+HECHO (2026-10-05): NB44p7 álgebra lineal (+ P6 ahora "6 de 7" y apunta a P7; NB45 eigvalsh y NB46 determinante citan P7).
+→ LOS 10 NB NUEVOS ESTÁN HECHOS. SIGUIENTE: los ARREGLOS pendientes de abajo.
 Verificar cada NB con nbconvert --execute y las soluciones con el script checksol (extrae bloques ```python de los <details>).
 
  de huecos (auditoría 2026-10-04, 8 revisores leyeron NB00-NB50 completos)
@@ -19,7 +20,7 @@ Verificar cada NB con nbconvert --execute y las soluciones con el script checkso
 - [x] NB28b · Las matemáticas del gradiente de la política: regla del producto, log de productos, derivar log N paso a paso, ∇p = p∇log p, línea base sin sesgo, serie geométrica 1/(1−γ), n vs n−1
 - [x] NB38b · Energía, trabajo y potencia (cinética, potencial, conservación, potencia = par·ω)
 - [x] NB39b · Muelles, amortiguadores y ecuaciones diferenciales: derivadas de sen/cos, oscilador, ω, ζ, sub/crítico/sobre, simular con Euler y estabilidad (x' = −λx → pasito·λ < 2)
-- [ ] NB44p7 · Álgebra lineal para robótica: traspuesta, identidad, inversa, A·x=b, det, rango, valores/vectores propios, definida positiva, SVD, condición, pseudoinversa, producto vectorial
+- [x] NB44p7 · Álgebra lineal para robótica: traspuesta, identidad, inversa, A·x=b, det, rango, valores/vectores propios, definida positiva, SVD, condición, pseudoinversa, producto vectorial
 
 ## ARREGLOS en notebooks existentes
 - [ ] Puente P1-P6: quitar/parafrasear referencias a NB45-NB50 como sabidas (van ANTES del NB45)

@@ -575,7 +575,7 @@ md(r"""Leamos esta matriz con calma, porque cuenta muchas cosas:
 - **Es simétrica**: la casilla (i, j) es igual a la (j, i). Siempre lo es (viene de la energía cinética, que es una forma cuadrática).
 - **Las casillas fuera de la diagonal son los acoplamientos.** La (0, 3) vale 2,464: si aceleras la cadera derecha, el cuerpo entero "nota" un empujón hacia atrás (acción y reacción, NB37). Y los ceros de la esquina, (3, 6) por ejemplo, dicen que la cadera derecha y la izquierda **no** se acoplan directamente: están en ramas distintas del árbol.
 
-Otra propiedad, que en la entrevista te pueden preguntar: M es **definida positiva**, es decir, todos sus **valores propios** son positivos. Físicamente significa que la energía cinética nunca es negativa ni cero si algo se mueve. Comprobémoslo con NumPy (`np.linalg.eigvalsh` calcula los valores propios de una matriz simétrica; NB46):
+Otra propiedad, que en la entrevista te pueden preguntar: M es **definida positiva**, es decir, todos sus **valores propios** son positivos. Físicamente significa que la energía cinética nunca es negativa ni cero si algo se mueve. Comprobémoslo con NumPy (`np.linalg.eigvalsh` calcula los valores propios de una matriz simétrica; P7):
 """),
 
 code(r"""print("¿simétrica?", np.allclose(M, M.T))

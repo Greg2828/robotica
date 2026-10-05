@@ -22,7 +22,7 @@ cells = [
 
 md(r"""# NB44·P6 · Puente de Python (6): NumPy intermedio para robótica
 
-**Puente de Python — Lección 6 de 6 (última)**
+**Puente de Python — Lección 6 de 7**
 
 > En el NB15 y el NB27 aprendiste NumPy: arrays, `shape`, operaciones elemento a elemento, `@`, ejes, broadcasting, máscaras, vistas. Después, NB45-NB50 lo usaron a fondo: jacobianos de 3×9, matrices de rotación, `np.linalg.pinv`, `svd`, lotes de estados de forma (8, 10.000, 19)... y la trampa de las vistas de MuJoCo. Hoy hacemos el puente: el NumPy que de verdad se usa en robótica, con datos de Zancudo.
 
@@ -536,7 +536,7 @@ md(r"""- La media y el máximo se vuelven `NaN`. Las versiones **`np.nanmean`**,
 Pero ojo: ignorar los `NaN` con `nanmean` es **esconder** un problema. Un `NaN` en una nota de entrenamiento significa que algo explotó (P5). Primero averigua **por qué** apareció; solo después decide si ignorarlo.
 """),
 
-md(r"""## 10 · Resumen (y cierre del puente)
+md(r"""## 10 · Resumen
 
 1. **Pensar en formas**: `(n,)`, `(T, n)`, `(N, 3)`, `(3, 3)`, `(N, 3, 3)`, `(E, T, n)`; el tiempo o el lote, primero. `xmat.reshape(-1, 3, 3)`.
 2. **Grabar**: `np.empty((T, n))` + `tray[paso] = d.qpos` (copia dentro de la fila). Porciones: `tray[:, j]`, `tray[:, [a, b]]`, `tray[:, a:b]`, `tray[::k]`.
@@ -764,7 +764,7 @@ md(r"""## 12 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Con este notebook termina el **puente de Python**. El siguiente paso del curso es el **NB51** (Bloque B: andar sin RL): el péndulo invertido lineal, el punto de captura con fórmulas exactas, el plan de pasos y las trayectorias del pie, con NumPy vectorizado (¡que ahora ya dominas!) y gráficas profesionales.
+Queda una última lección del puente, el **P7**: el **álgebra lineal** que vas a necesitar desde el NB45 (inversa, determinante, rango, valores propios, SVD, número de condición, pseudoinversa, producto vectorial), explicada desde cero con dibujos y comprobada con `np.linalg`.
 """),
 
 ]
