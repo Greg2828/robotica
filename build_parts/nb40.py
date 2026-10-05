@@ -228,6 +228,8 @@ md(r"""- **Kd = 0**: el control P de antes, oscilando para siempre.
 - **Kd = 3**: sube, se pasa un poquito y se queda quieto enseguida. Un buen equilibrio.
 - **Kd = 10**: sube **sin pasarse nada**, pero más despacio. Amortiguador **fuerte**: como mover la mano en miel.
 
+¿Te acuerdas del NB39b (apartado 6)? Con la inercia de esta pierna (0,167 kg·m²) y Kp = 50, estos Kd son **ζ = 0, 0,17, 0,52 y 1,73**: sin amortiguar, subamortiguado, subamortiguado "con buen equilibrio" y sobreamortiguado. El crítico sería Kd = 2·√(Kp·I) ≈ 5,8. Las curvas hacen justo lo que predice ζ.
+
 Elegir Kp y Kd se llama **ajustar** (*tuning*) el controlador, y es una de las tareas del día a día de un ingeniero de robots:
 
 - **Kp** alto: articulación **rígida** y rápida, pero propensa a oscilar y a dar golpes. Kp bajo: **blanda**, se deja empujar.

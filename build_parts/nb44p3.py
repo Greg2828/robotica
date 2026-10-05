@@ -302,7 +302,7 @@ code(r"""class Motor:
 
     @property
     def frecuencia(self) -> float:
-        # Frecuencia natural (rad/s) con una inercia de 0,05 kg·m² (NB40). Solo lectura.
+        # Frecuencia natural (rad/s) con una inercia de 0,05 kg·m² (NB39b). Solo lectura.
         return (self.kp / 0.05) ** 0.5
 
 motor = Motor(kp=300, kv=20)
@@ -333,7 +333,7 @@ code(r"""class Motor(Motor):
 
     @classmethod
     def critico(cls, kp: float, inercia: float = 0.05) -> "Motor":
-        # Un motor con amortiguamiento crítico: kv = 2·√(kp·I) (NB40).
+        # Un motor con amortiguamiento crítico: kv = 2·√(kp·I) (NB39b).
         return cls(kp=kp, kv=2 * (kp * inercia) ** 0.5)
 
     @staticmethod

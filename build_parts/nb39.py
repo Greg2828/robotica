@@ -527,7 +527,7 @@ md(r"""## 13 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Hasta ahora hemos tratado los motores como cajas que "hacen un par" cuando se les pide. En el **NB40** abrimos la caja: cómo es un motor eléctrico de verdad, por qué casi todos los robots llevan **reductoras**, qué límites tienen (de par, de velocidad, de calor) y, sobre todo, cómo se le ordena a un motor que lleve una articulación a un ángulo: el **control PD**, el controlador más usado de la robótica, que está también **dentro** de casi todas las políticas de RL de robots reales.
+Antes, en el **NB39b**, una lección intermedia: los **muelles** y los **amortiguadores** a fondo (cómo oscilan, cómo se calman, y por qué una simulación puede explotar), y las **ecuaciones diferenciales**, el lenguaje de toda la física. Hasta ahora hemos tratado los motores como cajas que "hacen un par" cuando se les pide. En el **NB40** abrimos la caja: cómo es un motor eléctrico de verdad, por qué casi todos los robots llevan **reductoras**, qué límites tienen (de par, de velocidad, de calor) y, sobre todo, cómo se le ordena a un motor que lleve una articulación a un ángulo: el **control PD**, el controlador más usado de la robótica, que está también **dentro** de casi todas las políticas de RL de robots reales.
 """),
 
 ]

@@ -227,7 +227,7 @@ md(r"""## 4 · Estabilidad: cuándo explota una simulación
 
 Precisión y estabilidad son cosas distintas. Una simulación **imprecisa** da números algo equivocados; una **inestable** da números que **crecen sin límite** hasta el infinito: **explota**. Y lo que hace explotar una simulación es la **rigidez** (*stiffness*): fuerzas que cambian **muy deprisa**, como un muelle muy duro o un amortiguador muy fuerte.
 
-La regla, para un muelle que oscilaría con frecuencia ω (en rad/s, ω = √(rigidez / inercia)): los métodos explícitos (y el Euler semiimplícito) son estables solo si
+La regla, que dedujiste en el NB39b (apartado 7), para un muelle que oscilaría con frecuencia ω (en rad/s, ω = √(rigidez / inercia)): los métodos explícitos (y el Euler semiimplícito) son estables solo si
 
 ```
    pasito · ω  <  2
