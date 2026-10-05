@@ -1,6 +1,6 @@
 # Progreso
 
-## ▶ PARA RETOMAR (actualizado 2026-10-05)
+## ▶ PARA RETOMAR (actualizado 2026-10-06)
 - **Hechos, verificados (EXIT 0) y subidos: NB00–NB50 + puente P1–P7 + 10 lecciones de relleno** (todo el
   Bloque A de simulación a fondo incluido).
 - **Relleno de huecos tras la auditoría del 2026-10-04 (8 revisores leyeron NB00-NB50):** checklist en
@@ -11,9 +11,17 @@
   **NB44p7 álgebra lineal para robótica** (último del puente).
 - Erratas, notas breves y repaso editorial del orden nuevo (puente P1-P6 sin dar por sabido NB45-NB50;
   NB45-NB50 citando el puente como repaso): HECHOS. **Plan de huecos COMPLETO.**
-- **Orden de lectura:** … NB44 → P1 … P7 → NB45 … NB50 → (siguiente) NB51.
-- **Siguiente tras cerrar el plan de huecos: NB51 · Planificar pasos** (LIPM analítico, punto de captura, plan de
-  pasos, trayectorias del pie), Bloque B. Para continuar, dile a Claude: **«sigamos con robótica»**.
+- **Orden de lectura:** … NB44 → P1 … P7 → NB45 … NB50 → NB51 → (siguiente) NB52.
+- **NB51 · Planificar pasos ✅ (2026-10-06, 102 celdas, 41 de código, EXIT 0)**: LIPM resuelto a mano (cosh/sinh)
+  vs Euler; DCM ξ = x + v/ω (huye del pie) y CdM que lo persigue; energía orbital = producto ξ·ζ; capturabilidad
+  con N pasos (Zancudo: 0,19 / 0,61 / … límite 0,82 m/s); marcha periódica; plan de pisadas 2D + plan del DCM
+  hacia atrás (Englsberger) con fase de arranque; pie en el aire (quíntico + bulto 64σ³(1−σ)³); LIPM en MuJoCo
+  (bola + xfrc_applied): bucle abierto diverge (3 cm / ~300 m con empujón), realimentación del DCM k=3 → <1 mm,
+  ZMP se aparta 9,7 cm. Python: NumPy vectorizado (ufuncs, timeit, broadcasting, máscaras, searchsorted,
+  numpy.typing) + matplotlib OO (subplots, subplot_mosaic, colormaps, pcolormesh, patches, log, savefig).
+  Figura guardada en notebooks/assets/nb51_plan_de_marcha.png.
+- **Siguiente: NB52 · Zancudo anda sin RL** (preview control de Kajita, IK, PD; clásico vs RL; Py: librería +
+  logging). Para continuar, dile a Claude: **«sigamos con robótica»**.
 - Rutina: tras cada notebook verificado → commit + push (repo GitHub público Greg2828/robotica).
 
 ## ⚠ GIRO DE ENFOQUE (2026-09-30)
