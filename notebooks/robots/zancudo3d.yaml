@@ -1,0 +1,23 @@
+# Zancudo 3D (NB53): medidas en m, masas en kg, kp en N·m/rad, kv en N·m·s/rad
+nombre: zancudo3d
+torso:
+  masa: 12.0
+  largo: 0.4
+  radio: 0.08
+  ancho_cadera: 0.2
+pierna:
+  muslo: 0.4
+  pierna: 0.4
+  masa_muslo: 3.0
+  masa_pierna: 2.0
+pie:
+  largo: 0.2
+  ancho: 0.08
+  alto: 0.03
+  adelanto: 0.04
+  masa: 0.8
+  rozamiento: 1.0
+motores:
+  kp: 3000.0
+  kv: 90.0
+  par_max: 150.0

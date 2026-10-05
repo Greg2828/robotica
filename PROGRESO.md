@@ -11,7 +11,7 @@
   **NB44p7 álgebra lineal para robótica** (último del puente).
 - Erratas, notas breves y repaso editorial del orden nuevo (puente P1-P6 sin dar por sabido NB45-NB50;
   NB45-NB50 citando el puente como repaso): HECHOS. **Plan de huecos COMPLETO.**
-- **Orden de lectura:** … NB44 → P1 … P7 → NB45 … NB50 → NB51 → NB52 → (siguiente) NB53.
+- **Orden de lectura:** … NB44 → P1 … P7 → NB45 … NB50 → NB51 → NB52 → NB53 → (siguiente) NB54.
 - **NB51 · Planificar pasos ✅ (2026-10-06, 102 celdas, 41 de código, EXIT 0)**: LIPM resuelto a mano (cosh/sinh)
   vs Euler; DCM ξ = x + v/ω (huye del pie) y CdM que lo persigue; energía orbital = producto ξ·ζ; capturabilidad
   con N pasos (Zancudo: 0,19 / 0,61 / … límite 0,82 m/s); marcha periódica; plan de pisadas 2D + plan del DCM
@@ -28,8 +28,16 @@
   RL `completa` del NB44 aguanta siempre 0,85 m/s y a menudo 1,3-1,7. Librería **notebooks/andar/** (fuente única en
   build_parts/nb52_andar/, escrita con %%writefile): plan.py, cinematica.py, control.py (PasoDeCaptura, Enum),
   logging. GIFs nb52_zancudo_clasico.gif / nb52_paso_de_captura.gif. **→ Bloque B COMPLETO.**
-- **Siguiente: NB53 · Zancudo 3D (MjSpec)**: cadera 3 GDL, tobillo 2 GDL, equilibrio lateral; Py: dataclasses +
-  YAML. Para continuar, dile a Claude: **«sigamos con robótica»**.
+- **NB53 · Zancudo 3D ✅ (2026-10-06, 70 celdas, 28 de código, EXIT 0, ~30 s)**: junta libre (nq 19 / nv 18,
+  mj_differentiatePos, velocidad angular en marco LOCAL), pierna de 6 GDL (varias bisagras por cuerpo), config con
+  dataclasses anidadas + YAML (trampas 1e-3/NO/on/12:30/0755, safe_load, desde_dict con get_type_hints y difflib,
+  fusionar variantes), constructor MjSpec → robots/zancudo3d.yaml + .xml; IK 3D (alabeo + plano sagital); de pie con
+  reparto de fuerzas Jᵀ·F (error 0 incluso kp=300); IK del CdM 2D (Newton); pata coja: reparto PONDERADO imprescindible
+  (blandos solo así; rígidos 0,4 cm); empujones: dos pies x 0,32 / y 0,44, un pie x 0,28 / y 0,11 m/s (75-85 % de la
+  teoría ω·borde); barrido ancho de cadera 0,12/0,2/0,3 → 0,30/0,44/0,62. GIF nb53_pata_coja.gif.
+- **Siguiente: NB54 · Entorno de locomoción profesional 3D** (paquete, pyproject, comandos de velocidad, gravedad
+  proyectada, recompensa modular, entrenamiento largo; Py: argparse, logging, pytest fixtures). Para continuar, dile a
+  Claude: **«sigamos con robótica»**.
 - Rutina: tras cada notebook verificado → commit + push (repo GitHub público Greg2828/robotica).
 
 ## ⚠ GIRO DE ENFOQUE (2026-09-30)

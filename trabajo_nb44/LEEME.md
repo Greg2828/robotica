@@ -10,5 +10,9 @@ NB52 ✅ (2026-10-06): Zancudo anda sin RL (vista previa de Kajita + IK + servos
 paso de captura; comparación con RL). Librería notebooks/andar/ (fuente: build_parts/nb52_andar/).
 Bloque B completo.
 
-Siguiente: NB53 Bloque C · Zancudo 3D con MjSpec: cadera 3 GDL, tobillo 2 GDL, equilibrio lateral, de pie con
-gravedad compensada (Py: config con dataclasses + YAML). El plan 2D del NB51 (pisadas x,y) ya está listo para 3D.
+NB53 ✅ (2026-10-06): Zancudo 3D con MjSpec desde config YAML (robots/zancudo3d.yaml/.xml), de pie con reparto
+de fuerzas, a la pata coja, equilibrio lateral medido.
+
+Siguiente: NB54 Bloque C · entorno de locomoción profesional 3D (usar robots/zancudo3d.xml; observación con gravedad
+proyectada, comandos de velocidad, recompensa modular; Py: paquete + pyproject, argparse, logging, pytest fixtures).
+Ojo: entrenar en 3D en la Pi será lento → plantear corto en la Pi + largo en script/Colab.
