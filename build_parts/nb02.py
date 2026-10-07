@@ -1,4 +1,4 @@
-"""Construye NB02 · El mundo de mentira: qué es un simulador (conceptual, 0 código).
+"""Construye NB02 · El mundo de mentira: qué es un simulador (conceptual; código solo en la Práctica en MuJoCo, ya escrito).
 
 Pieza (2) del mapa. Qué es un simulador, física desde cero (fuerza, masa e inercia,
 velocidad y aceleración, gravedad, choque, rozamiento), el tiempo a saltitos (paso
@@ -11,7 +11,7 @@ Datos verificados del Humanoid-v5: paso de física 0,003 s, decide cada 5 pasos
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
-from nbbuild import md, build
+from nbbuild import md, code, build
 
 cells = [
 
@@ -424,9 +424,10 @@ trabajaremos más adelante. Lo importante es que MuJoCo hace justo lo que hemos 
 - Avanza el mundo **a pasitos** (la cadena de oro + los choques), y en cada uno te dice cómo
   queda el robot.
 
-Cuando llegue el momento de tocar código (dentro de varios notebooks), MuJoCo será una de las
-primeras herramientas que aprendamos a manejar. Por ahora, quédate con la imagen: **MuJoCo es
-el mundo de mentira donde nuestros robots vivirán y practicarán.**
+Ya lo encendiste en la práctica del NB00 y lo desmontaste en la del NB01. En la **práctica de
+esta lección** le pedirás que calcule la pelota del apartado 5, y verás que hace exactamente tus
+cuentas. Quédate con la imagen: **MuJoCo es el mundo de mentira donde nuestros robots vivirán y
+practicarán.**
 """),
 
 md(r"""## 10 · Lo que sale mal: el mundo de mentira NO es el mundo real
@@ -669,7 +670,202 @@ del montón", en vez de una sorpresa.
 </details>
 """),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: suelta una pelota (y comprueba tu tabla)
+
+En el apartado 5 calculaste **a mano**, con lápiz y papel, cómo cae una pelota desde 2 metros
+dando saltitos de 0,1 segundos. Ahora vas a pedirle **lo mismo** a MuJoCo y a comparar sus números
+con los tuyos. Spoiler: te vas a llevar una sorpresa muy agradable.
+
+Como siempre en la Parte 0, el código ya está escrito: ejecutas, miras, y cambias algún número.
+"""),
+
+md(r"""### Paso 1 · El plano de un mundo con una pelota
+
+En el NB01 viste un trozo del plano del humanoide. Ahora tienes **un plano entero**, pequeñito,
+escrito aquí mismo. Describe un mundo con un suelo y una pelota. Léelo con calma, porque cada
+línea es una idea de esta lección:
+
+- `<option gravity="0 0 -10" timestep="0.1"/>` → las **reglas del mundo**: la gravedad tira hacia
+  abajo con 10 (la misma que usamos en la tabla) y el **paso** de tiempo es de **0,1 segundos**
+  (pasos enormes, como los de tu tabla).
+- `<geom type="plane" .../>` → el **suelo**: un plano infinito y plano.
+- `<body name="pelota" pos="0 0 2">` → una **pieza** colocada a **2 metros** de altura.
+- `<freejoint/>` → una **articulación libre**: la pelota no está atada a nada (como el tronco del
+  humanoide, NB01).
+- `<geom type="sphere" size="0.05" .../>` → su forma: una **esfera** de 5 cm de radio.
+
+El texto va entre tres comillas `'''` para que el ordenador sepa dónde empieza y dónde acaba.
+"""),
+
+code(r"""import mujoco
+import taller
+
+PELOTA = '''
+<mujoco>
+  <option gravity="0 0 -10" timestep="0.1"/>
+  <worldbody>
+    <light pos="0 0 5"/>
+    <geom type="plane" size="5 5 0.1" rgba=".8 .9 .8 1"/>
+    <body name="pelota" pos="0 0 2">
+      <freejoint/>
+      <geom type="sphere" size="0.05" rgba="1 .3 .1 1"/>
+    </body>
+  </worldbody>
+</mujoco>
+'''
+
+modelo, datos = taller.cargar(PELOTA)
+print("Paso de tiempo:", modelo.opt.timestep, "s")
+print("Gravedad:      ", modelo.opt.gravity)"""),
+
+md(r"""La gravedad sale como **tres números**: `[0, 0, -10]`. Son "cuánto tira" en cada una de
+las tres direcciones del espacio: adelante-atrás, izquierda-derecha y arriba-abajo. Solo tira
+**hacia abajo** (el −10 del final). Esto de describir una dirección con tres números tiene nombre,
+**vector**, y lo estudiarás en el NB12.
+"""),
+
+md(r"""### Paso 2 · Pasito a pasito, como en tu tabla
+
+La orden que hace avanzar el mundo **un pasito** es `mujoco.mj_step(modelo, datos)`. Es el
+corazón de MuJoCo: **toda** simulación, desde esta pelota hasta un humanoide que anda, es
+llamar a `mj_step` una y otra vez.
+
+La celda de abajo da **8 pasitos** y, después de cada uno, escribe el tiempo, la velocidad y la
+altura de la pelota (en `datos`, claro: es el estado de ahora). Ten tu tabla del apartado 5 a mano.
+"""),
+
+code(r"""print("tiempo  velocidad  altura")
+for paso in range(8):
+    mujoco.mj_step(modelo, datos)
+    print(f"{datos.time:5.1f}  {datos.qvel[2]:8.2f}  {datos.qpos[2]:7.2f}")"""),
+
+md(r"""**¡Son exactamente tus números!** 1,90 → 1,70 → 1,40 → 1,00 → 0,50 → **−0,10**. MuJoCo
+hace **por dentro** justo la receta que hiciste a mano: primero la gravedad cambia la velocidad
+(−1 m/s más cada paso), y luego la velocidad nueva cambia la altura. La **cadena de oro**.
+(La velocidad sale negativa porque va **hacia abajo**.)
+
+Y mira el tiempo 0,6: **−0,10 m**. ¡La pelota ha **atravesado el suelo**, igual que en tu
+tabla! Es la **rareza 1** en directo: con pasos tan grandes, en un solo salto pasa de estar a
+50 cm por encima a estar 10 cm por debajo, y el simulador no la "pilló" a tiempo. En los pasos
+siguientes MuJoCo se da cuenta de que está metida en el suelo y la va sacando poco a poco
+(−0,07, −0,04...), pero el daño ya está hecho: en un mundo de verdad, eso no pasa nunca.
+"""),
+
+md(r"""### Paso 3 · Pasos pequeños: la rareza 2 desaparece
+
+Ahora repetimos con pasos de **una milésima** (0,001 s), cambiando `modelo.opt.timestep`, y
+miramos la altura a los **0,5 segundos**. La física exacta dice **0,75 m**; tu tabla decía 0,50;
+y el apartado 5 prometía que con pasos de una milésima saldría **0,7475**. Comprobémoslo.
+"""),
+
+code(r"""modelo, datos = taller.cargar(PELOTA)
+modelo.opt.timestep = 0.001                       # pasos de una milésima
+
+while datos.time < 0.4999:                        # repite pasitos hasta llegar a 0,5 s
+    mujoco.mj_step(modelo, datos)
+
+print(f"Tras {datos.time:.3f} s, altura = {datos.qpos[2]:.4f} m   (exacto: 0,75 m)")"""),
+
+md(r"""**0,7475**: a 2,5 milímetros de la respuesta exacta, justo lo que decía el apartado 5. Ahora
+sabes de dónde salía ese número. Para llegar a 0,5 segundos, MuJoCo ha dado **500 pasitos**
+(en un abrir y cerrar de ojos): pocas cuentas cada vez, pero muchas veces.
+"""),
+
+md(r"""### Paso 4 · Míralo caer
+
+Ahora un vídeo de 2 segundos con pasos razonables (2 milésimas), para que veas la pelota
+caer y quedarse en el suelo. La cámara está quieta (`seguir=False`) y algo apartada.
+"""),
+
+code(r"""modelo, datos = taller.cargar(PELOTA)
+modelo.opt.timestep = 0.002
+
+taller.video(modelo, datos, segundos=2, nombre="nb02_pelota", seguir=False, distancia=4);"""),
+
+md(r"""No rebota: por defecto, el suelo de MuJoCo es como **plastilina** (absorbe el choque).
+Cómo hacer suelos que rebotan, resbalan o se hunden es un tema entero (los **contactos**) que
+dominarás más adelante.
+"""),
+
+md(r"""### Paso 5 · El humanoide en la Luna
+
+La gravedad es **un número** del modelo, y cambiarlo es cambiar el mundo. Esa es la idea de
+**aleatorizar el mundo** del apartado 10: en un simulador, cambiar el suelo, el peso o la gravedad
+es tan fácil como escribir otro número.
+
+En la Luna, la gravedad es unas **6 veces** más débil que en la Tierra: **1,62** en vez de 9,81.
+Mira cómo se desmaya el humanoide allí.
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+modelo.opt.gravity = [0, 0, -1.62]                # gravedad de la Luna
+
+taller.video(modelo, datos, segundos=4, nombre="nb02_luna");"""),
+
+md(r"""### Tus retos
+
+**Reto 1.** Pasos la mitad de grandes: 0,05 s. Al principio de la celda del Paso 2 añade
+estas dos líneas (cargan una pelota nueva y cambian su paso):
+
+```python
+modelo, datos = taller.cargar(PELOTA)
+modelo.opt.timestep = 0.05
+```
+
+y cambia `range(8)` por `range(16)` (con pasos la mitad de grandes, hacen falta el doble para
+llegar al mismo tiempo). ¿Atraviesa menos el suelo?
+
+**Reto 2.** En el Paso 5, prueba la gravedad de **Júpiter**: `-24.79`. ¿Cae antes o después que
+en la Tierra?
+
+**Reto 3 (para pensar).** En el Paso 3, ¿qué crees que saldrá con `timestep = 0.0001` (una
+diezmilésima)? ¿Y cuánto tardará?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+¡**No**: lo atraviesa **más**! A los 0,60 s está a 0,05 m (con la pelota de 5 cm de radio, justo
+rozando el suelo) y, en el paso siguiente, salta hasta **−0,275 m**. Con pasos de 0,1 s tuvo la
+"suerte" de que el último paso antes del suelo la dejara a 0,50 m. La lección es incómoda pero
+importante: con pasos grandes, el resultado **depende de la casualidad** de dónde caiga cada
+salto respecto al suelo. No basta con "un poco más pequeño": hay que bajar el paso lo suficiente
+para que en un solo salto nada pueda meterse en otra cosa. Con 0,002 (el del vídeo) ya no pasa.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+**Antes.** Lo he medido con la cabeza del humanoide (cuándo baja de 1 metro): en la Tierra
+tarda **0,60 s**; en Júpiter, **0,34 s**; en la Luna, **2,05 s**. Más gravedad = más fuerza hacia
+abajo = gana velocidad más deprisa = cae antes.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Saldrá todavía más cerca de 0,75 (unos **0,74975**): diez veces más pasos, error diez veces más
+pequeño. Y tardará un poco más (5.000 pasos en vez de 500), aunque con una pelota sigue siendo
+casi instantáneo. Con un humanoide entrenando millones de pasos, esa diferencia sí importa: es el
+dilema "exacto contra rápido" del apartado 5.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Un plano **MJCF** completo y mínimo: `option` (reglas del mundo), `worldbody`, un suelo
+  (`plane`) y una pieza (`body`) con su forma (`geom`) y una articulación libre.
+- **`mujoco.mj_step`** avanza el mundo un pasito. Toda simulación es repetirlo.
+- **`modelo.opt.timestep`** (el paso) y **`modelo.opt.gravity`** (la gravedad) son números del
+  modelo que puedes cambiar.
+- En `datos` lees el estado: `datos.time` (el reloj), `datos.qpos` (posiciones) y `datos.qvel`
+  (velocidades).
+- MuJoCo hace por dentro la **cadena de oro** de tu tabla, y por eso tiene sus mismas rarezas
+  cuando el paso es grande.
+
+En la práctica del NB03 le darás una **mente** al humanoide: escribirás órdenes en sus motores
+dentro del bucle de percibir, decidir y actuar.
+"""),
+
+md(r"""## 14 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
@@ -677,7 +873,8 @@ Ya tienes dos piezas del mapa bien entendidas, el **cuerpo** (NB01) y el **mundo
 (este NB02), y has visto el **bucle** que las une. En el **NB03** entramos en la pieza que de
 verdad decide: **la mente, la política**. Veremos con calma qué es exactamente eso de "percibir"
 (la observación) y "actuar" (la acción), y cómo una simple caja que convierte lo uno en lo otro
-puede acabar sabiendo andar. Seguiremos sin código.
+puede acabar sabiendo andar. Seguiremos sin código, salvo la práctica en MuJoCo, donde escribirás
+órdenes en los motores del humanoide.
 """),
 
 ]
