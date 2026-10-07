@@ -8,6 +8,8 @@ Funciones:
     cargar(nombre_o_xml)            -> (modelo, datos)
     foto(modelo, datos)             -> enseña una imagen de la simulación
     video(modelo, datos, segundos, control=None, nombre="video") -> enseña un vídeo
+    poner_angulo(modelo, datos, articulacion, grados)   -> dobla una articulación (sin física)
+    al_azar(semilla)                -> un "control" que mueve los motores al azar
 """
 from __future__ import annotations
 
@@ -56,6 +58,21 @@ def cargar(nombre_o_xml: str):
     return modelo, datos
 
 
+def _dibujante(modelo, alto, ancho):
+    """Crea el "dibujante" de MuJoCo sin dejar que ensucie la salida con avisos técnicos."""
+    import sys
+    sys.stderr.flush()
+    copia = os.dup(2)
+    nulo = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(nulo, 2)                       # tapa los avisos de la tarjeta gráfica
+    try:
+        return mujoco.Renderer(modelo, alto, ancho)
+    finally:
+        os.dup2(copia, 2)
+        os.close(nulo)
+        os.close(copia)
+
+
 def _camara(modelo, distancia=None, seguir=True):
     """Una cámara que mira al cuerpo 1 (el tronco) desde un lado y algo desde arriba."""
     cam = mujoco.MjvCamera()
@@ -76,7 +93,7 @@ def _imagen(modelo, datos, dibujante, cam):
 
 def foto(modelo, datos, distancia=None, seguir=True, ancho=480, alto=360, titulo=None):
     """Enseña una foto de cómo está ahora la simulación."""
-    with mujoco.Renderer(modelo, alto, ancho) as dibujante:
+    with _dibujante(modelo, alto, ancho) as dibujante:
         img = _imagen(modelo, datos, dibujante, _camara(modelo, distancia, seguir))
     plt.figure(figsize=(ancho / 100, alto / 100))
     plt.imshow(img)
@@ -100,7 +117,7 @@ def video(modelo, datos, segundos=2.0, control=None, nombre="video",
     cada = max(1, int(round(1 / (fotos_por_segundo * modelo.opt.timestep))))
     cam = _camara(modelo, distancia, seguir)
     fotos = []
-    with mujoco.Renderer(modelo, alto, ancho) as dibujante:
+    with _dibujante(modelo, alto, ancho) as dibujante:
         for paso in range(pasos):
             if control is not None:
                 control(modelo, datos)
@@ -122,3 +139,17 @@ def al_azar(semilla=0):
         datos.ctrl[:] = azar.uniform(-1, 1, size=modelo.nu)
 
     return control
+
+
+def poner_angulo(modelo, datos, articulacion, grados):
+    """Coloca la articulación `articulacion` en `grados` grados, sin que pase el tiempo.
+
+    Es como colocar a mano un muñeco articulado. Avisa si te sales de sus topes.
+    """
+    junta = modelo.joint(articulacion)
+    minimo, maximo = np.degrees(junta.range)
+    if modelo.jnt_limited[junta.id] and not (minimo <= grados <= maximo):
+        print(f"Ojo: {articulacion} solo va de {minimo:.0f} a {maximo:.0f} grados; "
+              f"{grados} se sale de sus topes.")
+    datos.joint(articulacion).qpos = np.radians(grados)
+    mujoco.mj_forward(modelo, datos)        # recalcula dónde queda cada pieza

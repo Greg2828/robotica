@@ -1,4 +1,4 @@
-"""Construye NB01 · El cuerpo del robot (100% conceptual, cero código).
+"""Construye NB01 · El cuerpo del robot (conceptual; código solo en la Práctica en MuJoCo, ya escrito).
 
 Pieza (1) del mapa. Piezas rígidas, articulaciones, grados de libertad, motores,
 el cuerpo suelto en el espacio (base flotante, subactuación), peso y centro de
@@ -13,7 +13,7 @@ Datos verificados del Humanoid-v5 de Gymnasium (el robot de práctica del curso)
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
-from nbbuild import md, build
+from nbbuild import md, code, build
 
 cells = [
 
@@ -620,7 +620,8 @@ pieza madre. Esa forma de árbol la volverás a ver muchas veces.
 
 Lo bonito es que, **cambiando ese plano**, cambias el robot: puedes hacerlo más alto, darle
 otro tipo de rodilla, añadirle tobillos. En el próximo notebook veremos **quién lee ese plano
-y le da vida con física**: el simulador, la pieza (2) del mapa.
+y le da vida con física**: el simulador, la pieza (2) del mapa. Y en la **práctica en MuJoCo**
+del final de esta lección verás el **plano real** de nuestro humanoide.
 """),
 
 md(r"""## 11 · Lo que conviene tener claro antes de seguir
@@ -822,7 +823,210 @@ caderas de nuestro humanoide de práctica.
 </details>
 """),
 
-md(r"""## 14 · Posdata
+md(r"""## 14 · 🛠 Práctica en MuJoCo: desmonta el humanoide
+
+En el NB00 encendiste el humanoide y lo viste caer. Hoy vas a **abrir su plano** (el *modelo*
+del que hablamos en la práctica anterior) y comprobar, con los números que guarda MuJoCo, todo
+lo que has aprendido en esta lección: sus **piezas**, sus **articulaciones**, sus **grados de
+libertad**, sus **motores**, su **peso** y su **plano de montaje**.
+
+Igual que en el NB00, el código ya está escrito. Tú ejecutas (Mayúsculas + Intro), lees lo que
+sale y lo comparas con la lección. Algunas celdas tienen una línea rara con `for`: es una forma
+de decirle al ordenador "repite esto con cada pieza". La aprenderás en el NB07; hoy no hace falta
+entenderla.
+"""),
+
+md(r"""### Paso 1 · Cargar el humanoide
+Lo mismo que en el NB00: despertar a MuJoCo y cargar el robot.
+"""),
+
+code(r"""import mujoco
+import taller
+
+modelo, datos = taller.cargar("humanoide")
+print("Humanoide cargado.")"""),
+
+md(r"""### Paso 2 · ¿Cuántas piezas rígidas tiene?
+
+En MuJoCo, cada pieza rígida (cada "hueso" del apartado 2) se llama **body** (cuerpo). El
+modelo guarda cuántos hay en `modelo.nbody`.
+
+Un detalle curioso: MuJoCo cuenta como pieza número 0 al **mundo** (`world`): el suelo y todo
+lo que no se mueve. Así que las piezas del robot son una menos.
+"""),
+
+code(r"""print("Piezas contando el mundo:", modelo.nbody)
+print("Piezas del robot:        ", modelo.nbody - 1)"""),
+
+md(r"""### Paso 3 · Cómo se llama y cuánto pesa cada pieza
+
+Ahora una lista de todas las piezas, con su nombre y su peso en kilos. Los nombres están en
+inglés (así viene el plano): *torso* = torso, *waist* = cintura, *pelvis* = pelvis,
+*thigh* = muslo, *shin* = espinilla/pantorrilla, *foot* = pie, *upper arm* = brazo,
+*lower arm* = antebrazo, y *right*/*left* = derecha/izquierda.
+"""),
+
+code(r"""for numero in range(1, modelo.nbody):
+    pieza = modelo.body(numero)
+    print(f"{numero:2d}  {pieza.name:16s} {modelo.body_mass[numero]:5.2f} kg")
+
+print(f"\nPeso total: {modelo.body_mass.sum():.1f} kg")"""),
+
+md(r"""Compáralo con la anatomía del apartado 6: el **torso** es la pieza más pesada (casi 9 kg),
+luego la **pelvis**, después los **muslos**. Lo pesado está **arriba y en el centro**, como
+en una persona, y eso pone el **centro de masas** (apartado 8) alto: una razón más por la que
+mantener el equilibrio cuesta.
+
+¿Y los **pies**? Aparecen como piezas (`right_foot`, `left_foot`), pero el siguiente paso
+demuestra que no tienen articulación propia: van **pegados** a la pantorrilla. Este humanoide
+**no tiene tobillos**.
+"""),
+
+md(r"""### Paso 4 · Las articulaciones y sus topes
+
+Cada articulación del apartado 3 es, en MuJoCo, un **joint** (junta). Esta celda las lista con
+su tipo y sus topes en grados.
+"""),
+
+code(r"""import numpy as np
+
+print("Articulaciones:", modelo.njnt)
+for numero in range(modelo.njnt):
+    junta = modelo.joint(numero)
+    if modelo.jnt_type[numero] == mujoco.mjtJoint.mjJNT_FREE:
+        print(f"{junta.name:16s} LIBRE (el cuerpo suelto en el espacio)")
+    else:
+        minimo, maximo = np.degrees(junta.range)
+        print(f"{junta.name:16s} bisagra, de {minimo:5.0f} a {maximo:4.0f} grados")"""),
+
+md(r"""Fíjate en dos cosas:
+
+1. **La primera, `root` ("raíz"), es LIBRE.** Es la **gran trampa del apartado 7**, vista
+   dentro del simulador: el robot no está atornillado a nada. MuJoCo lo representa con una
+   articulación especial que deja al tronco moverse en las 3 direcciones y girar de 3 maneras:
+   **6 grados de libertad** que ningún motor controla.
+2. Las **caderas** aparecen como **tres** bisagras (`hip_x`, `hip_z`, `hip_y`): es el truco del
+   apartado 4, "la rótula es tres bisagras apiladas". Lo mismo el abdomen y los hombros (dos).
+   Y la **rodilla** es una sola bisagra con topes de −160 a −2 grados: **no se dobla hacia
+   delante**, igual que la tuya.
+"""),
+
+md(r"""### Paso 5 · Grados de libertad y motores
+
+MuJoCo guarda el número total de **grados de libertad** en `modelo.nv` y el número de
+**motores** (en su idioma, *actuators*, actuadores) en `modelo.nu`.
+"""),
+
+code(r"""print("Grados de libertad:", modelo.nv)
+print("Motores:           ", modelo.nu)
+print("Sin motor:         ", modelo.nv - modelo.nu, "(los de la articulación libre)")"""),
+
+md(r"""**23 grados de libertad, 17 motores.** Sobran 6, justo los de la articulación libre. Eso
+es ser **subactuado**: el robot tiene más maneras de moverse que motores para controlarlas.
+Lo que la lección contaba con palabras, ahora lo tienes contado por el propio simulador.
+
+Y ahora, **cómo de fuerte es cada motor**. MuJoCo lo guarda como un **multiplicador** (*gear*):
+la orden que recibe el motor se multiplica por ese número.
+"""),
+
+code(r"""for numero in range(modelo.nu):
+    print(f"{modelo.actuator(numero).name:16s} fuerza x{modelo.actuator_gear[numero, 0]:.0f}")"""),
+
+md(r"""Los motores **no son iguales**: la flexión de cadera (`hip_y`) multiplica por 300, las
+rodillas por 200, y los brazos solo por 25. Es lógico: las piernas sostienen y empujan todo el
+cuerpo; los brazos solo se mueven a sí mismos. Es el "los motores no son superhéroes" del
+apartado 5: cada uno tiene su límite, y el diseñador los dimensiona según el trabajo que hacen.
+"""),
+
+md(r"""### Paso 6 · El plano de montaje de verdad
+
+En el apartado 10 te enseñé un plano "de mentira", para dar la idea. Aquí tienes un trozo del
+**plano real** de este humanoide: el de la **pierna derecha**. Es un fichero de texto en un
+formato llamado **MJCF** (el formato de MuJoCo; lo aprenderás a escribir tú mismo más adelante).
+"""),
+
+code(r"""ruta = taller._ruta_gymnasium("humanoid.xml")
+lineas = open(ruta).read().splitlines()
+for linea in lineas[39:52]:          # las líneas de la pierna derecha
+    print(linea.strip())"""),
+
+md(r"""No hace falta entenderlo todo. Solo busca esto:
+
+- `<body name="right_thigh">` → una **pieza** (el muslo derecho).
+- Dentro, tres `<joint ... type="hinge">` → las **tres bisagras** de la cadera, con su
+  `range` (topes) en grados.
+- `<geom ... type="capsule">` → la **forma** de la pieza: una cápsula (un cilindro con las
+  puntas redondas).
+- Y **dentro** del muslo, otro `<body name="right_shin">` (la pantorrilla), y dentro de ella,
+  `<body name="right_foot">`. ¡Es el **árbol** del apartado 10! Cada pieza está escrita
+  **dentro** de su pieza madre.
+- El pie no tiene `<joint>`: por eso va pegado a la pantorrilla.
+"""),
+
+md(r"""### Paso 7 · Mueve tú las articulaciones
+
+Ahora vas a **colocar el humanoide** como si fuera un muñeco articulado. La función
+`taller.poner_angulo` dobla una articulación los grados que le digas, **sin que pase el
+tiempo** (sin gravedad: es una foto, no una simulación). Doblamos la rodilla derecha y
+levantamos la pierna izquierda.
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+
+taller.poner_angulo(modelo, datos, "right_knee", -90)    # rodilla derecha doblada 90 grados
+taller.poner_angulo(modelo, datos, "left_hip_y", -70)    # muslo izquierdo hacia delante
+
+taller.foto(modelo, datos, titulo="Colocado a mano");"""),
+
+md(r"""### Tus retos
+
+**Reto 1.** En la última celda, cambia el codo derecho añadiendo esta línea antes de la foto:
+`taller.poner_angulo(modelo, datos, "right_elbow", -80)`. ¿Qué se mueve?
+
+**Reto 2.** Pon la rodilla derecha a `+30` grados (doblada hacia delante). ¿Qué pasa?
+
+**Reto 3 (para pensar).** En el Paso 5 salieron 23 grados de libertad, pero la lista de
+articulaciones del Paso 4 tiene 18 (1 libre + 17 bisagras). ¿Cómo encajan esos números?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+Se dobla el **codo derecho**: el antebrazo gira respecto al brazo. Cualquier nombre de la lista
+del Paso 4 vale (menos `root`): `left_knee`, `right_shoulder1`, `abdomen_y`... Pruébalos. Así
+descubres por tu cuenta qué mueve cada bisagra.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+`taller` te **avisa**: la rodilla solo va de −160 a −2 grados, y +30 se sale de sus topes. Aun
+así coloca la pierna, y la foto muestra una rodilla doblada **al revés**: una postura imposible
+para una persona. Al colocar a mano, MuJoCo te deja hacer barbaridades; en cambio, **cuando la
+física está en marcha**, los topes empujan para que la articulación no los pase. Esto lo verás
+mucho más adelante, con los contactos y los límites.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Las 17 bisagras aportan **1 grado de libertad cada una** (17). La articulación libre aporta
+**6** (3 direcciones para moverse + 3 maneras de girar). Total: 17 + 6 = **23**. Una
+articulación no siempre es un grado de libertad: una bisagra es 1; una libre, 6.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- En MuJoCo, las piezas son **bodies**, las articulaciones son **joints** y los motores son
+  **actuators**. El modelo los cuenta en `nbody`, `njnt` y `nu`, y los grados de libertad en `nv`.
+- El cuerpo suelto en el espacio es una **articulación libre** de 6 grados de libertad, sin motor.
+- El plano real es un fichero **MJCF** con forma de árbol: cada `<body>` va dentro de su pieza madre.
+- Puedes **colocar** el robot a mano (sin física) y hacerle una foto.
+
+En la práctica del NB02 dejarás que la **física** actúe: soltarás una pelota y cambiarás la
+**gravedad** del mundo de mentira.
+"""),
+
+md(r"""## 15 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo de otra
 forma.
@@ -832,7 +1036,8 @@ quien coge este cuerpo (el plano de montaje del apartado 10), le pone gravedad, 
 y lo deja "cobrar vida" para que el robot pueda practicar y caerse un millón de veces sin que
 pase nada. Allí aprenderás también un poco más de física: qué es exactamente una fuerza, por qué
 las cosas que se mueven tienden a seguir moviéndose, y cómo hace un ordenador para "calcular el
-futuro". Seguiremos sin código: primero entender bien qué es y por qué es tan útil.
+futuro". La lección será sin código, salvo su práctica en MuJoCo: allí **soltarás una pelota**,
+cambiarás la gravedad y verás cómo calcula el futuro el simulador, paso a paso.
 """),
 
 ]
