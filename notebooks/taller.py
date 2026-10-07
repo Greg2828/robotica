@@ -32,6 +32,7 @@ _MODELOS = {
     "hopper": "hopper.xml",
     "walker": "walker2d_v5.xml",
     "pendulo": "inverted_pendulum.xml",
+    "palo_escoba": "robots/palo_escoba.xml",   # nuestro carrito con palo (NB11 en adelante)
 }
 
 
@@ -48,7 +49,9 @@ def cargar(nombre_o_xml: str):
     - Si no, lo trata como la ruta de un fichero .xml.
     """
     if nombre_o_xml in _MODELOS:
-        modelo = mujoco.MjModel.from_xml_path(_ruta_gymnasium(_MODELOS[nombre_o_xml]))
+        fichero = _MODELOS[nombre_o_xml]
+        ruta = os.path.join(AQUI, fichero) if fichero.startswith("robots/") else _ruta_gymnasium(fichero)
+        modelo = mujoco.MjModel.from_xml_path(ruta)
     elif nombre_o_xml.lstrip().startswith("<"):
         modelo = mujoco.MjModel.from_xml_string(nombre_o_xml)
     else:

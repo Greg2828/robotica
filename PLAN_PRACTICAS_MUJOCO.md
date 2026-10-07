@@ -16,6 +16,30 @@
 - No se renumera nada: los notebooks de MuJoCo a fondo (NB42, NB45–NB50) pasan a ser **consolidación** de
   lo que ya habrás tocado en las prácticas.
 
+## Convenciones técnicas (para todas las prácticas)
+- Se edita el **build** `build_parts/nbXX.py` (nunca el .ipynb a mano). La práctica es una sección nueva
+  `md(r"""## N · 🛠 Práctica en MuJoCo: <título>` insertada **justo antes de la Posdata** (que pasa a N+1).
+  Si el build solo importa `md, build`, añadir `code`.
+- Estructura: intro (qué vas a hacer y cómo enlaza con la lección) → «Paso 1, 2, ...» (1 idea por celda, cada
+  celda de código precedida de su explicación) → «Tus retos» (2-4, soluciones en `<details>`) → «Qué has
+  aprendido de MuJoCo hoy» (viñetas) → una frase que anuncia la práctica del siguiente NB.
+- Se actualiza cualquier texto del NB que diga «sin código»/«no verás MuJoCo hasta…», el docstring del build
+  y la Posdata («salvo la práctica en MuJoCo…»).
+- `import taller` (notebooks/taller.py): `cargar(nombre|xml|ruta)`, `foto(...)`, `video(..., control=f, nombre=...)`
+  (MP4 incrustado, en assets/practicas/, ignorado por git), `poner_angulo(m, d, junta, grados)`, `al_azar(semilla)`.
+  Modelos por nombre: `humanoide`, `hopper`, `walker`, `pendulo`, **`palo_escoba`** (notebooks/robots/palo_escoba.xml:
+  carro deslizante `deslizar` + palo con `bisagra`, motor `empuje` gear 10 ctrl ±1, timestep 0,01; qpos=[x carro,
+  ángulo palo rad]; ángulo + → hay que empujar el carro hacia +x; sin control cae en 0,58 s desde 5°; el PD
+  ctrl = clip(3·θ + 0,8·θ̇ + 0,1·x + 0,2·ẋ) lo sostiene 10 s).
+- **No modificar `taller.py`** salvo que lo haga el coordinador: si una práctica necesita otra utilidad, se
+  define en el propio notebook.
+- Las cifras que cite el texto deben salir de ejecutarlo de verdad. Máx. 2-3 vídeos cortos por NB. Coste de
+  cómputo de la práctica: ≤ ~2 min en la Pi 5 (lo pesado, a Colab con nota).
+- Verificar: `python build_parts/nbXX.py && python -m jupyter nbconvert --to notebook --execute --inplace
+  --ExecutePreprocessor.timeout=1200 notebooks/NBXX_*.ipynb` → EXIT 0, y leer las salidas.
+- Hechos de referencia: NB00 (cargar/foto/vídeo, modelo vs datos), NB01 (bodies/joints/actuators, `nbody/njnt/nu/nv`,
+  MJCF real, `poner_angulo`), NB02 (MJCF mínimo de pelota, `mj_step`, `opt.timestep`, `opt.gravity`, `datos.time/qpos/qvel`).
+
 ## Itinerario (la columna «MuJoCo» es lo que dominas al acabar cada práctica)
 
 | NB | Tema del NB | Práctica en MuJoCo | MuJoCo que aprendes |
@@ -64,4 +88,6 @@
 | 34–53 | (ya usan MuJoCo) | Se añade una «🛠 Práctica en MuJoCo» final donde falte | — |
 
 ## Estado
-- [ ] NB00 … (se va marcando aquí)
+- [x] NB00 · enciende tu primer robot
+- [x] NB01 · desmonta el humanoide
+- [x] NB02 · suelta una pelota (MuJoCo reproduce la tabla a mano)

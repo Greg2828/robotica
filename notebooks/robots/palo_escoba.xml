@@ -1,0 +1,22 @@
+<!-- El palo de escoba de MuJoCo: un carrito que se desliza sobre un raíl y lleva un palo
+     sujeto por una bisagra. El único motor empuja el carrito. Es la versión con física de
+     verdad del palo de escoba del NB11, y el banco de pruebas de las prácticas NB11-NB33. -->
+<mujoco model="palo_escoba">
+  <option timestep="0.01"/>
+  <worldbody>
+    <light pos="0 0 4"/>
+    <geom name="suelo" type="plane" size="4 2 0.1" rgba=".8 .9 .8 1"/>
+    <geom name="rail" type="capsule" fromto="-2 0 0.5 2 0 0.5" size="0.02" rgba=".4 .4 .4 1" contype="0" conaffinity="0"/>
+    <body name="carro" pos="0 0 0.5">
+      <joint name="deslizar" type="slide" axis="1 0 0" range="-1.8 1.8" limited="true" damping="0.1"/>
+      <geom name="carro" type="box" size="0.15 0.1 0.05" mass="1" rgba=".2 .4 .9 1" contype="0" conaffinity="0"/>
+      <body name="palo" pos="0 0 0">
+        <joint name="bisagra" type="hinge" axis="0 1 0" damping="0.01"/>
+        <geom name="palo" type="capsule" fromto="0 0 0 0 0 1" size="0.03" mass="0.5" rgba="1 .5 .1 1" contype="0" conaffinity="0"/>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="empuje" joint="deslizar" gear="10" ctrlrange="-1 1" ctrllimited="true"/>
+  </actuator>
+</mujoco>
