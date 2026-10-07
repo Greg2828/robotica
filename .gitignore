@@ -22,3 +22,6 @@ trabajo_nb35/*.zip
 trabajo_nb35/*.pkl
 trabajo_nb35/parcial_*/
 trabajo_nb35/err_*.txt
+
+# Vídeos de las prácticas de MuJoCo (se regeneran al ejecutar; ya van incrustados en el notebook)
+notebooks/assets/practicas/

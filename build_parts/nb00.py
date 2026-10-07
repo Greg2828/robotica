@@ -1,6 +1,7 @@
 """Construye NB00 · ¿Qué vamos a hacer y por qué es difícil?
 
-Primer notebook de la ruta nueva: 100% conceptual, CERO código.
+Primer notebook de la ruta nueva: conceptual; el único código es la Práctica en MuJoCo
+del final (ya escrita: solo ejecutar y mirar).
 Todo prosa, analogías, experimentos con el propio cuerpo y diagramas. El robot se
 ve como un GIF ya hecho (imagen en markdown), sin pedir ejecutar nada.
 
@@ -9,7 +10,7 @@ Dato verificado (Humanoid-v5, acciones al azar, 20 intentos): aguanta de media
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
-from nbbuild import md, build
+from nbbuild import md, code, build
 
 cells = [
 
@@ -25,9 +26,9 @@ md(r"""# NB00 · ¿Qué vamos a hacer y por qué es difícil?
 > verdad: nada. Todo lo que haga falta lo iremos construyendo aquí desde el principio, con
 > calma y con ejemplos de la vida diaria.
 
-En esta primera lección **no vas a tocar el ordenador para nada**. No hay código, no hay
-que ejecutar, no hay que instalar. Solo se lee, como quien lee la primera página de un
-libro. Bueno, y alguna vez te pediré que te levantes de la silla para hacer un pequeño
+Casi toda esta primera lección **se lee**, como quien lee la primera página de un libro.
+Solo al final, en la **Práctica en MuJoCo**, pulsarás un botón para poner en marcha un robot
+de verdad dentro del ordenador (sin escribir nada: el código ya viene hecho). Bueno, y alguna vez te pediré que te levantes de la silla para hacer un pequeño
 experimento con tu propio cuerpo, porque tu cuerpo es el mejor laboratorio de robótica que
 existe.
 
@@ -67,6 +68,13 @@ entiende la idea; después se traduce a código. Nunca al revés.
 de cada una está la respuesta, escondida en un desplegable **"▶ Solución"**. La gracia está
 en que intentes contestar tú primero, aunque te equivoques. Equivocarte y luego ver la
 solución es la mejor forma de que se te quede.
+
+**6. Cada lección termina con una práctica en MuJoCo.** MuJoCo es el **simulador** (el "mundo
+de mentira" dentro del ordenador) que usan Google DeepMind y muchísimos laboratorios para
+entrenar robots. Es la herramienta principal de este curso, y no vas a esperar meses para
+tocarla: **desde hoy mismo**, cada lección acaba con un apartado **"🛠 Práctica en MuJoCo"**
+donde usas lo que acabas de aprender, a tu nivel. Las primeras prácticas traen el código ya
+escrito (tú solo ejecutas, miras y cambias algún número); poco a poco irás escribiéndolo tú.
 
 Ya está. Con eso en la cabeza, empecemos por el principio de todo: el sueño.
 """),
@@ -589,7 +597,168 @@ quieto de pie.
 </details>
 """),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: enciende tu primer robot
+
+Hasta ahora solo has leído. Ahora vas a **poner en marcha un robot de verdad** dentro del
+ordenador. No vas a escribir nada: el código ya está escrito. Tu trabajo es **ejecutarlo,
+mirar lo que pasa y cambiar un número**. Entender cada palabra del código vendrá más adelante;
+hoy basta con saber **qué hace** cada trozo, y eso te lo cuento en castellano.
+
+### ¿Qué es MuJoCo?
+
+**MuJoCo** (se pronuncia *mu-yó-co*) es un **simulador de física**: un programa que calcula,
+paso a paso, cómo se mueven unos cuerpos que tienen peso, articulaciones y motores, y que
+chocan con el suelo. Es exactamente el "mundo de mentira" de la sección 8. El nombre viene del
+inglés *Multi-Joint dynamics with Contact*: "movimiento de cosas con muchas articulaciones que
+se tocan".
+
+Un poco de historia, para que sepas con qué estás trabajando:
+
+- Lo creó el investigador **Emo Todorov** hacia 2012, precisamente para estudiar cómo
+  controlar cuerpos con articulaciones (personas, animales, robots).
+- En **2021 lo compró DeepMind** (el laboratorio de inteligencia artificial de Google) y en
+  **2022 lo liberó gratis y con el código abierto**, para que cualquiera pueda usarlo.
+- Hoy es **el simulador más usado** para enseñar a robots a moverse con aprendizaje por
+  refuerzo. El humanoide que viste en la sección 5 es, de hecho, un robot de MuJoCo.
+
+Dominar MuJoCo es la habilidad central de este curso. Empezamos ya.
+
+### Cómo se ejecuta una celda de código
+
+Las cajas grises de abajo son **celdas de código**. Para ejecutar una:
+
+1. Haz clic dentro de la celda.
+2. Pulsa **Mayúsculas + Intro** (Shift + Enter) a la vez.
+3. Mientras trabaja, a la izquierda aparece `[*]`. Cuando termina, sale un número, como `[1]`,
+   y **debajo de la celda** aparece el resultado.
+
+Ejecútalas **en orden, de arriba abajo**: cada una usa cosas que preparó la anterior.
+"""),
+
+md(r"""### Paso 1 · Despertar a MuJoCo
+
+Esta primera celda **carga las herramientas**: MuJoCo y un ayudante llamado `taller` que he
+preparado para que las prácticas sean cómodas (sacar fotos, hacer vídeos...). Al ejecutarla
+debería decirte qué versión de MuJoCo tienes. Si sale un número, **todo funciona**.
+"""),
+
+code(r"""import mujoco
+import taller
+
+print("MuJoCo está listo. Versión:", mujoco.__version__)"""),
+
+md(r"""### Paso 2 · Cargar el robot: el plano y el estado
+
+Ahora cargamos el **humanoide**. Aquí aparece la idea más importante de MuJoCo, y la vas a ver
+en **todas** las lecciones del curso. Para simular algo, MuJoCo guarda dos cosas separadas:
+
+- **El modelo** (`modelo`): el **plano** del robot. Qué piezas tiene, cuánto pesa cada una,
+  cómo se unen, qué motores lleva. Es como las instrucciones de montaje de un mueble: **no
+  cambia** mientras simulas.
+- **Los datos** (`datos`): el **estado de ahora mismo**. Dónde está cada pieza en este
+  instante, a qué velocidad se mueve, qué están haciendo los motores, qué hora marca el reloj
+  de la simulación. Esto **cambia en cada instante**.
+
+Una forma de recordarlo: el modelo es **la partitura**; los datos son **por qué nota va la
+orquesta ahora**.
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+
+print("Robot cargado.")"""),
+
+md(r"""### Paso 3 · Una foto
+
+Esta celda le hace una **foto** al humanoide tal como está ahora: recién colocado, de pie, con
+el reloj de la simulación a cero. Todavía no ha pasado ni un instante.
+"""),
+
+code(r"""taller.foto(modelo, datos, titulo="El humanoide, antes de empezar");"""),
+
+md(r"""### Paso 4 · Que pase el tiempo: el robot "desmayado"
+
+Simular es **hacer avanzar el reloj** y dejar que MuJoCo calcule qué pasa. La celda de abajo
+avanza **3 segundos** con los motores **apagados** (como una persona que se desmaya) y graba
+un vídeo.
+
+Fíjate en lo que **nadie** ha programado: nadie le ha dicho "cae hacia aquí" ni "dobla esta
+rodilla". MuJoCo solo conoce el plano (pesos, articulaciones) y la gravedad, y de ahí **sale
+solo** cómo se derrumba. Eso es un simulador de física.
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")          # robot nuevo, recién colocado
+
+taller.video(modelo, datos, segundos=3, nombre="nb00_desmayado");"""),
+
+md(r"""### Paso 5 · Motores al azar: tu propia versión del GIF de la sección 5
+
+Ahora el mismo experimento, pero con los **17 motores moviéndose al azar**, como el robot de
+la sección 5. La diferencia es que **ese vídeo lo estás fabricando tú**, ahora, en tu ordenador.
+
+El número `semilla=0` decide **qué** azar le toca: con la misma semilla, el "azar" sale siempre
+igual (por eso se puede repetir un experimento exactamente, ¿recuerdas la sección 8?).
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+
+taller.video(modelo, datos, segundos=3, control=taller.al_azar(semilla=0), nombre="nb00_al_azar");"""),
+
+md(r"""### Tus retos
+
+Solo tienes que **cambiar un número** dentro de la celda y volver a ejecutarla
+(Mayúsculas + Intro). No puedes romper nada: si algo sale raro, vuelve a poner el número de
+antes.
+
+**Reto 1.** En la celda del Paso 5, cambia `semilla=0` por `semilla=7`. ¿Cae igual?
+
+**Reto 2.** En la celda del Paso 4, cambia `segundos=3` por `segundos=1`. ¿Qué ves al final
+del vídeo?
+
+**Reto 3 (para pensar).** Comparando los dos vídeos: ¿quién cae **antes**, el robot
+"desmayado" o el que mueve los motores al azar? ¿Por qué crees que pasa?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+Cae **de otra manera**: con otra semilla los motores reciben otras órdenes al azar, así que
+convulsiona distinto y acaba en otra postura. Pero el final es el mismo: **al suelo**. Y si
+vuelves a poner `semilla=7`, sale **exactamente** el mismo vídeo otra vez. En MuJoCo, el mismo
+plano + el mismo punto de partida + las mismas órdenes = el mismo resultado, siempre.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+El vídeo dura solo un segundo y se corta **a mitad de la caída**: el robot todavía no ha
+llegado al suelo. Con los motores apagados, la cabeza tarda unos **0,6 segundos** en bajar de
+1 metro de altura, y un poco más en tumbarse del todo. `segundos` es simplemente **cuánto
+tiempo de mundo de mentira** le pides a MuJoCo que calcule.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Lo he medido: el "desmayado" baja de 1 metro a los **0,6 s**; el que se mueve al azar, a los
+**0,26-0,31 s** (según la semilla). ¡El azar cae **el doble de rápido**! Moverse al azar no
+solo no ayuda: **empuja** el cuerpo en direcciones absurdas y lo tira antes. Es la lección de
+la sección 5 vista con números: sin una buena **política**, mover los motores es peor que no
+moverlos. El trabajo de todo el curso es encontrar esa política.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **MuJoCo** es el simulador de física de Google DeepMind: el mundo de mentira donde entrenaremos.
+- Todo en MuJoCo se apoya en dos piezas: **el modelo** (el plano, fijo) y **los datos** (el
+  estado de ahora, que cambia).
+- **Simular** = hacer avanzar el reloj y dejar que la física decida qué pasa.
+- La misma **semilla** da el mismo resultado: los experimentos se pueden repetir.
+
+En la práctica del NB01 abrirás el **modelo** del humanoide y contarás sus piezas, sus
+articulaciones y sus motores, uno a uno.
+"""),
+
+
+md(r"""## 14 · Posdata
 
 Si en algún momento te has perdido, dime el **número de apartado** y la **frase exacta**
 donde te atascaste, y lo reescribo de otra manera. Recuerda: si algo no se entiende, la
@@ -599,8 +768,8 @@ En el **NB01** nos meteremos dentro de la primera pieza del mapa: **el cuerpo de
 Veremos qué son exactamente las partes rígidas, las articulaciones, los motores y los
 sentidos, comparando todo el rato con tu propio cuerpo. Y descubriremos un detalle que
 explica, por fin, por qué andar es tan difícil: **el robot no está atornillado a nada**.
-Seguirá sin haber nada de código: solo entender bien de qué está hecho un robot antes de
-intentar moverlo.
+La lección seguirá sin código, salvo su práctica en MuJoCo: allí **desmontarás el humanoide de
+hoy** y contarás sus piezas, sus articulaciones y sus motores.
 
 Hasta aquí la primera lección. Tómate un respiro: acabas de entender, a grandes rasgos,
 **todo el problema** que vas a resolver en los próximos meses. No es poco.
