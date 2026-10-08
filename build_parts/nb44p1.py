@@ -9,7 +9,9 @@ Python: type, isinstance, dir, vars, help, __doc__, callable, inspect
 (signature, getsource) y por qué los objetos de C no tienen código fuente.
 Leer errores de bibliotecas (última línea primero; 'incompatible function
 arguments'; formas que no encajan). Leer documentación y firmas. Laboratorio
-de 12 retos resueltos.
+de 12 retos resueltos. Práctica en MuJoCo: leer ik_pierna de andar/
+cinematica.py, verificarla con mj_kinematics, acoplamientos ocultos y
+Zancudo colgado dibujando un cuadrado con el pie (vídeo nb44p1_cuadrado).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -726,7 +728,230 @@ Lo difícil es el **nombre**: MuJoCo guarda todos los nombres en un único bloqu
 </details>
 '''),
 
-md(r"""## 8 · Posdata
+md(r"""## 8 · 🛠 Práctica en MuJoCo: leer una función ajena y comprobarla en el simulador
+
+Hoy has aprendido a **leer** código con método y a **preguntarle** a Python. En la práctica vas a hacer las dos cosas con un código de robótica de verdad que **aún no conoces**: la pequeña librería `andar/` (en la carpeta `notebooks/`) con la que, en el NB52, Zancudo andará **sin aprendizaje por refuerzo**. No hace falta que entiendas todavía la teoría de la marcha: vas a hacer lo que hace un profesional el primer día en un proyecto nuevo:
+
+1. Hacer el **mapa** de un fichero sin leerlo entero.
+2. Elegir **una** función, leer su firma y su código.
+3. **Predecir** qué devuelve.
+4. **Comprobarlo en MuJoCo**: el simulador es el juez.
+5. Buscar **acoplamientos ocultos**.
+6. Y, por último, **usarla** para mover a Zancudo.
+
+### Paso 1 · El mapa de `andar/cinematica.py`
+
+Reutilizamos la idea de la sección 2, ahora como una función que sirve para **cualquier** fichero:
+"""),
+
+code(r"""def mapa(ruta: str) -> None:
+    lineas_fichero = Path(ruta).read_text().splitlines()
+    print(f"{ruta}: {len(lineas_fichero)} líneas")
+    for numero, linea in enumerate(lineas_fichero, start=1):
+        limpia = linea.strip()
+        if limpia.startswith(("import ", "from ", "class ", "def ")) or (linea[:1].isupper() and "=" in linea):
+            print(f"{numero:3d}  {linea}")
+
+mapa("andar/cinematica.py")"""),
+
+md(r"""Con el mapa ya sabemos mucho: usa `math`, NumPy y MuJoCo; define dos **constantes** (`MUSLO = PIERNA = 0.4`, el largo de los dos tramos de la pierna, y `ALTURA_TORSO`), una función suelta, **`ik_pierna`**, y una clase, `Cinematica`, con métodos que usan MuJoCo por dentro. Vamos a por la función suelta, que es la pieza más pequeña.
+
+### Paso 2 · Firma y código de `ik_pierna`
+"""),
+
+code(r"""from andar.cinematica import ik_pierna, ALTURA_TORSO, MUSLO, PIERNA
+
+print(inspect.signature(ik_pierna))
+print(ik_pierna.__doc__)
+print(inspect.getsource(ik_pierna))"""),
+
+md(r"""Léelo como un mapa, de fuera a dentro:
+
+- **Firma**: entran cuatro decimales, la posición $(x, z)$ de la **cadera** y la del **tobillo**, en metros; sale una **tupla** de tres decimales: los ángulos de cadera, rodilla y tobillo, en radianes.
+- **Docstring**: "los ángulos que ponen el tobillo en su sitio con la planta horizontal". Es **cinemática inversa** (*IK*, de *inverse kinematics*): de "dónde quiero el pie" a "qué ángulos necesito". La estudiarás a fondo en el NB46; hoy solo la **leemos y la comprobamos**.
+- **Seguir los datos**: `dx, dz` (lo lejos que está el tobillo de la cadera) → `coseno` (una fórmula de triángulos, la ley del coseno) → `rodilla` → `cadera` → y el tobillo es `-(cadera + rodilla)`.
+- **Una línea sospechosa**: `min(1.0, max(-1.0, coseno))` recorta el coseno a [−1, 1]. ¿Por qué? Porque `math.acos` da error si le das algo fuera de ese intervalo. ¿Y cuándo pasaría? Lo veremos en un reto.
+- **Un patrón que ya conoces**: el tobillo es `-(cadera + rodilla)`, es decir, cadera + rodilla + tobillo = 0. Es la regla del NB36 (y del P1, sección 2) para que la planta quede plana.
+
+### Paso 3 · Predice
+
+Pon la cadera a 0,767 m de altura y el tobillo **justo debajo**, a 0,065 m del suelo (la altura del tobillo con el pie apoyado). La distancia cadera-tobillo es 0,702 m, menos que los 0,8 m de la pierna estirada: la rodilla tendrá que doblarse. Antes de ejecutar: ¿qué signo tendrá la rodilla? ¿Cadera y tobillo serán iguales?
+"""),
+
+code(r"""angulos = ik_pierna(0.0, 0.767, 0.0, 0.065)
+print([round(a, 4) for a in angulos])"""),
+
+md(r"""Casi exactamente **(0,5; −1,0; 0,5)**: rodilla doblada hacia atrás (negativa, como en todos los Zancudos), y cadera y tobillo **iguales** (el triángulo muslo-pierna es simétrico porque el tobillo está justo debajo). ¡Y son los ángulos de la postura `agachado` que viene guardada dentro de `zancudo_v2.xml`! Pura geometría: nadie los eligió al azar.
+
+### Paso 4 · Que juzgue MuJoCo
+
+Una función de cinemática inversa se comprueba con la **cinemática directa**: ponemos esos ángulos en el robot y le preguntamos al simulador **dónde ha quedado el tobillo**. En MuJoCo, el tobillo es el **origen del cuerpo `pie_d`**, y su posición en el mundo está en **`datos.xpos`** (NB12). Para calcular posiciones sin mover el tiempo basta `mj_kinematics` (en el NB45 verás que es la primera etapa de `mj_forward`).
+"""),
+
+code(r"""zancudo = mujoco.MjModel.from_xml_path("robots/zancudo_v2.xml")
+dz = mujoco.MjData(zancudo)
+pie = zancudo.body("pie_d").id
+
+def tobillo_en_mujoco(cadera_z: float, angulos) -> tuple[np.ndarray, np.ndarray]:
+    dz.qpos[:] = 0
+    dz.qpos[1] = cadera_z - ALTURA_TORSO        # qpos[1] es cuánto baja el torso (raiz_z)
+    dz.qpos[3:6] = angulos                      # la pierna derecha
+    mujoco.mj_kinematics(zancudo, dz)
+    eje_planta = dz.xmat[pie].reshape(3, 3)[:, 0]   # hacia dónde apunta la planta (NB14)
+    return dz.xpos[pie].copy(), eje_planta
+
+posicion, planta = tobillo_en_mujoco(0.767, angulos)
+print("tobillo (x, y, z):", posicion.round(6))
+print("eje de la planta: ", planta.round(6))"""),
+
+md(r"""El tobillo está en $x = 0$, $z = 0{,}065$ (la $y = -0{,}1$ es la separación lateral de la pierna derecha) y la planta apunta en $(1, 0, 0)$: **horizontal**. La función hace lo que dice su docstring.
+
+Un caso no basta para fiarse. Probemos varios a la vez y midamos el **error** en milímetros:
+"""),
+
+code(r"""print(" tobillo pedido  |  cadera  rodilla  tobillo  | error (mm) | planta inclinada (°)")
+for tobillo_x, tobillo_z in [(0.0, 0.065), (0.10, 0.065), (-0.05, 0.12), (0.12, 0.24)]:
+    q = ik_pierna(0.0, 0.767, tobillo_x, tobillo_z)
+    posicion, planta = tobillo_en_mujoco(0.767, q)
+    error = np.hypot(posicion[0] - tobillo_x, posicion[2] - tobillo_z) * 1000
+    inclinacion = np.degrees(np.arcsin(abs(planta[2])))
+    print(f"  ({tobillo_x:+.2f}, {tobillo_z:.3f})  | {q[0]:+.3f}  {q[1]:+.3f}  {q[2]:+.3f}  | {error:9.2e}  | {inclinacion:.1e}")"""),
+
+md(r"""Errores del orden de $10^{-13}$ mm: los ceros "de decimales" del P6 (la suma del ordenador no es exacta). La función y el simulador están de acuerdo.
+
+### Paso 5 · El acoplamiento oculto
+
+Ahora piensa como en la sección 2: `ik_pierna` usa `MUSLO = PIERNA = 0.4`, **escrito a mano** en el fichero de Python. Pero el largo de verdad de la pierna está en **otro sitio**: en el `.xml` del robot. Si mañana alguien hace un Zancudo con piernas más largas (lo harás en el NB50), ¿se entera `ik_pierna`? No. Es un acoplamiento oculto de libro.
+
+¿Dónde guarda MuJoCo ese largo? Pregúntale a Python con `dir`, como en la sección 3:
+"""),
+
+code(r"""print([n for n in dir(zancudo) if n.startswith("body_p")])
+print("pierna_d cuelga del muslo a:", zancudo.body("pierna_d").pos, "→ muslo =", -zancudo.body("pierna_d").pos[2])
+print("pie_d cuelga de la pierna a: ", zancudo.body("pie_d").pos, "→ pierna =", -zancudo.body("pie_d").pos[2])
+print("¿coinciden con el Python?", MUSLO == -zancudo.body("pierna_d").pos[2], PIERNA == -zancudo.body("pie_d").pos[2])"""),
+
+md(r"""`body_pos` es la posición de cada cuerpo **respecto a su padre**: el `pos="0 0 -0.4"` del MJCF. Hoy coinciden; la versión robusta los **leería del modelo** en vez de repetirlos. Apúntalo: es exactamente lo que harás en el NB53, donde las medidas del robot vivirán en **un único** fichero de configuración.
+
+### Paso 6 · Usar la función: Zancudo dibuja un cuadrado con el pie
+
+Ya nos fiamos de `ik_pierna`. Vamos a **usarla con física**. Colgamos a Zancudo de su "grúa" (una restricción que sujeta el torso al mundo; la estudiarás en el NB50) partiendo de la postura guardada `colgado` (con `mj_resetDataKeyframe`, cuya firma leíste en la sección 3), y pedimos al tobillo derecho que recorra un **cuadrado** en el aire: 2 segundos por vuelta.
+
+Primero, la trayectoria: una función que, para cada instante, dice **dónde debería estar** el tobillo:
+"""),
+
+code(r"""ESQUINAS = np.array([[-0.05, 0.12], [0.12, 0.12], [0.12, 0.24], [-0.05, 0.24], [-0.05, 0.12]])
+
+def objetivo(t: float, periodo: float = 2.0) -> np.ndarray:
+    tramo = (t % periodo) / periodo * 4       # de 0 a 4: en qué lado del cuadrado estamos
+    i = int(tramo)
+    return ESQUINAS[i] + (ESQUINAS[i + 1] - ESQUINAS[i]) * (tramo - i)
+
+print(objetivo(0.0), objetivo(0.25), objetivo(0.5), objetivo(1.75))"""),
+
+md(r"""Y el **control**: en cada pasito leemos dónde está la cadera (el origen del torso) y mandamos a los tres servos de la pierna derecha (`ctrl[0:3]`) los ángulos que da `ik_pierna`. Los servos de Zancudo son **de posición**: reciben un ángulo y tiran hacia él (NB40).
+"""),
+
+code(r"""def preparar() -> mujoco.MjData:
+    datos_cuadrado = mujoco.MjData(zancudo)
+    mujoco.mj_resetDataKeyframe(zancudo, datos_cuadrado, zancudo.key("colgado").id)
+    datos_cuadrado.eq_active[zancudo.equality("grua").id] = 1      # enganchamos la grúa
+    mujoco.mj_forward(zancudo, datos_cuadrado)
+    return datos_cuadrado
+
+def dibujar_cuadrado(modelo, datos_cuadrado) -> None:
+    cadera_x, cadera_z = datos_cuadrado.xpos[modelo.body("torso").id][[0, 2]]
+    datos_cuadrado.ctrl[0:3] = ik_pierna(cadera_x, cadera_z, *objetivo(datos_cuadrado.time))
+
+def error_del_cuadrado(modelo, segundos: float = 4.0) -> np.ndarray:
+    datos_cuadrado = preparar()
+    errores = []
+    while datos_cuadrado.time < segundos:
+        dibujar_cuadrado(modelo, datos_cuadrado)
+        mujoco.mj_step(modelo, datos_cuadrado)
+        if datos_cuadrado.time > 2.0:                     # la 2.ª vuelta: ya sin el arranque
+            real = datos_cuadrado.xpos[modelo.body("pie_d").id][[0, 2]]
+            errores.append(np.hypot(*(real - objetivo(datos_cuadrado.time))) * 1000)
+    return np.array(errores)
+
+errores = error_del_cuadrado(zancudo)
+print(f"error del tobillo: medio {errores.mean():.1f} mm, máximo {errores.max():.1f} mm")"""),
+
+md(r"""Fíjate en la diferencia con el paso 4. Allí, **sin física**, el error era cero. Aquí, con física, el tobillo se queda unos **2 centímetros** detrás de media: la función calcula ángulos perfectos, pero los **servos** tardan en llegar a ellos (son muelles con amortiguador, NB40) y la pierna tiene **inercia**. Leer el código te dice qué **pide**; solo el simulador te dice qué **pasa**.
+
+Míralo (el torso está quieto, colgado; la pierna morada es la izquierda, que se queda en su postura):
+"""),
+
+code(r"""import taller
+
+datos_video = preparar()
+_ = taller.video(zancudo, datos_video, segundos=4.0, control=dibujar_cuadrado, nombre="nb44p1_cuadrado", distancia=2.2)"""),
+
+md(r"""### Tus retos
+
+**Reto 1.** Prueba un cuadrado **más grande**, con esquinas $x \in [-0{,}15;\ 0{,}20]$ y $z \in [0{,}10;\ 0{,}35]$. Antes de simular, comprueba si los ángulos que pide `ik_pierna` caben en los **topes** de las articulaciones (pista: `dir(zancudo)` filtrado por `"range"`). ¿Qué le falta a `ik_pierna`?
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+grandes = np.array([[-0.15, 0.10], [0.20, 0.10], [0.20, 0.35], [-0.15, 0.35]])
+topes = zancudo.jnt_range[3:6]                  # cadera_d, rodilla_d, tobillo_d
+for x, z in grandes:
+    q = np.array(ik_pierna(0.0, 0.865, x, z))
+    fuera = (q < topes[:, 0]) | (q > topes[:, 1])
+    print((x, z), q.round(3), "FUERA:", [zancudo.joint(3 + i).name for i in np.where(fuera)[0]])
+```
+
+En la esquina $(-0{,}15;\ 0{,}35)$ el tobillo pide **1,119 rad**, y su tope es 0,78: imposible (el resto de esquinas caben). `ik_pierna` **no conoce los topes**: es otro acoplamiento oculto (los topes viven en el `.xml`). El servo se quedará en el tope y la planta no quedará horizontal. Una IK profesional comprueba los topes y avisa (lo harás con excepciones propias en el P5).
+</details>
+
+**Reto 2.** Pide un tobillo **fuera del alcance** de la pierna: cadera a 0,767 m y tobillo en $(0{,}3;\ 0{,}0)$. Calcula la distancia cadera-tobillo, mira qué ángulos da `ik_pierna` y mide en MuJoCo (con `tobillo_en_mujoco`) dónde queda el tobillo. ¿Qué hace la línea del `min(1.0, max(-1.0, coseno))`?
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+print("distancia:", np.hypot(0.3, 0.767), "m (la pierna estirada mide 0.8)")
+q = ik_pierna(0.0, 0.767, 0.3, 0.0)
+posicion, _ = tobillo_en_mujoco(0.767, q)
+print(np.round(q, 4), "→ tobillo en", posicion[[0, 2]].round(4))
+```
+
+La distancia es 0,824 m > 0,8 m: ningún ángulo llega. El coseno sale **menor que −1**; sin el recorte, `math.acos` lanzaría `ValueError: math domain error`. Con el recorte, la rodilla queda a 0 (pierna **estirada**) apuntando hacia el objetivo, y el tobillo se queda en el punto **más cercano** posible, a unos 2,4 cm. Es una decisión de diseño razonable... pero **silenciosa**: el que llama no se entera. Leer código también es descubrir estas decisiones.
+</details>
+
+**Reto 3.** En la misma librería hay otra función corta: `configurar_servos`, en `andar/control.py`. Léela con `inspect.getsource`, explica qué tres números toca y úsala para poner servos **más rígidos** (`kp=3000`, `kv=90`, los que usará el NB52). ¿Cuánto baja el error del cuadrado? (Hazlo sobre una **copia** del modelo, `copy.deepcopy(zancudo)`, para no cambiar el original.)
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+import copy
+from andar.control import configurar_servos
+print(inspect.getsource(configurar_servos))
+
+rigido = copy.deepcopy(zancudo)
+configurar_servos(rigido, kp=3000, kv=90)
+errores_rigido = error_del_cuadrado(rigido)
+print(f"medio {errores_rigido.mean():.1f} mm, máximo {errores_rigido.max():.1f} mm")
+```
+
+Toca la **ganancia** (`actuator_gainprm[:, 0] = kp`) y los dos términos del **sesgo** (`actuator_biasprm[:, 1] = -kp` y `[:, 2] = -kv`): un servo de posición de MuJoCo es fuerza = kp·(orden − ángulo) − kv·velocidad, escrito como "ganancia + sesgo" (lo verás en el NB50). Con servos 10 veces más rígidos, el error medio baja de 21,8 mm a 9,1 mm (y el máximo, de 38,5 a 13,2 mm): el tobillo sigue mucho mejor el cuadrado. Fíjate en el `[:, 0]`: cambia la columna 0 de **todas** las filas (todos los motores) de una vez.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- A **leer** código de robótica ajeno con método (mapa → firma → seguir los datos) y a **verificarlo** con el simulador: la cinemática directa de MuJoCo (`mj_kinematics` + `datos.xpos`) es el juez de cualquier cinemática inversa.
+- `datos.xpos` (dónde está cada cuerpo), `datos.xmat` (cómo está girado) y `modelo.body_pos` (dónde cuelga cada cuerpo de su padre: las medidas del robot).
+- `mj_resetDataKeyframe` para empezar desde una postura guardada, y `modelo.jnt_range` para conocer los topes.
+- Que el mismo cálculo da **error cero sin física** y **centímetros con física**: los servos y la inercia existen.
+- A encontrar **acoplamientos ocultos** entre el código de Python y el `.xml` del robot.
+
+En la práctica del **P2** convertirás una simulación en una **función pura** con valores por defecto y parámetros con nombre, y la pasarás de mano en mano como una pieza más.
+"""),
+
+md(r"""## 9 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

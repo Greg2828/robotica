@@ -10,7 +10,10 @@ objeto con __eq__ deja de poder ir en un set). Propiedades con validación
 @staticmethod. Dataclasses a fondo: field (default_factory, repr, init),
 __post_init__ (validar y derivar), frozen y hash, order=True, asdict/replace,
 slots, y la trampa de __eq__ con arrays. Enum/IntEnum/auto. NamedTuple frente a
-dataclass frente a dict. Composición frente a herencia. Laboratorio.
+dataclass frente a dict. Composición frente a herencia. Laboratorio. Práctica en MuJoCo: un
+experimento de empujones a Zancudo como dataclasses congeladas (Servos,
+Empujon, PruebaDeEmpujon con __call__, Veredicto ordenable), barrido con
+replace, xfrc_applied; vídeo nb44p3_rigido_80N.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -846,7 +849,259 @@ print([round(control(0.5, v), 2) for v in [1.0, 1.0, -1.0]])
 </details>
 '''),
 
-md(r"""## 10 · Posdata
+md(r"""## 10 · 🛠 Práctica en MuJoCo: un experimento que se describe solo
+
+En robótica, los experimentos se cuentan por cientos: "este robot, con estos servos, en esta postura, con este empujón...". Si cada uno es un puñado de variables sueltas, en una semana nadie sabe qué se probó ni con qué. La solución profesional es la de la sección 5: **cada experimento es un objeto** (una dataclass congelada) que se **valida** al crearse, se **imprime** con todos sus datos, se puede **copiar con cambios** (`replace`), usar como **clave** de un diccionario y **guardar**.
+
+La pregunta de la práctica, con Zancudo (`robots/zancudo_v2.xml`) **suelto** y de pie, sin ningún control de equilibrio (los servos solo mantienen la postura):
+
+> **¿Qué empujón aguanta Zancudo sin caerse, según lo rígidos que sean sus servos?**
+
+Antes de seguir, apuesta: ¿aguantará **más** con servos rígidos (más "firmes") o con servos blandos?
+
+### Paso 1 · Las opciones cerradas: un Enum
+
+Zancudo trae dos posturas guardadas en su `.xml` (`<keyframe>`): `agachado` (apoyado en el suelo) y `colgado` (la misma, pero 10 cm más arriba, para colgarlo de la grúa). Son opciones **cerradas**: un `Enum` cuyos valores son los nombres de MuJoCo (sección 6).
+"""),
+
+code(r"""import json
+import time
+
+class Postura(Enum):
+    AGACHADO = "agachado"
+    COLGADO = "colgado"
+
+zancudo = mujoco.MjModel.from_xml_path("robots/zancudo_v2.xml")
+print([zancudo.key(i).name for i in range(zancudo.nkey)])
+print(Postura.AGACHADO.value, "→ número de keyframe", zancudo.key(Postura.AGACHADO.value).id)"""),
+
+md(r"""### Paso 2 · Las piezas: servos y empujón
+
+Dos dataclasses **congeladas** y pequeñas. Cada una **valida** lo suyo en `__post_init__` (sección 5) y `Servos` tiene **constructores alternativos** (`@classmethod`, sección 4) para las dos configuraciones con nombre que usaremos. Recuerda: un servo de posición de MuJoCo tiene una rigidez `kp` y una amortiguación `kv` (los del `.xml` son 300 y 20).
+"""),
+
+code(r"""@dataclass(frozen=True)
+class Servos:
+    kp: float = 300.0
+    kv: float = 20.0
+
+    def __post_init__(self) -> None:
+        if self.kp <= 0 or self.kv < 0:
+            raise ValueError(f"servos imposibles: kp={self.kp}, kv={self.kv}")
+
+    @classmethod
+    def blandos(cls) -> "Servos":
+        return cls(300.0, 20.0)
+
+    @classmethod
+    def rigidos(cls) -> "Servos":
+        return cls(3000.0, 90.0)
+
+    def aplicar(self, modelo: mujoco.MjModel) -> None:
+        "Escribe kp y kv en TODOS los servos de posición del modelo."
+        modelo.actuator_gainprm[:, 0] = self.kp
+        modelo.actuator_biasprm[:, 1] = -self.kp
+        modelo.actuator_biasprm[:, 2] = -self.kv
+
+
+@dataclass(frozen=True)
+class Empujon:
+    fuerza: float              # N, hacia delante (+x), aplicada al torso
+    instante: float = 0.5      # s
+    duracion: float = 0.1      # s
+
+    def __post_init__(self) -> None:
+        if self.duracion <= 0 or self.instante < 0:
+            raise ValueError(f"empujón imposible: {self}")
+
+    def fuerza_en(self, t: float) -> float:
+        return self.fuerza if self.instante <= t < self.instante + self.duracion else 0.0
+
+print(Servos(), Servos.rigidos(), Empujon(100))"""),
+
+code_err(r"""Servos(kp=-5)"""),
+
+md(r"""Fíjate en `aplicar`: la clase no solo **guarda** datos, también **sabe** cómo ponerlos en un modelo de MuJoCo. (Qué son exactamente `gainprm` y `biasprm` lo verás en el NB50; hoy basta con saber que ahí viven kp y kv.)
+
+### Paso 3 · El experimento: composición
+
+El experimento **tiene** unos servos, una postura y, quizá, un empujón (sección 7: composición, "tiene un"). Y el resultado de ejecutarlo es otra dataclass, con `order=True` para poder **ordenar** resultados por lo que aguantó (sección 5).
+"""),
+
+code(r"""@dataclass(frozen=True, order=True)
+class Veredicto:
+    aguanta: float                                   # segundos de pie (= la duración si no cae)
+    hundimiento_cm: float                            # cuánto bajó la cadera, como mucho
+    prueba: "PruebaDeEmpujon" = field(compare=False)
+
+    @property
+    def cae(self) -> bool:
+        return self.aguanta < self.prueba.segundos
+
+
+@dataclass(frozen=True)
+class PruebaDeEmpujon:
+    nombre: str
+    servos: Servos = field(default_factory=Servos)
+    postura: Postura = Postura.AGACHADO
+    empujon: Empujon | None = None
+    segundos: float = 3.0
+
+    def __post_init__(self) -> None:
+        if self.empujon is not None and self.empujon.instante >= self.segundos:
+            raise ValueError(f"el empujón ({self.empujon.instante} s) llega después del final ({self.segundos} s)")
+
+    def __call__(self) -> Veredicto:
+        modelo = mujoco.MjModel.from_xml_path("robots/zancudo_v2.xml")
+        self.servos.aplicar(modelo)
+        datos = mujoco.MjData(modelo)
+        mujoco.mj_resetDataKeyframe(modelo, datos, modelo.key(self.postura.value).id)
+        mujoco.mj_forward(modelo, datos)
+        torso = modelo.body("torso").id
+        cadera_inicial = cadera_min = datos.xpos[torso][2]
+        while datos.time < self.segundos:
+            if self.empujon is not None:
+                datos.xfrc_applied[torso, 0] = self.empujon.fuerza_en(datos.time)
+            mujoco.mj_step(modelo, datos)
+            cadera_min = min(cadera_min, datos.xpos[torso][2])
+            if abs(datos.qpos[2]) > 0.6 or datos.qpos[1] < -0.35:     # inclinado > 34° o hundido: caído
+                break
+        return Veredicto(round(datos.time, 3), round(100 * float(cadera_inicial - cadera_min), 2), self)
+
+base = PruebaDeEmpujon("de pie, sin empujón")
+print(base)
+print(base())"""),
+
+md(r"""Lee la clase despacio, porque junta media lección:
+
+- Los **campos** con valor por defecto: una prueba con todo "normal" se crea con solo un nombre. `Servos` se fabrica con `default_factory` (cada prueba, sus propios servos).
+- `__post_init__` comprueba una regla que **relaciona** dos piezas (el empujón tiene que llegar antes del final): esa validación no podía vivir en `Empujon`, que no conoce la duración.
+- **`__call__`** (sección 1): la prueba **se ejecuta llamándola**, `base()`, como una función. Dentro hace lo de siempre: modelo nuevo, servos, postura guardada (`mj_resetDataKeyframe`), y un bucle que aplica el empujón al torso con **`datos.xfrc_applied`** (una fuerza externa sobre un cuerpo: fila = cuerpo, columnas 0-2 = fuerza en x, y, z) y para si Zancudo se cae.
+- Devuelve un `Veredicto`, que **lleva dentro** la prueba que lo produjo: el resultado nunca se separa de su configuración.
+
+Sin empujón, Zancudo aguanta los 3 segundos (el `aguanta=3.002` es el instante del último paso) y la cadera baja 1,7 cm: los servos blandos ceden un poco bajo el peso. Ahora, con empujones.
+
+### Paso 4 · Un barrido con replace
+
+`replace` (sección 5) crea copias con cambios: el experimento base, con otros servos y otro empujón. Y como las pruebas son **congeladas** (y por tanto hashables), sirven como **claves** del diccionario de resultados:
+"""),
+
+code(r"""resultados: dict[PruebaDeEmpujon, Veredicto] = {}
+inicio = time.perf_counter()
+for servos in [Servos.blandos(), Servos(1000, 40), Servos.rigidos()]:
+    for fuerza in [60, 80, 100, 150]:
+        prueba = replace(base, nombre=f"kp {servos.kp:.0f}, {fuerza} N", servos=servos, empujon=Empujon(fuerza))
+        resultados[prueba] = prueba()
+print(f"{len(resultados)} pruebas en {time.perf_counter() - inicio:.1f} s\n")
+
+print("   servos      | 60 N | 80 N | 100 N | 150 N")
+for servos in [Servos.blandos(), Servos(1000, 40), Servos.rigidos()]:
+    fila = [v for p, v in resultados.items() if p.servos == servos]
+    print(f" kp {servos.kp:6.0f}    | " + " | ".join("cae " if v.cae else "  ✓ " for v in fila))"""),
+
+md(r"""¿Acertaste la apuesta? Los servos **rígidos** aguantan **menos**: 80 N ya los tumban, y los blandos (los del `.xml`) aguantan 80 N. Tiene sentido físico: con servos muy rígidos, Zancudo es una **tabla** que pivota sobre los pies como un bloque; con servos blandos, las articulaciones **ceden** y absorben parte del golpe (una amortiguación "gratis"). Más firme no es más estable: lo que de verdad salva a un robot de un empujón es **reaccionar** (mover el centro de masas o dar un paso), y eso es el NB39, el NB52 y el NB53.
+
+Como `Veredicto` tiene `order=True`, ordenar los resultados por lo que aguantaron es una línea. Las 3 pruebas que antes cayeron:
+"""),
+
+code(r"""for veredicto in sorted(resultados.values())[:3]:
+    print(f"{veredicto.prueba.nombre:>16}: cae a los {veredicto.aguanta:.2f} s (cadera −{veredicto.hundimiento_cm} cm)")"""),
+
+md(r"""### Paso 5 · Míralo
+
+La prueba que **cae** con servos rígidos y 80 N. Para el vídeo de `taller` necesitamos un modelo, unos datos y un control `control(modelo, datos)` que aplique el empujón: los fabricamos a partir de la propia prueba.
+"""),
+
+code(r"""import taller
+
+def preparar_video(prueba: PruebaDeEmpujon):
+    modelo = mujoco.MjModel.from_xml_path("robots/zancudo_v2.xml")
+    prueba.servos.aplicar(modelo)
+    datos = mujoco.MjData(modelo)
+    mujoco.mj_resetDataKeyframe(modelo, datos, modelo.key(prueba.postura.value).id)
+    mujoco.mj_forward(modelo, datos)
+    def control(m, d):
+        d.xfrc_applied[1, 0] = prueba.empujon.fuerza_en(d.time)     # el cuerpo 1 es el torso
+    return modelo, datos, control
+
+rigido_80 = replace(base, nombre="rígido, 80 N", servos=Servos.rigidos(), empujon=Empujon(80))
+m_v, d_v, control_v = preparar_video(rigido_80)
+_ = taller.video(m_v, d_v, segundos=2.5, control=control_v, nombre="nb44p3_rigido_80N", distancia=3.0)"""),
+
+md(r"""(¿Ves la repetición? `preparar_video` repite las primeras líneas de `__call__`. En el reto 2 lo arreglas.)
+
+### Tus retos
+
+**Reto 1.** Guarda la prueba `rigido_80` en JSON con `json.dumps(asdict(rigido_80))`. Fallará: lee la **última línea** del error (P1). Arréglalo.
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+json.dumps(asdict(rigido_80))
+# TypeError: Object of type Postura is not JSON serializable
+```
+
+`asdict` convierte las dataclasses anidadas (`Servos`, `Empujon`) en diccionarios, pero el `Enum` se queda como está, y JSON solo sabe guardar números, textos, listas, diccionarios, `true/false` y `null`. Arreglo: decirle a `json.dumps` qué hacer con lo que no conoce, con `default=`:
+
+```python
+texto = json.dumps(asdict(rigido_80), default=lambda x: x.value if isinstance(x, Enum) else str(x), indent=2)
+print(texto)
+```
+
+`default` es un **callback** (P2): `json` lo llama con cada objeto que no sabe guardar. Para leerlo de vuelta harías lo contrario: `Postura(diccionario["postura"])` convierte `"agachado"` en `Postura.AGACHADO`; un `@classmethod desde_dict` sería el sitio ideal (sección 4).
+</details>
+
+**Reto 2.** Quita la repetición del paso 5: añade a `PruebaDeEmpujon` un método `preparar(self) -> tuple[mujoco.MjModel, mujoco.MjData]` y reescribe `__call__` para que lo use. ¿Cambia algún resultado?
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+@dataclass(frozen=True)
+class PruebaDeEmpujon2(PruebaDeEmpujon):
+    def preparar(self):
+        modelo = mujoco.MjModel.from_xml_path("robots/zancudo_v2.xml")
+        self.servos.aplicar(modelo)
+        datos = mujoco.MjData(modelo)
+        mujoco.mj_resetDataKeyframe(modelo, datos, modelo.key(self.postura.value).id)
+        mujoco.mj_forward(modelo, datos)
+        return modelo, datos
+
+    def __call__(self) -> Veredicto:
+        modelo, datos = self.preparar()
+        ...                                      # el resto, igual que antes, desde `torso = ...`
+```
+
+(Aquí heredamos solo para no copiar la clase entera en la solución; en tu código, lo cambiarías **en** la clase.) Los resultados son **idénticos**, bit a bit: mismo modelo, mismos datos, MuJoCo es determinista (P2). Una refactorización correcta **no cambia ningún número**: es exactamente lo que comprobarás con tests en el NB46.
+</details>
+
+**Reto 3.** ★ Busca el empujón **límite** con más precisión: para servos blandos y rígidos, prueba fuerzas de 60 a 100 N de 5 en 5 y quédate con la mayor que aguanta. Usa `replace` y un `max` con `key=` (P2).
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+for servos in [Servos.blandos(), Servos.rigidos()]:
+    aguantan = [f for f in range(60, 101, 5)
+                if not replace(base, servos=servos, empujon=Empujon(f))().cae]
+    print(f"kp {servos.kp:.0f}: aguanta hasta {max(aguantan)} N")
+```
+
+Sale **hasta 80 N** con los blandos y **hasta 75 N** con los rígidos: el límite está justo entre 75 y 85 N, y la rigidez lo mueve poco pero siempre en la misma dirección. (Si quisieras afinar más, de 1 en 1 N, ¿cuántas simulaciones harías? Una **búsqueda binaria** lo resolvería en 5 o 6.) (Aquí `max` sin `key` basta, porque son números; con objetos, `max(veredictos, key=lambda v: v.prueba.empujon.fuerza)`.) Una sola línea crea la prueba, la ejecuta y lee el veredicto: es lo que se gana cuando los experimentos son objetos.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **`datos.xfrc_applied`**: aplicar una fuerza externa (un empujón) a un cuerpo, fila por cuerpo, columnas = fuerza (x, y, z) y par.
+- Que la rigidez de los servos cambia el comportamiento **físico**, y no siempre como esperas: servos rígidos convierten al robot en un bloque que vuelca antes.
+- A empaquetar un experimento de MuJoCo en dataclasses congeladas: la **configuración** (validada, imprimible, hashable, copiable con `replace`), su **ejecución** (`__call__`) y su **resultado** (ordenable), sin que nunca se separen.
+- Los `<keyframe>` como un conjunto cerrado de opciones (`Enum`) y `mj_resetDataKeyframe` para empezar desde ellos.
+
+En la práctica del **P4** convertirás una simulación en un **generador** de estados (para recorrerla con un `for`, cortarla y filtrarla sin listas enormes) y escribirás un **gestor de contexto** que abre y cierra el dibujante de MuJoCo por ti.
+"""),
+
+md(r"""## 11 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

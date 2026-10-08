@@ -16,7 +16,10 @@ SVD (girar·estirar·girar: el círculo se vuelve elipse; valores singulares);
 número de condición (rectas casi paralelas: un error pequeño en b, un error
 enorme en x); pseudoinversa (demasiadas ecuaciones → mínimos cuadrados;
 pocas → la solución más pequeña); producto vectorial (perpendicular, regla de
-la mano derecha, |a||b|·sen, par = r × F, v = ω × r).
+la mano derecha, |a||b|·sen, par = r × F, v = ω × r). Práctica en MuJoCo:
+las matrices de Zancudo v2 (mj_jacSite 3×9, rango, SVD, IK con pinv, espacio
+nulo = inclinación del pie, vídeo nb44p7_cuatro_puntos; mj_fullM simétrica y
+definida positiva, energía ½q̇ᵀMq̇ = datos.energy).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -737,7 +740,258 @@ print(np.linalg.norm(c), "≈", np.linalg.norm(a) * np.linalg.norm(b) * seno)
 </details>
 """),
 
-md(r"""## 15 · Posdata
+md(r"""## 15 · 🛠 Práctica en MuJoCo: las matrices de Zancudo
+
+Toda la lección ha sido con matrices de 2×2 inventadas, para poder dibujarlas. En la práctica vas a pedirle a MuJoCo las **matrices de verdad** de un robot y a usar con ellas cada idea de hoy:
+
+| Matriz de MuJoCo | Función | Idea de la lección |
+|---|---|---|
+| **jacobiano** de un punto del pie | `mj_jacSite`, `mj_jacBody` | matriz no cuadrada, rango, SVD, número de condición, **pseudoinversa**, espacio nulo |
+| **matriz de masas** M | `mj_fullM` | **simétrica**, **definida positiva**, valores propios, energía ½·q̇ᵀ·M·q̇ |
+
+El NB46 y el NB45 explicarán de dónde salen y para qué sirven a fondo; hoy las **tocas**.
+
+### Paso 1 · Zancudo colgado y un punto en la planta
+
+Usamos el Zancudo del Bloque A, `zancudo_v2.xml`, en su postura `colgado`. El punto que nos interesa es el **centro de la planta del pie derecho**, que en el `.xml` está marcado con un `site` (un punto con nombre, sin masa ni forma física) llamado `planta_d`. Su posición en el mundo está en `datos.site_xpos`:
+"""),
+
+code(r"""import os
+os.environ["MUJOCO_GL"] = "egl"
+import mujoco
+import taller
+
+z2 = mujoco.MjModel.from_xml_path("robots/zancudo_v2.xml")
+dz = mujoco.MjData(z2)
+mujoco.mj_resetDataKeyframe(z2, dz, z2.key("colgado").id)
+mujoco.mj_forward(z2, dz)
+planta = z2.site("planta_d").id
+print("coordenadas (nv):", z2.nv, "→", [z2.joint(i).name for i in range(z2.njnt)])
+print("centro de la planta derecha:", dz.site_xpos[planta])"""),
+
+md(r"""### Paso 2 · El jacobiano: una matriz de 3 × 9
+
+La pregunta del jacobiano es: "si muevo **un poquito** cada coordenada del robot, ¿cuánto se mueve el punto?". Como el punto tiene 3 coordenadas (x, y, z) y el robot tiene 9 (`nv`), la respuesta es una matriz de **3 filas y 9 columnas**: la columna j dice adónde va el punto cuando se mueve solo la coordenada j (¡la idea del apartado 1: las columnas son adónde van los ejes!). MuJoCo la **rellena** en un array que le damos (como `mj_getState`, NB45):
+"""),
+
+code(r"""jac = np.zeros((3, z2.nv))
+mujoco.mj_jacSite(z2, dz, jac, None, planta)        # None: no queremos la parte de giro
+print(jac)
+print("rango:", np.linalg.matrix_rank(jac))"""),
+
+md(r"""Léela por columnas:
+
+- Columnas 0 y 1 (`raiz_x`, `raiz_z`): mover el torso 1 m en x o en z mueve el pie exactamente eso: columnas (1, 0, 0) y (0, 0, 1).
+- Columnas 3, 4 y 5 (cadera, rodilla y tobillo **derechos**): cada una mueve el pie a su manera.
+- Columnas 6, 7 y 8 (pierna **izquierda**): ceros. Mover la otra pierna no mueve este pie.
+- La **fila** y entera es cero: Zancudo es un robot **plano**, nada se mueve en y. Por eso el **rango** es 2, no 3: solo sobreviven dos direcciones (apartado 7).
+
+¿De verdad predice el movimiento? Movemos un poquito las tres articulaciones de la pierna y comparamos lo que dice la matriz (jacobiano · cambio) con lo que calcula MuJoCo:
+"""),
+
+code(r"""q0, punto0 = dz.qpos.copy(), dz.site_xpos[planta].copy()
+cambio = np.zeros(z2.nv)
+cambio[3:6] = [0.001, -0.002, 0.0005]                # radianes: cadera, rodilla, tobillo
+dz.qpos[:] = q0 + cambio
+mujoco.mj_kinematics(z2, dz)
+print("MuJoCo:    ", 1000 * (dz.site_xpos[planta] - punto0), "mm")
+print("jacobiano: ", 1000 * (jac @ cambio), "mm")
+dz.qpos[:] = q0
+mujoco.mj_forward(z2, dz)"""),
+
+md(r"""Coinciden: para movimientos pequeños, el robot entero se comporta como **una matriz**. (Para movimientos grandes ya no: el jacobiano cambia con la postura.)
+
+### Paso 3 · La pierna como una matriz de 2 × 3, y su SVD
+
+Para mover el pie con la pierna (el torso, colgado, no se mueve), nos quedamos con las filas x y z y las columnas de la pierna derecha: una matriz de **2 × 3**, exactamente como el "jacobiano de juguete" del apartado 7: 2 cosas que controlar, 3 articulaciones.
+"""),
+
+code(r"""J = jac[[0, 2]][:, 3:6]
+print(J)
+U, sigma, Vt = np.linalg.svd(J)
+print("valores singulares:", sigma, "| número de condición:", round(sigma[0] / sigma[1], 2))"""),
+
+md(r"""La SVD (apartado 9) dice: en su mejor dirección, la pierna mueve el pie 0,83 m por radián; en la peor, solo 0,16. Un número de condición de 5,2: una pierna cómoda, lejos de ser singular.
+
+### Paso 4 · La pseudoinversa lleva el pie a un punto
+
+Queremos poner el centro de la planta en un punto concreto, $(x, z) = (0{,}15;\ 0{,}25)$ m. Como el jacobiano solo vale para pasitos pequeños, se hace **por iteraciones** (es la cinemática inversa numérica del NB46): error = objetivo − posición; cambio de ángulos = J⁺ · error; repetir.
+"""),
+
+code(r"""objetivo = np.array([0.15, 0.25])
+for iteracion in range(20):
+    mujoco.mj_kinematics(z2, dz)                       # dónde está cada cosa
+    mujoco.mj_comPos(z2, dz)                           # lo que necesitan los jacobianos (ver abajo)
+    error = objetivo - dz.site_xpos[planta][[0, 2]]
+    print(f"iteración {iteracion}: error {1000 * np.linalg.norm(error):9.5f} mm")
+    if np.linalg.norm(error) < 1e-6:
+        break
+    mujoco.mj_jacSite(z2, dz, jac, None, planta)
+    dz.qpos[3:6] += np.linalg.pinv(jac[[0, 2]][:, 3:6]) @ error
+q_objetivo = dz.qpos[3:6].copy()
+print("ángulos (cadera, rodilla, tobillo):", q_objetivo)"""),
+
+md(r"""En 4 iteraciones, el error baja de 16 cm a menos de una micra: a partir de la segunda, cada iteración **eleva al cuadrado** el error, más o menos (43 → 2 → 0,005 mm), la firma del método de Newton. Fíjate en las dos llamadas de cada vuelta: `mj_kinematics` coloca las piezas, y **`mj_comPos`** calcula unos datos auxiliares (los centros de masas y los ejes de movimiento de cada articulación) con los que MuJoCo **construye** el jacobiano. Son dos etapas de `mj_forward` (NB45); si te saltas la segunda, el jacobiano sale **viejo** (el de la última vez que se calculó) o directamente lleno de ceros. Es un error silencioso clásico. Cada iteración usa la pseudoinversa en su versión "infinitas soluciones" (apartado 11): de todas las combinaciones de 3 ángulos que mueven el pie lo pedido, elige la **más pequeña**.
+
+¿Y qué es lo que la pseudoinversa no controla? Lo que está en el **espacio nulo** de J: con 3 articulaciones y 2 coordenadas, sobra **una** dirección. La SVD la da (la última fila de `Vt`). Moverse en ella no mueve el punto (o casi nada)... pero sí **gira el pie**:
+"""),
+
+code(r"""mujoco.mj_jacSite(z2, dz, jac, None, planta)
+nulo = np.linalg.svd(jac[[0, 2]][:, 3:6])[2][-1]
+print("dirección nula (cadera, rodilla, tobillo):", nulo.round(3), "→ J · nula =", (jac[[0, 2]][:, 3:6] @ nulo).round(12))
+
+def inclinacion_planta() -> float:
+    return float(np.degrees(np.arcsin(dz.site_xmat[planta].reshape(3, 3)[2, 0])))
+
+punto_antes, inclinacion_antes = dz.site_xpos[planta].copy(), inclinacion_planta()
+dz.qpos[3:6] = q_objetivo + 0.01 * nulo
+mujoco.mj_kinematics(z2, dz)                           # aquí solo nos hace falta la posición
+print(f"moviéndose 0,01 en la dirección nula: el punto se mueve {1000 * np.linalg.norm(dz.site_xpos[planta] - punto_antes):.4f} mm;"
+      f" la planta gira de {inclinacion_antes:+.2f}° a {inclinacion_planta():+.2f}°")
+dz.qpos[3:6] = q_objetivo
+mujoco.mj_kinematics(z2, dz)"""),
+
+md(r"""Una centésima en la dirección nula mueve el punto **3 milésimas de milímetro**, pero inclina la planta más de medio grado. Ese grado de libertad "sobrante" es justo el que, en la vida real, se usa para **mantener el pie plano** (es lo que hace la fórmula `tobillo = −(cadera + rodilla)` del P1). La pseudoinversa lo deja a su aire: por eso el pie ha acabado inclinado +7,6° (`inclinacion_antes`). Lo arreglarás en el NB46 con una tarea más.
+
+### Paso 5 · Con física: el pie visita cuatro puntos
+
+Ahora con física. Calculamos con la pseudoinversa los ángulos para cuatro puntos y se los mandamos a los servos de la pierna, un segundo cada uno, con Zancudo colgado de la grúa (`eq_active`, NB50):
+"""),
+
+code(r"""def ik_planta(objetivo: np.ndarray, q_inicial: np.ndarray) -> np.ndarray:
+    datos_ik = mujoco.MjData(z2)                       # unos datos propios para calcular
+    mujoco.mj_resetDataKeyframe(z2, datos_ik, z2.key("colgado").id)
+    datos_ik.qpos[3:6] = q_inicial
+    jac_ik = np.zeros((3, z2.nv))
+    for _ in range(30):
+        mujoco.mj_kinematics(z2, datos_ik)
+        mujoco.mj_comPos(z2, datos_ik)
+        error = objetivo - datos_ik.site_xpos[planta][[0, 2]]
+        if np.linalg.norm(error) < 1e-6:
+            break
+        mujoco.mj_jacSite(z2, datos_ik, jac_ik, None, planta)
+        datos_ik.qpos[3:6] += np.linalg.pinv(jac_ik[[0, 2]][:, 3:6]) @ error
+    return datos_ik.qpos[3:6].copy()
+
+puntos = np.array([[0.15, 0.25], [0.15, 0.15], [-0.10, 0.15], [-0.10, 0.25]])
+angulos_puntos = []
+q = z2.key("colgado").qpos[3:6].copy()
+for p in puntos:
+    q = ik_planta(p, q)                                # cada uno parte del anterior
+    angulos_puntos.append(q)
+print(np.array(angulos_puntos).round(3))
+
+def visitar(modelo, datos):
+    datos.ctrl[0:3] = angulos_puntos[min(int(datos.time), 3)]
+
+dv = mujoco.MjData(z2)
+mujoco.mj_resetDataKeyframe(z2, dv, z2.key("colgado").id)
+dv.eq_active[z2.equality("grua").id] = 1
+mujoco.mj_forward(z2, dv)
+_ = taller.video(z2, dv, segundos=4.0, control=visitar, nombre="nb44p7_cuatro_puntos", distancia=2.2)
+print("donde ha acabado la planta:", dv.site_xpos[planta][[0, 2]].round(3), "(pedido:", puntos[-1], ")")"""),
+
+md(r"""El pie salta de punto en punto (los servos tiran hacia cada postura) y acaba muy cerca del último: a 5 mm, porque los servos, que son muelles, ceden un poco bajo el peso de la pierna.
+
+### Paso 6 · La matriz de masas: simétrica y definida positiva
+
+La otra gran matriz de un robot es la **matriz de masas** M (9 × 9): la "masa" que nota cada coordenada y cómo se acoplan entre sí (NB45). MuJoCo la guarda comprimida; `mj_fullM` la escribe entera en un array nuestro:
+"""),
+
+code(r"""mujoco.mj_forward(z2, dz)
+M = np.zeros((z2.nv, z2.nv))
+mujoco.mj_fullM(z2, dz, M)
+print(M.round(3))"""),
+
+md(r"""Ya se ven cosas: M[0, 0] = M[1, 1] = 23,6 kg, la masa de **todo** Zancudo (mover el torso en x o en z arrastra el robot entero); y el bloque de la pierna derecha (filas 3-5) con el de la izquierda (columnas 6-8) es cero: mover una pierna no "carga" a la otra directamente. Ahora, las dos propiedades del apartado 8:
+"""),
+
+code(r"""print("¿simétrica?", np.allclose(M, M.T))
+valores_propios = np.linalg.eigvalsh(M)
+print("valores propios:", valores_propios.round(3))
+print("¿definida positiva?", (valores_propios > 0).all(), "| número de condición:", round(np.linalg.cond(M)))"""),
+
+md(r"""Simétrica, y los 9 valores propios positivos: **definida positiva**. El mayor (24,1) es casi la masa total (mover todo el robot); los más pequeños (0,015) son los de los tobillos, con sus pies de 800 g que apenas cuesta girar. El número de condición, unos 1.600: la diferencia entre "mover un robot de 24 kg" y "girar un pie" es enorme.
+
+Y la prueba física de "definida positiva": la energía cinética ½·q̇ᵀ·M·q̇ de cualquier movimiento es positiva. Le damos a Zancudo velocidades al azar en sus 9 coordenadas y comparamos nuestra cuenta con la energía cinética que calcula MuJoCo (que hay que activar con un `flag`, NB45):
+"""),
+
+code(r"""z2.opt.enableflags |= mujoco.mjtEnableBit.mjENBL_ENERGY
+dz.qvel[:] = np.random.default_rng(0).standard_normal(z2.nv)
+mujoco.mj_forward(z2, dz)
+print(f"½·q̇ᵀ·M·q̇ = {0.5 * dz.qvel @ M @ dz.qvel:.4f} J  |  MuJoCo (energía cinética): {dz.energy[1]:.4f} J")
+dz.qvel[:] = 0"""),
+
+md(r"""Idénticas. La matriz de masas es la máquina que convierte velocidades en energía, y es definida positiva porque cualquier movimiento cuesta energía.
+
+### Tus retos
+
+**Reto 1.** Singularidad: con el jacobiano del **tobillo** (el origen del cuerpo `pie_d`, con `mj_jacBody`) y solo cadera y rodilla (una matriz 2 × 2), calcula el número de condición y el determinante con la rodilla a −1; −0,5; −0,2; −0,05; −0,01 y 0 rad (el resto de ángulos a 0). ¿Qué pasa con la pierna estirada?
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+pie = z2.body("pie_d").id
+for rodilla in [-1.0, -0.5, -0.2, -0.05, -0.01, 0.0]:
+    dz.qpos[:] = 0
+    dz.qpos[4] = rodilla
+    mujoco.mj_kinematics(z2, dz)
+    mujoco.mj_comPos(z2, dz)                     # mj_jacBody lo necesita (ver la nota)
+    mujoco.mj_jacBody(z2, dz, jac, None, pie)
+    J2 = jac[[0, 2]][:, 3:5]
+    print(f"rodilla {rodilla:+.2f}: condición {np.linalg.cond(J2):9.1f}, determinante {np.linalg.det(J2):+.4f}")
+```
+
+El número de condición pasa de 4,6 (rodilla a −1) a 25 (−0,2), 100 (−0,05), 500 (−0,01) e **infinito** con la pierna estirada, donde el determinante vale 0: la matriz **aplasta** una dirección (apartado 6). Con la pierna recta, el tobillo no puede moverse hacia la cadera ni alejarse de ella: solo de lado. Es la **singularidad** del NB46, y por eso los robots andan con las rodillas un poco dobladas. (Los jacobianos usan resultados de `mj_comPos`, otra etapa de `mj_forward`; si solo llamas a `mj_kinematics`, hay que llamarla también, o usar `mj_forward`.)
+</details>
+
+**Reto 2.** Compara el espacio nulo con una dirección cualquiera: mueve los ángulos de la pierna 0,01 rad en una dirección **al azar** (normalizada a longitud 1) desde `q_objetivo` y mide cuánto se mueve el punto. Compáralo con los 0,003 mm de la dirección nula.
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+direccion = np.random.default_rng(1).standard_normal(3)
+direccion /= np.linalg.norm(direccion)
+dz.qpos[:] = z2.key("colgado").qpos
+dz.qpos[3:6] = q_objetivo + 0.01 * direccion
+mujoco.mj_kinematics(z2, dz)
+print(f"{1000 * np.linalg.norm(dz.site_xpos[planta][[0, 2]] - objetivo):.2f} mm")
+```
+
+Unos 5,5 mm, unas **2.000 veces** más que en la dirección nula. (Y en la nula no es exactamente 0 porque el jacobiano solo es exacto para pasitos infinitamente pequeños: con 0,01 rad queda un resto "de segundo orden".)
+</details>
+
+**Reto 3.** ★ La matriz de masas **depende de la postura**. Calcula M con la pierna derecha estirada (cadera, rodilla y tobillo a 0) y con la pierna doblada de `colgado`, y compara el elemento de la cadera derecha, M[3, 3]. ¿Cuál es mayor y por qué?
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+for nombre, pierna in [("estirada", [0, 0, 0]), ("doblada", z2.key("colgado").qpos[3:6])]:
+    dz.qpos[:] = z2.key("colgado").qpos
+    dz.qpos[3:6] = pierna
+    mujoco.mj_forward(z2, dz)
+    mujoco.mj_fullM(z2, dz, M)
+    print(f"pierna {nombre}: M[3, 3] = {M[3, 3]:.3f} kg·m²")
+```
+
+Con la pierna **estirada** es mayor (1,50 frente a 1,23 kg·m²): girar la cadera con la pierna larga y recta cuesta más que con la rodilla doblada, porque la masa (pierna y pie) está más **lejos** del eje de giro (el momento de inercia crece con la distancia al cuadrado, NB37). Es lo que hacen los corredores: doblan mucho la rodilla al llevar la pierna hacia delante, para que "pese" menos. M(q) depende de q: por eso MuJoCo la recalcula en cada paso.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **`mj_jacSite` / `mj_jacBody`**: el jacobiano (3 × nv) de un punto; columnas = cómo mueve el punto cada coordenada. Predice movimientos pequeños.
+- La cinemática inversa **numérica** con la **pseudoinversa** (`np.linalg.pinv`), y el **espacio nulo** (de la SVD) como la libertad que sobra (aquí, la inclinación del pie).
+- **Singularidades** vistas en el número de condición: con la pierna estirada, el jacobiano pierde rango.
+- **`mj_fullM`**: la matriz de masas, **simétrica y definida positiva**, que depende de la postura, y la energía cinética ½·q̇ᵀ·M·q̇ que MuJoCo también calcula (`mjENBL_ENERGY`, `datos.energy`).
+- `site`: un punto con nombre en el robot, con `site_xpos` y `site_xmat`.
+
+En la práctica del **NB45** usarás todo el puente a la vez, ya dentro de MuJoCo: estado completo, viajes en el tiempo y la ecuación del movimiento, M·q̈ + c = τ.
+"""),
+
+md(r"""## 16 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

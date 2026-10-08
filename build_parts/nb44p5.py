@@ -9,7 +9,10 @@ de 3.12 y Self. Errores: el árbol de excepciones, orden de los except,
 excepciones propias con jerarquía y atributos, raise ... from (encadenar),
 raise a secas, add_note, EAFP frente a LBYL, no capturar de más. logging:
 niveles, getLogger(__name__), formato, a fichero, formato perezoso, en un
-notebook (force=True). Laboratorio de 12 retos.
+notebook (force=True). Laboratorio de 12 retos. Práctica en MuJoCo: módulo
+practica_mujoco/nb44p5_validar.py que revisa un robot antes de simular
+(excepciones propias con datos, ExceptionGroup/except*, raise from, Literal,
+mypy de verdad y por qué no ve los tipos de MuJoCo).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -873,7 +876,286 @@ El `else` de un `for` (NB22) se ejecuta solo si el bucle terminó **sin** `break
 </details>
 '''),
 
-md(r"""## 12 · Posdata
+md(r"""## 12 · 🛠 Práctica en MuJoCo: un revisor de robots con tipos y excepciones propias
+
+Hoy has visto cómo un programa avisa **pronto y con claridad**: los tipos, antes de ejecutar; las excepciones, mientras se ejecuta. En la práctica lo aplicas a un problema muy real de MuJoCo: **MuJoCo acepta muchos robots que están mal**. Un motor que puede pedir ángulos que su articulación no alcanza, una postura guardada con los pies **dentro** del suelo, una pieza que pesa 10 gramos... MuJoCo los carga sin una queja, y el problema aparece después, lejos, como un robot que se comporta raro. Vas a escribir un **revisor** que los encuentre **antes** de simular, con:
+
+- **excepciones propias** con datos (sección 8), una por tipo de problema;
+- un **`ExceptionGroup`** para informar de **todos** los problemas a la vez (nuevo: enseguida lo explicamos);
+- `raise ... from` para traducir los errores de MuJoCo;
+- **tipos** en todo, incluido un `Literal` (sección 4) para los integradores, revisado con **mypy** de verdad.
+
+Esta vez lo escribimos como un **módulo** `.py` (en la carpeta `practica_mujoco/`), como se hace en un proyecto real, para poder pasarle mypy y para importarlo desde cualquier notebook.
+
+### Paso 1 · El módulo
+
+Léelo con el método del P1 (de fuera a dentro): importaciones, un alias de tipo, una jerarquía de excepciones, una dataclass de parámetros y tres funciones. Debajo lo comentamos.
+"""),
+
+code(r"""Path("practica_mujoco").mkdir(exist_ok=True)"""),
+
+code(r'''%%writefile practica_mujoco/nb44p5_validar.py
+"""Validar un robot de MuJoCo y los parámetros de una simulación ANTES de simular (práctica del NB44·P5)."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal, get_args
+
+import mujoco
+import numpy as np
+
+type Integrador = Literal["Euler", "RK4", "implicit", "implicitfast"]
+
+
+class ErrorRobot(Exception):
+    """La madre de todos los problemas de un robot."""
+
+
+class XmlRoto(ErrorRobot):
+    """MuJoCo no ha podido leer o compilar el fichero."""
+
+
+class MotorFueraDeTopes(ErrorRobot):
+    def __init__(self, motor: str, orden: tuple[float, float], topes: tuple[float, float]) -> None:
+        super().__init__(f"el motor {motor!r} puede pedir {orden}, pero su articulación solo llega a {topes}")
+        self.motor, self.orden, self.topes = motor, orden, topes
+
+
+class PosturaEnterrada(ErrorRobot):
+    def __init__(self, postura: str, profundidad: float) -> None:
+        super().__init__(f"en la postura {postura!r} hay piezas {1000 * profundidad:.1f} mm dentro del suelo")
+        self.postura, self.profundidad = postura, profundidad
+
+
+class PiezaDemasiadoLigera(ErrorRobot):
+    def __init__(self, cuerpo: str, masa: float) -> None:
+        super().__init__(f"el cuerpo {cuerpo!r} pesa {masa} kg: demasiado poco para simularlo bien")
+        self.cuerpo, self.masa = cuerpo, masa
+
+
+@dataclass(frozen=True)
+class Parametros:
+    pasito: float = 0.002
+    integrador: Integrador = "implicitfast"
+    segundos: float = 2.0
+
+    def __post_init__(self) -> None:
+        if not 0 < self.pasito <= 0.01:
+            raise ValueError(f"pasito fuera de (0, 0.01] s: {self.pasito}")
+        if self.segundos <= 0:
+            raise ValueError(f"la duración debe ser positiva: {self.segundos}")
+        if self.integrador not in get_args(Integrador.__value__):
+            raise ValueError(f"integrador desconocido {self.integrador!r}; válidos: {get_args(Integrador.__value__)}")
+
+    def aplicar(self, modelo: mujoco.MjModel) -> None:
+        modelo.opt.timestep = self.pasito
+        modelo.opt.integrator = getattr(mujoco.mjtIntegrator, f"mjINT_{self.integrador.upper()}")
+
+
+def cargar(origen: str | Path) -> mujoco.MjModel:
+    """Carga desde una ruta (Path o texto acabado en .xml) o desde el propio texto MJCF."""
+    try:
+        if isinstance(origen, Path) or str(origen).endswith(".xml"):
+            return mujoco.MjModel.from_xml_path(str(origen))
+        return mujoco.MjModel.from_xml_string(origen)
+    except ValueError as error:
+        raise XmlRoto(f"MuJoCo no acepta el robot: {error}") from error
+
+
+def problemas(modelo: mujoco.MjModel, masa_minima: float = 0.05, hundimiento_max: float = 0.001) -> list[ErrorRobot]:
+    """Devuelve TODOS los problemas encontrados (no lanza nada)."""
+    encontrados: list[ErrorRobot] = []
+    for i in range(modelo.nu):
+        motor = modelo.actuator(i)
+        junta = modelo.joint(motor.trnid[0])
+        if modelo.actuator_ctrllimited[i] and modelo.jnt_limited[junta.id]:
+            orden, topes = motor.ctrlrange, junta.range
+            if orden[0] < topes[0] - 1e-9 or orden[1] > topes[1] + 1e-9:
+                encontrados.append(MotorFueraDeTopes(motor.name, (float(orden[0]), float(orden[1])),
+                                                     (float(topes[0]), float(topes[1]))))
+    for b in range(1, modelo.nbody):
+        if modelo.body_dofnum[b] > 0 and modelo.body_mass[b] < masa_minima:
+            encontrados.append(PiezaDemasiadoLigera(modelo.body(b).name, float(modelo.body_mass[b])))
+    datos = mujoco.MjData(modelo)
+    for k in range(modelo.nkey):
+        mujoco.mj_resetDataKeyframe(modelo, datos, k)
+        mujoco.mj_forward(modelo, datos)
+        if datos.ncon and (hondo := -float(datos.contact.dist[:datos.ncon].min())) > hundimiento_max:
+            encontrados.append(PosturaEnterrada(modelo.key(k).name, hondo))
+    return encontrados
+
+
+def validar(modelo: mujoco.MjModel) -> None:
+    """Lanza un ExceptionGroup con todos los problemas, o no hace nada si el robot está bien."""
+    lista = problemas(modelo)
+    if lista:
+        raise ExceptionGroup(f"el robot tiene {len(lista)} problema(s)", lista)'''),
+
+md(r"""Lo nuevo y lo importante:
+
+- **`type Integrador = Literal[...]`** (secciones 4 y 6): solo esos cuatro textos son válidos. mypy lo comprobará **sin ejecutar**; y `__post_init__` lo comprueba **al ejecutar**, con `get_args` (que devuelve las opciones de un `Literal`; `.__value__` es lo que hay detrás del alias). Dos redes para el mismo error.
+- **La jerarquía**: `ErrorRobot` es la madre; cada hija guarda **datos** (`motor`, `orden`, `topes`, `profundidad`...) además del mensaje.
+- **`cargar`** traduce el `ValueError` de MuJoCo en un `XmlRoto` **con `from`**: el error original no se pierde.
+- **`problemas`** no lanza nada: **devuelve una lista** de excepciones (¡las excepciones son objetos como cualquier otro; se pueden crear sin lanzarlas!). Revisa tres cosas: el rango de cada motor (`ctrlrange`) contra los topes de su articulación (`trnid` dice a qué articulación mueve), la masa de los cuerpos que se mueven (`body_dofnum` > 0) y, para cada `<keyframe>`, si hay piezas metidas en el suelo: tras `mj_forward`, cada contacto tiene una **distancia** (`contact.dist`), negativa si las piezas se atraviesan (NB48). Ese `:=` es la "morsa" (*walrus*): asigna y usa el valor en la misma expresión.
+- **`validar`** lanza **todos** los problemas juntos en un `ExceptionGroup`.
+
+### Paso 2 · El Zancudo de serie pasa la revisión
+"""),
+
+code(r"""sys.path.insert(0, "practica_mujoco")
+import nb44p5_validar as rev
+
+zancudo_v2 = rev.cargar(Path("robots/zancudo_v2.xml"))
+print("problemas:", rev.problemas(zancudo_v2))
+rev.validar(zancudo_v2)            # no lanza nada
+print("Zancudo v2: revisado y correcto")"""),
+
+md(r"""### Paso 3 · Un Zancudo con tres defectos
+
+Fabricamos un robot "estropeado" cambiando tres cosas del texto del `.xml` (NB20): las rodillas pueden pedir de −3,2 a 0,3 rad (pero la articulación solo va de −2,6 a 0), la postura `agachado` baja el torso 3 cm de más, y el pie derecho pesa 10 g en vez de 800. MuJoCo lo carga **sin rechistar**:
+"""),
+
+code(r"""texto = Path("robots/zancudo_v2.xml").read_text()
+estropeado = (texto.replace('ctrlrange="-2.6 0"', 'ctrlrange="-3.2 0.3"')
+                   .replace('qpos="0 -0.097934 0', 'qpos="0 -0.13 0')
+                   .replace('mass="0.8"', 'mass="0.01"', 1))
+roto = rev.cargar(estropeado)
+print("MuJoCo lo ha cargado:", roto.nbody, "cuerpos,", roto.nu, "motores")
+for problema in rev.problemas(roto):
+    print(f"  {type(problema).__name__}: {problema}")"""),
+
+md(r"""Cuatro problemas (las dos rodillas cuentan por separado), cada uno con su clase y un mensaje que dice **exactamente** qué está mal y dónde.
+
+### Paso 4 · ExceptionGroup y except*
+
+¿Por qué no lanzar el **primer** problema y ya está? Porque arreglar un robot así es desesperante: arreglas uno, vuelves a ejecutar, aparece el siguiente... Desde Python 3.11, un **`ExceptionGroup`** lanza **varias excepciones a la vez**. Y para capturarlas existe **`except*`** (con asterisco): cada `except*` coge **las del grupo** que son de su tipo, y las demás siguen hacia el siguiente `except*`:
+"""),
+
+code(r"""try:
+    rev.validar(roto)
+except* rev.MotorFueraDeTopes as grupo:
+    motores = [e.motor for e in grupo.exceptions]          # ¡los datos de cada excepción!
+    print(f"{len(motores)} motores con el rango mal: {motores}")
+except* rev.ErrorRobot as grupo:
+    print("otros problemas:", [type(e).__name__ for e in grupo.exceptions])"""),
+
+md(r"""El grupo traía 4 excepciones: el primer `except*` se quedó con las 2 de motores (y usó su atributo `.motor`), y el segundo, con el resto. Con un `except` normal no se podría repartir así.
+
+### Paso 5 · raise ... from con un XML de verdad roto
+
+Un `.xml` mal cerrado, o una masa negativa, sí los rechaza MuJoCo. Nuestro `cargar` lo traduce, y el error original sigue dentro, en `__cause__`:
+"""),
+
+code(r"""for descripcion, malo in [("sin cerrar el worldbody", texto.replace("</worldbody>", "")),
+                          ("con una masa negativa", texto.replace('mass="3"', 'mass="-3"', 1))]:
+    try:
+        rev.cargar(malo)
+    except rev.XmlRoto as error:
+        print(f"{descripcion}:\n  {str(error).splitlines()[0]}\n  causa original: {type(error.__cause__).__name__}")"""),
+
+md(r"""### Paso 6 · mypy: el error antes de ejecutar
+
+Ahora, los tipos. Escribimos un pequeño programa que **usa** el módulo con cuatro errores, y se lo pasamos a mypy junto con el módulo (como en la sección 3, con dos opciones nuevas: `MYPYPATH`, para que mypy encuentre el módulo, y `--ignore-missing-imports`, enseguida verás por qué):
+"""),
+
+code(r"""USO = '''
+from nb44p5_validar import Parametros, cargar, problemas
+
+p = Parametros(pasito=0.001, integrador="RK5")      # 1: no existe el RK5
+m = cargar(42)                                      # 2: ni ruta ni texto
+for problema in problemas(m):
+    print(problema.motor)                           # 3: ¿y si no es un problema de motor?
+problemas("robots/zancudo_v2.xml")                  # 4: un texto en vez de un MjModel
+'''
+
+with tempfile.TemporaryDirectory() as carpeta:
+    uso = Path(carpeta) / "uso.py"
+    uso.write_text(USO)
+    entorno = dict(os.environ, MYPYPATH=str(Path("practica_mujoco").resolve()))
+    resultado = subprocess.run([sys.executable, "-m", "mypy", "--ignore-missing-imports", "--no-error-summary",
+                                "--no-color-output", str(uso), "practica_mujoco/nb44p5_validar.py"],
+                               capture_output=True, text=True, env=entorno)
+print(re.sub(r"\S*uso\.py", "uso.py", resultado.stdout) or "sin errores")"""),
+
+md(r"""mypy encuentra el **1** (`"RK5"` no está en el `Literal`), el **2** (un `int` no es `str | Path`) y el **3** (no todos los `ErrorRobot` tienen `.motor`: hay que **estrechar** con `isinstance`, sección 2). Y el módulo en sí no tiene ningún error de tipos.
+
+Pero **no** encuentra el **4**, y es la lección más importante del paso: **MuJoCo no trae anotaciones de tipo que mypy entienda** (sin `--ignore-missing-imports`, mypy se queja justo de eso: *missing library stubs*). Para mypy, `mujoco.MjModel` es "cualquier cosa" (`Any`), así que acepta un texto donde va un modelo. Los tipos te protegen en **tu** código; en la frontera con una biblioteca de C sin tipos, la red es la validación **en ejecución** (por eso el revisor hace las dos cosas).
+
+### Tus retos
+
+**Reto 1.** Arregla el error 3 de mypy: recorre `rev.problemas(roto)` e imprime el motor solo de los problemas que **son** de motor, y la profundidad de los de postura. (Pista: `isinstance`.)
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+for problema in rev.problemas(roto):
+    if isinstance(problema, rev.MotorFueraDeTopes):
+        print("motor:", problema.motor, problema.orden)
+    elif isinstance(problema, rev.PosturaEnterrada):
+        print(f"postura {problema.postura}: {1000 * problema.profundidad:.1f} mm bajo el suelo")
+```
+
+Dentro de cada rama, mypy **sabe** el tipo concreto (estrechamiento, sección 2), así que `problema.motor` o `problema.profundidad` ya no son un error. La postura `agachado` estropeada mete los pies 27,1 mm en el suelo.
+</details>
+
+**Reto 2.** ¿Es de verdad un problema un pie de 10 g? Pruébalo: simula 3 s el Zancudo de serie y el de pie ligero, desde `agachado`, y mira la inclinación final del torso (`qpos[2]`). Repite quitando la `armature` de las articulaciones (`texto.replace('<joint armature="0.01"', '<joint armature="0"')`). ¿Qué conclusión sacas sobre el revisor?
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+def inclinacion_final(xml: str) -> float:
+    m = mujoco.MjModel.from_xml_string(xml)
+    d = mujoco.MjData(m)
+    mujoco.mj_resetDataKeyframe(m, d, m.key("agachado").id)
+    mujoco.mj_step(m, d, 1500)                       # nstep: 1500 pasos de una vez (P1, error 2)
+    return float(d.qpos[2])
+
+for armadura in ["0.01", "0"]:
+    base = texto.replace('<joint armature="0.01"', f'<joint armature="{armadura}"')
+    ligero = base.replace('mass="0.8"', 'mass="0.01"', 1)
+    print(f"armature {armadura}: de serie {inclinacion_final(base):+.3f} rad | pie de 10 g {inclinacion_final(ligero):+.3f} rad")
+```
+
+Con la `armature` de serie (una inercia extra de 0,01 kg·m² en cada articulación, que imita el rotor del motor; NB50), el pie de 10 g **no** cambia nada: −0,043 rad en los dos. **Sin** armature, el pie ligero hace que Zancudo se derrumbe (+1,759 rad: acaba tumbado). Conclusión: el problema de la masa pequeña depende de **otras** cosas del modelo. Un revisor así debería avisar (un `log.warning`), no prohibir: eso es el reto 3.
+</details>
+
+**Reto 3.** ★ Escribe `revisar(modelo, *, estricto: bool = True) -> None`: si es estricto, como `validar`; si no, registra cada problema con `log.warning` (sección 9) y sigue. Pruébala con `roto` en los dos modos.
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+def revisar(modelo: mujoco.MjModel, *, estricto: bool = True) -> None:
+    lista = rev.problemas(modelo)
+    if estricto and lista:
+        raise ExceptionGroup(f"el robot tiene {len(lista)} problema(s)", lista)
+    for problema in lista:
+        log.warning("%s: %s", type(problema).__name__, problema)
+
+revisar(roto, estricto=False)          # 4 avisos, y sigue
+try:
+    revisar(roto)
+except* rev.ErrorRobot as grupo:
+    print("modo estricto:", len(grupo.exceptions), "problemas")
+```
+
+El `*` hace `estricto` **solo por nombre** (P2): nadie puede escribir `revisar(roto, False)` sin que se entienda qué es ese `False`. Y fíjate en el formato perezoso del `log.warning` (sección 9).
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Que MuJoCo **acepta** modelos con defectos (motores que piden más que sus topes, posturas enterradas, piezas minúsculas) y solo rechaza los que no puede compilar (XML roto, masas negativas), con un `ValueError`.
+- Dónde mirar para revisarlos: `actuator_ctrlrange` + `actuator_trnid` frente a `jnt_range`, `body_mass` + `body_dofnum`, y `contact.dist` tras `mj_forward` en cada `<keyframe>`.
+- Que la `armature` (inercia del rotor) estabiliza piezas muy ligeras.
+- Que MuJoCo no trae tipos para mypy: en la frontera con la biblioteca, la validación en ejecución es imprescindible. Y que `opt.integrator` se elige con `mujoco.mjtIntegrator`.
+
+En la práctica del **P6** usarás NumPy para simular **cientos de Zancudos a la vez** (uno por cada combinación de parámetros) y analizar todos los resultados con arrays, sin bucles de Python sobre los resultados.
+"""),
+
+md(r"""## 13 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

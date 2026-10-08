@@ -12,7 +12,9 @@ einsum. Vectorizar: cinemática directa de una pierna para 100.000 posturas
 outer, solve frente a inv, det, RᵀR = I. Vistas y copias a fondo: base,
 shares_memory, ravel/flatten, += frente a a = a + b, out=. Decimales: eps,
 isclose/allclose (rtol/atol), el tiempo acumulado, float32 frente a float64,
-NaN que se propaga, nanmean. Laboratorio de 12 retos.
+NaN que se propaga, nanmean. Laboratorio de 12 retos. Práctica en MuJoCo: lote
+de 190 MjData (fuerza × duración del empujón), registro (N, T, 3), análisis
+con máscaras/any/argmax/reshape: el umbral es el impulso.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -762,7 +764,153 @@ En posición, la diferencia es del orden de 10⁻⁸ m (las 7 cifras de `float32
 </details>
 '''),
 
-md(r"""## 12 · Posdata
+md(r"""## 12 · 🛠 Práctica en MuJoCo: 190 Zancudos a la vez y el mapa de los empujones
+
+En toda la lección has pensado en **formas**: trayectorias `(T, n)`, lotes `(N, ...)`, máscaras, reducciones por ejes, broadcasting. En la práctica lo usas para una pregunta que un bucle de experimentos sueltos contestaría mal, y un **lote** contesta de un vistazo:
+
+> Un empujón tiene **dos** números: su **fuerza** (cuánto empuja) y su **duración** (cuánto tiempo). ¿Qué combinaciones tumban a Zancudo?
+
+La física (NB37) sugiere una respuesta: lo que cambia la velocidad de un cuerpo es el **impulso**, fuerza × duración (en N·s). Si es así, un empujón de 100 N durante 0,1 s y uno de 50 N durante 0,2 s deberían dar lo mismo. Vamos a comprobarlo con **190 Zancudos** (19 fuerzas × 10 duraciones), simulados a la vez y analizados sin un solo bucle sobre los resultados.
+
+### Paso 1 · La rejilla de experimentos, en formas
+
+`np.meshgrid` (NB17) fabrica las dos tablas de 19 × 10: en cada casilla, la fuerza y la duración de un experimento. Después las **aplanamos** a vectores de 190: un experimento por posición.
+"""),
+
+code(r"""z2 = mujoco.MjModel.from_xml_path("robots/zancudo_v2.xml")
+
+F = np.linspace(20, 200, 19)                       # N
+D = np.linspace(0.02, 0.2, 10)                     # s
+FF, DD = np.meshgrid(F, D, indexing="ij")          # (19, 10) cada una: FF[i, j] = F[i], DD[i, j] = D[j]
+fuerzas, duraciones = FF.ravel(), DD.ravel()       # (190,): un experimento por posición
+N = fuerzas.size
+print(FF.shape, fuerzas.shape, "| experimento 37:", fuerzas[37], "N durante", duraciones[37], "s")"""),
+
+md(r"""`indexing="ij"` hace que la **fila** sea la fuerza y la **columna** la duración (sin él, `meshgrid` las da al revés, al estilo de los gráficos: una trampa clásica). Y `ravel` aplana **por filas**: el experimento `k` es la casilla `(k // 10, k % 10)`; al final, `reshape(19, 10)` deshará el aplanado.
+
+### Paso 2 · Un modelo, 190 datos
+
+Recuerda el NB45 (o, si aún no has llegado, la regla de siempre): el **`MjModel`** es el plano del robot, que no cambia; el **`MjData`** es el estado de una simulación. Para 190 simulaciones del **mismo** robot basta **un** modelo y **190 datos**. Todos empiezan en la postura `agachado`:
+"""),
+
+code(r"""lote = [mujoco.MjData(z2) for _ in range(N)]
+for d in lote:
+    mujoco.mj_resetDataKeyframe(z2, d, z2.key("agachado").id)
+    mujoco.mj_forward(z2, d)
+print(len(lote), "simulaciones;", "¿comparten el qpos?", np.shares_memory(lote[0].qpos, lote[1].qpos))"""),
+
+md(r"""Cada `MjData` tiene **su propia** memoria (`shares_memory` da `False`, sección 8): lo que le pase a uno no afecta a los demás.
+
+### Paso 3 · Simular el lote y grabarlo en un array reservado
+
+Grabaremos, cada 10 pasos (cada 0,02 s), tres números de cada Zancudo (la posición x del torso, cuánto ha bajado y su inclinación: `qpos[0:3]`) en un array **reservado** de forma `(N, T, 3)` (sección 2). El empujón, en el instante 0,5 s, se calcula **para los 190 a la vez** con `np.where` y broadcasting: `t` es un número; `duraciones` y `fuerzas`, vectores de 190.
+"""),
+
+code(r"""SEGUNDOS, CADA = 2.0, 10
+pasos = int(round(SEGUNDOS / z2.opt.timestep))
+registro = np.empty((N, pasos // CADA, 3))           # (190, 100, 3)
+T0 = 0.5                                             # instante del empujón
+torso = z2.body("torso").id
+
+inicio = time.perf_counter()
+for paso in range(pasos):
+    t = paso * z2.opt.timestep
+    empuje = np.where((t >= T0) & (t < T0 + duraciones), fuerzas, 0.0)    # (190,): la fuerza de cada uno, AHORA
+    if paso % CADA == 0:
+        registro[:, paso // CADA] = [d.qpos[0:3] for d in lote]        # (190, 3) de golpe en la "columna" de tiempo
+    for d, f in zip(lote, empuje):
+        d.xfrc_applied[torso, 0] = f
+        mujoco.mj_step(z2, d)
+print(f"{N} Zancudos × {SEGUNDOS} s en {time.perf_counter() - inicio:.1f} s")
+tiempos_registro = np.arange(registro.shape[1]) * CADA * z2.opt.timestep"""),
+
+md(r"""Una cosa **no** se ha podido vectorizar: el `mj_step`, uno por Zancudo y por paso. Es lo que dijimos en la sección 6: cada paso **depende del anterior**, y MuJoCo avanza cada `MjData` por separado. (En el NB49 verás `mujoco.rollout`, que hace ese mismo bucle en C y en varios núcleos.) Pero todo lo que rodea al paso, el empujón y el registro, va por lotes.
+
+### Paso 4 · Analizar sin bucles
+
+¿Cuál se cae? "Caerse" = inclinación de más de 0,6 rad (34°) en algún momento. Una máscara `(190, 100)`, un `.any(axis=1)` que colapsa el tiempo, y un `reshape` para volver a la rejilla:
+"""),
+
+code(r"""caido = np.abs(registro[:, :, 2]) > 0.6                       # (190, 100): ¿caído en cada instante?
+cae = caido.any(axis=1)                                         # (190,): ¿se cayó alguna vez?
+instante = np.where(cae, tiempos_registro[caido.argmax(axis=1)], np.nan)   # primer True... solo si hay alguno
+mapa = cae.reshape(19, 10)
+print(f"se caen {cae.sum()} de {N}")
+print("caídas por duración (columnas):", mapa.sum(axis=0))
+print(f"caen entre {np.nanmin(instante):.2f} y {np.nanmax(instante):.2f} s")"""),
+
+md(r"""Fíjate en el `np.where(cae, ..., np.nan)`: es la trampa del `argmax` de la sección 3. Para los que **no** se caen, `argmax` de una fila toda `False` da 0 ("se cayó en el instante 0"), y eso es mentira; los sustituimos por `NaN` (sección 9) y usamos `nanmin`/`nanmax`.
+
+Ahora, la hipótesis del impulso. Si lo que importa es fuerza × duración, debería existir un **umbral** de impulso: todos los de menos aguantan, todos los de más caen:
+"""),
+
+code(r"""impulso = fuerzas * duraciones                                  # (190,) en N·s
+print(f"el mayor impulso que aguanta: {impulso[~cae].max():.2f} N·s")
+print(f"el menor impulso que tumba:   {impulso[cae].min():.2f} N·s")
+
+fig, eje = plt.subplots(figsize=(7, 4.5))
+eje.pcolormesh(D, F, mapa, cmap="RdYlGn_r", shading="nearest", alpha=0.8)
+umbral = (impulso[~cae].max() + impulso[cae].min()) / 2
+d_fina = np.linspace(D[0], D[-1], 200)
+eje.plot(d_fina, umbral / d_fina, "k--", label=f"fuerza × duración = {umbral:.1f} N·s")
+eje.set(xlabel="duración del empujón (s)", ylabel="fuerza (N)", ylim=(F[0] - 5, F[-1] + 5),
+        title="Zancudo agachado empujado hacia delante: rojo = se cae")
+eje.legend(loc="upper right")
+plt.show()"""),
+
+md(r"""**La hipótesis se cumple casi al milímetro.** El mayor impulso que aguanta es 8,4 N·s y el menor que tumba, 8,8 N·s: no hay solapamiento. La frontera entre verde y rojo es la curva fuerza = umbral / duración (una hipérbola): empujar el doble de fuerte la mitad de tiempo da lo mismo. Para un robot quieto que no reacciona, un empujón corto es, en la práctica, **una velocidad que se le da de golpe** (impulso = masa × cambio de velocidad), y lo que decide si cae es esa velocidad.
+
+Un mapa así, con un bucle de 190 experimentos sueltos y listas, serían cuarenta líneas de cuentas a mano. Con formas: una máscara, un `any`, un `reshape` y un producto.
+
+### Tus retos
+
+**Reto 1.** Con la máscara `cae` y la tabla de impulsos, ¿cuál es la casilla **más débil** que tumba a Zancudo (la de menor fuerza)? Da su fuerza, su duración y cuándo se cayó. (Pista: `np.flatnonzero`, sección 3, o una máscara y `argmin`.)
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+indices = np.flatnonzero(cae)                       # números de los experimentos que caen
+k = indices[np.argmin(fuerzas[indices])]           # de esos, el de menor fuerza
+print(f"{fuerzas[k]:.0f} N durante {duraciones[k]:.2f} s (impulso {impulso[k]:.1f} N·s): cae a los {instante[k]:.2f} s")
+```
+
+Sale 50 N durante 0,18 s (9,0 N·s), y cae a los 1,92 s: el más lento de todos, porque es de los que menos pasan del umbral. (Con 50 N y 0,2 s también cae; `argmin` devuelve el **primero** de los empatados.) Fíjate en el patrón `indices[np.argmin(valores[indices])]`: `argmin` da una posición **dentro** del subconjunto, y hay que traducirla de vuelta a la numeración original.
+</details>
+
+**Reto 2.** ¿Cae **antes** un Zancudo con más impulso? Calcula la correlación (`np.corrcoef`) entre el impulso y el instante de caída, solo entre los que caen.
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+print(np.corrcoef(impulso[cae], instante[cae])[0, 1])
+```
+
+Unos **−0,87**: una relación negativa fuerte. Cuanto más impulso, más deprisa vuelca (de 1,92 s, rozando el umbral, a 0,84 s con los empujones más fuertes). Cerca del umbral, Zancudo se queda un buen rato "dudando" sobre la punta del pie antes de caer: la mitad divergente del péndulo invertido (NB39), que al principio crece muy despacio.
+</details>
+
+**Reto 3.** ★ Repite el lote empujando **hacia atrás** (`fuerzas = -FF.ravel()`; crea un lote nuevo de datos). ¿El umbral de impulso es el mismo? ¿Por qué?
+
+<details>
+<summary>▶ Solución</summary>
+
+Crea el lote otra vez (los datos viejos ya están caídos), cambia el signo de las fuerzas y vuelve a ejecutar las celdas de los pasos 3 y 4 (con `impulso = np.abs(fuerzas) * duraciones`).
+
+Hacia atrás caen más (126 de 190, frente a 102) y el umbral baja a unos **6 N·s** (frente a 8,4-8,8). El pie de Zancudo sobresale **14 cm por delante** del tobillo y solo **6 cm por detrás** (NB42): tiene menos suelo para frenar una caída hacia atrás, igual que tú, que aguantas mejor un empujón por la espalda (te inclinas sobre los dedos) que uno en el pecho (solo tienes el talón). Aquí el umbral ya no es tan limpio (con 6,0 N·s, unos caen y otros no): cerca del talón, la forma exacta del empujón empieza a importar.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- A simular **un lote**: un solo `MjModel` compartido y **N** `MjData` independientes (cada uno con su memoria).
+- `datos.xfrc_applied` calculado para todo el lote con `np.where` y broadcasting; el registro en un array reservado `(N, T, k)`.
+- Qué se vectoriza y qué no: el control y el análisis sí; `mj_step` no (cada paso depende del anterior): para eso existe `rollout` (NB49).
+- Física medida con un barrido: lo que tumba a un robot quieto es el **impulso** (fuerza × duración), con un umbral distinto hacia delante y hacia atrás por la forma del pie.
+
+En la práctica del **P7** usarás el álgebra lineal de la lección sobre el propio MuJoCo: el **jacobiano** de un pie con `mj_jac`, la **pseudoinversa** para llevar el pie a un punto y la **matriz de masas** de Zancudo, comprobando con valores propios que es simétrica y definida positiva.
+"""),
+
+md(r"""## 13 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

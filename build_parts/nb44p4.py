@@ -9,7 +9,10 @@ chain, product, combinations, accumulate, pairwise, groupby, cycle.
 collections: deque (maxlen, ventanas), Counter, defaultdict. Gestores de
 contexto: with, __enter__/__exit__ (sus tres argumentos, devolver True traga
 el error), contextlib.contextmanager con try/finally, suppress, ExitStack.
-Laboratorio de 12 retos.
+Laboratorio de 12 retos. Práctica en MuJoCo: soltar a Zancudo v2 desde la
+grúa (generador de Estados con sensores de tacto, gestor de contexto grua,
+groupby de fases y rebote, caída libre, pairwise vs qvel, deque para 'quieto',
+gestor grabadora = Renderer + imageio; vídeo nb44p4_aterrizaje).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -716,7 +719,247 @@ Con `@contextmanager`, "tragar" un error es simplemente **capturarlo** con `exce
 </details>
 '''),
 
-md(r"""## 8 · Posdata
+md(r"""## 8 · 🛠 Práctica en MuJoCo: soltar a Zancudo desde la grúa, con generadores y gestores
+
+Hoy has visto las dos mitades de "hacer las cosas a su debido tiempo": producir datos **cuando se piden** (generadores, `itertools`) y **deshacer siempre** lo que se hace (gestores de contexto). En la práctica las juntas en un experimento clásico de robótica: **colgar** a Zancudo de una grúa, **soltarlo** desde unos centímetros y estudiar el **aterrizaje**: cuánto tarda en tocar el suelo, si rebota, con qué fuerza golpea y cuándo se queda quieto. Y lo grabas en vídeo con tu **propio** gestor de contexto para el dibujante de MuJoCo.
+
+Usamos el Zancudo del Bloque A, `robots/zancudo_v2.xml`, que trae tres cosas útiles: una postura guardada `colgado` (los pies, unos 10 cm por encima del suelo), una restricción `grua` que puede sujetar el torso al mundo, y dos **sensores de tacto** en las plantas (`tacto_d`, `tacto_i`), que miden la fuerza con que el suelo empuja cada pie, en newtons.
+
+### Paso 1 · Un estado con nombres
+
+Cada paso de la simulación lo describiremos con una `NamedTuple` (P3): ligera, inmutable y con nombres. Le añadimos una propiedad: ¿algún pie toca el suelo?
+"""),
+
+code(r"""from typing import NamedTuple
+
+z2 = mujoco.MjModel.from_xml_path("robots/zancudo_v2.xml")
+TACTO_D, TACTO_I = z2.sensor("tacto_d").adr[0], z2.sensor("tacto_i").adr[0]   # dónde está cada sensor en sensordata
+
+class Estado(NamedTuple):
+    t: float
+    cadera: float          # altura de la cadera (m)
+    vz: float              # velocidad vertical del torso según MuJoCo (m/s)
+    tacto_d: float         # fuerza en la planta derecha (N)
+    tacto_i: float
+
+    @property
+    def apoyado(self) -> bool:
+        return self.tacto_d > 0 or self.tacto_i > 0
+
+print(Estado(0.0, 0.865, 0.0, 0.0, 0.0), Estado(0.0, 0.865, 0.0, 0.0, 0.0).apoyado)"""),
+
+md(r"""(`sensordata` es un único array con las lecturas de **todos** los sensores, uno detrás de otro; `.adr` dice en qué posición empieza cada uno. Lo verás a fondo en el NB50.)
+
+### Paso 2 · La simulación como generador infinito
+
+Como en la sección 2, pero ahora la simulación **no crea** sus datos: los recibe, para que podamos trabajar sobre los mismos datos desde fuera (colgar, soltar, grabar).
+"""),
+
+code(r"""def pasos(modelo: mujoco.MjModel, datos: mujoco.MjData):
+    "Avanza un paso cada vez que se le pide y entrega el Estado. No termina nunca."
+    while True:
+        mujoco.mj_step(modelo, datos)
+        yield Estado(float(datos.time), float(datos.qpos[1] + 0.865), float(datos.qvel[1]),
+                     float(datos.sensordata[TACTO_D]), float(datos.sensordata[TACTO_I]))"""),
+
+md(r"""(`0.865` es la altura del torso cuando `qpos[1]` vale 0: el `pos` del torso en el `.xml`. `qpos[1]` es la articulación deslizante vertical `raiz_z`.)
+
+### Paso 3 · La grúa, como gestor de contexto
+
+"Enganchar la grúa" y "soltarla" son una pareja de operaciones. Si algo falla mientras está colgado, no queremos que se quede enganchado para siempre (el siguiente experimento empezaría colgado sin saberlo). Es un trabajo para `@contextmanager` con `try/finally` (sección 5): al entrar, se activa la restricción; al salir, **siempre**, se desactiva.
+"""),
+
+code(r"""@contextmanager
+def grua(modelo: mujoco.MjModel, datos: mujoco.MjData):
+    restriccion = modelo.equality("grua").id
+    datos.eq_active[restriccion] = 1           # enganchado
+    try:
+        yield
+    finally:
+        datos.eq_active[restriccion] = 0       # soltado, pase lo que pase
+
+datos = mujoco.MjData(z2)
+mujoco.mj_resetDataKeyframe(z2, datos, z2.key("colgado").id)
+mujoco.mj_forward(z2, datos)
+
+with grua(z2, datos):
+    colgado = list(it.islice(pasos(z2, datos), 250))       # 250 pasos de 2 ms = 0,5 s colgado
+print("tras 0,5 s colgado:", colgado[-1])
+print("¿grúa activa ahora?", bool(datos.eq_active[z2.equality("grua").id]))"""),
+
+md(r"""`islice` corta el generador infinito en 250 pasos (sección 3), sin `break`. Durante esos 0,5 s la cadera no se ha movido de su sitio (la grúa la sujeta) y ningún pie toca nada. Y al salir del `with`, la grúa ya está **suelta**: el siguiente paso, Zancudo caerá.
+
+### Paso 4 · Soltarlo y estudiar el aterrizaje con groupby
+
+Ahora simulamos 3 segundos más y buscamos las **fases**: tramos consecutivos en el aire o apoyado. Es el trabajo de `groupby` (sección 3) con una **clave**, la propiedad `apoyado`:
+"""),
+
+code(r"""caida = list(it.islice(pasos(z2, datos), 1500))       # 3 s más, ya suelto
+
+for apoyado, tramo in it.groupby(caida, key=lambda e: e.apoyado):
+    tramo = list(tramo)
+    print(f"{'APOYADO' if apoyado else 'en el aire':>10}: de {tramo[0].t:.3f} a {tramo[-1].t:.3f} s "
+          f"({1000 * (tramo[-1].t - tramo[0].t + z2.opt.timestep):.0f} ms)")"""),
+
+md(r"""¡**Rebota**! Cae durante 144 ms, toca el suelo 76 ms, vuelve a despegar 24 ms y por fin se queda apoyado. Sin el `groupby` sobre los sensores de tacto no lo habríamos visto: a simple vista, en un vídeo a velocidad normal, el rebote dura menos que un fotograma.
+
+Comprobemos la **física** del primer tramo. Si los pies estaban a una altura $h$ del suelo, una caída libre tarda $t = \sqrt{2h/g}$ (NB04b). ¿Cuánto es $h$? La postura `agachado` es la misma que `colgado` con el torso bajado justo hasta apoyar los pies, así que $h$ es la diferencia de alturas entre las dos posturas guardadas:
+"""),
+
+code(r"""h = z2.key("colgado").qpos[1] - z2.key("agachado").qpos[1]
+t_formula = np.sqrt(2 * h / 9.81)
+t_mujoco = next(e.t for e in caida if e.apoyado) - colgado[-1].t
+print(f"altura de la caída: {100 * h:.1f} cm")
+print(f"fórmula: {1000 * t_formula:.1f} ms   |   MuJoCo: {1000 * t_mujoco:.1f} ms")"""),
+
+md(r"""141 ms contra 146 ms: muy cerca. (La pequeña diferencia viene de que el contacto de MuJoCo es **blando**, NB48: el sensor de tacto solo marca fuerza cuando el pie ya ha "entrado" un poquito en el suelo; y de que la simulación avanza a saltitos de 2 ms.) Fíjate en `next(e.t for e in caida if e.apoyado)`: una **expresión generadora** con `next`, la forma idiomática de "el **primer** elemento que cumple algo".
+
+### Paso 5 · El golpe y la calma: max, pairwise y una deque
+
+¿Con qué fuerza golpea el suelo? ¿Y cuánto debería empujar el suelo cuando ya está quieto? Quieto, los dos pies juntos deben sostener **todo** el peso: masa × g.
+"""),
+
+code(r"""peso = z2.body_subtreemass[1] * 9.81                 # masa de todo lo que cuelga del torso × g
+golpe = max(caida, key=lambda e: e.tacto_d + e.tacto_i)
+print(f"peso de Zancudo: {peso:.1f} N")
+print(f"golpe máximo: {golpe.tacto_d + golpe.tacto_i:.0f} N a los {golpe.t:.3f} s = {(golpe.tacto_d + golpe.tacto_i) / peso:.1f} veces su peso")
+print(f"al final: {caida[-1].tacto_d:.1f} N + {caida[-1].tacto_i:.1f} N = {caida[-1].tacto_d + caida[-1].tacto_i:.1f} N")"""),
+
+md(r"""El golpe es **6,4 veces** su peso (como cuando saltas desde una silla y lo notas en las rodillas), y al final el suelo empuja exactamente con su peso, repartido a partes iguales. Los sensores de MuJoCo cuadran con Newton.
+
+Un detalle curioso con `pairwise` (sección 3). Calculemos la velocidad "a mano", como diferencia de alturas entre pasos consecutivos dividida por el pasito, y comparémosla con la que da MuJoCo (`vz`, que viene de `qvel`):
+"""),
+
+code(r"""diferencias = [abs((b.cadera - a.cadera) / z2.opt.timestep - b.vz) for a, b in it.pairwise(caida)]
+print(f"mayor diferencia: {max(diferencias):.1e} m/s")"""),
+
+md(r"""¡Prácticamente cero (errores de redondeo)! No es casualidad: MuJoCo actualiza la posición así, `qpos_nueva = qpos + pasito · qvel_nueva` (primero calcula la velocidad nueva, después mueve con ella). Es el "Euler semi-implícito" que hiciste a mano con la pelota del NB02, y lo estudiarás a fondo en el NB49.
+
+¿Y cuándo se queda **quieto** del todo? Una ventana deslizante (`deque(maxlen=N)`, sección 4) de las últimas velocidades: quieto = las 100 últimas (0,2 s) por debajo de 1 mm/s.
+"""),
+
+code(r"""ventana = deque(maxlen=100)
+quieto_en = None
+for e in caida:
+    ventana.append(abs(e.vz))
+    if len(ventana) == ventana.maxlen and max(ventana) < 1e-3:
+        quieto_en = e.t - (ventana.maxlen - 1) * z2.opt.timestep    # el principio de la ventana
+        break
+print(f"suelto en t = {colgado[-1].t:.2f} s; quieto desde t = {quieto_en:.3f} s")"""),
+
+md(r"""### Paso 6 · Grabar: un gestor de contexto para el dibujante
+
+Para hacer un vídeo hacen falta **dos** recursos que hay que cerrar siempre: el **dibujante** de MuJoCo (`mujoco.Renderer`, que reserva memoria en la tarjeta gráfica) y el **escritor** del fichero de vídeo (`imageio.get_writer`, que hay que cerrar para que el MP4 quede bien escrito). Los dos son ya gestores de contexto. Escribimos uno **nuestro** que los abre juntos (varios gestores en un mismo `with`, sección 5) y entrega una función `grabar(datos)`:
+"""),
+
+code(r"""import imageio
+from IPython.display import Video, display
+
+@contextmanager
+def grabadora(modelo: mujoco.MjModel, ruta: str, fps: float, camara: str = "lado", alto: int = 270, ancho: int = 360):
+    with mujoco.Renderer(modelo, alto, ancho) as dibujante, \
+         imageio.get_writer(ruta, fps=fps, macro_block_size=1) as escritor:
+        def grabar(datos: mujoco.MjData) -> None:
+            dibujante.update_scene(datos, camera=camara)
+            escritor.append_data(dibujante.render())
+        yield grabar
+    # aquí los dos ya están cerrados: el MP4 está completo y se puede enseñar
+    display(Video(ruta, embed=True, html_attributes="controls loop autoplay muted"))"""),
+
+md(r"""La cámara `lado` está definida en el propio `.xml` de Zancudo (sigue a su centro de masas, de lado). Ahora, la tubería completa: un generador de pasos → `islice` con **salto** (`islice(iterable, inicio, fin, salto)`: un estado de cada 15, unos 33 fotogramas por segundo) → grabar. Repetimos el experimento entero, colgado y suelto, **a cámara lenta** (el vídeo va 4 veces más despacio que la realidad, para ver el rebote):
+"""),
+
+code(r"""os.makedirs("assets/practicas", exist_ok=True)
+datos = mujoco.MjData(z2)
+mujoco.mj_resetDataKeyframe(z2, datos, z2.key("colgado").id)
+mujoco.mj_forward(z2, datos)
+salto = 15
+fps_lento = 1 / (salto * z2.opt.timestep) / 4
+
+with grabadora(z2, "assets/practicas/nb44p4_aterrizaje.mp4", fps=fps_lento) as grabar:
+    with grua(z2, datos):
+        for _ in it.islice(pasos(z2, datos), 0, 150, salto):      # 0,3 s colgado
+            grabar(datos)
+    for _ in it.islice(pasos(z2, datos), 0, 450, salto):          # 0,9 s suelto
+        grabar(datos)"""),
+
+md(r"""Dos `with` anidados, cada uno con su responsabilidad: el de fuera garantiza que el vídeo se cierra; el de dentro, que la grúa se suelta. Y el bucle no guarda **nada**: cada estado se pide, se dibuja y se olvida.
+
+### Tus retos
+
+**Reto 1.** Comprueba que la grúa se suelta **aunque haya un error**: dentro de un `with grua(...)`, da 10 pasos y lanza un `RuntimeError`. Captura el error fuera con `try/except` e imprime `datos.eq_active`.
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+datos = mujoco.MjData(z2)
+mujoco.mj_resetDataKeyframe(z2, datos, z2.key("colgado").id)
+try:
+    with grua(z2, datos):
+        list(it.islice(pasos(z2, datos), 10))
+        raise RuntimeError("se ha ido la luz")
+except RuntimeError as error:
+    print("capturado:", error)
+print("grúa activa:", datos.eq_active[z2.equality("grua").id])     # 0: suelta
+```
+
+El `finally` de `grua` se ejecuta al salir del `with` por el error, **antes** de que el `except` de fuera lo capture. Sin el `try/finally` dentro del gestor, el error saltaría por encima de la línea que suelta la grúa y Zancudo se quedaría colgado.
+</details>
+
+**Reto 2.** Suelta a Zancudo desde **más alto**, esta vez **sin grúa**: parte de `colgado`, sube el torso 10 cm más (`datos.qpos[1] += 0.10`, seguido de `mj_forward`) y simula directamente. ¿Cuánto tarda ahora en tocar el suelo (compáralo con la fórmula, con la nueva $h$)? ¿Cuántas veces su peso es el golpe? ¿Cuánto llega a bajar la cadera, y dónde se queda al final? (¿Por qué sin grúa? Pruébalo con ella: la restricción sujeta el torso a la altura del `.xml`, y te deshace los 10 cm.)
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+datos = mujoco.MjData(z2)
+mujoco.mj_resetDataKeyframe(z2, datos, z2.key("colgado").id)
+datos.qpos[1] += 0.10
+mujoco.mj_forward(z2, datos)
+alto = list(it.islice(pasos(z2, datos), 1500))
+h2 = h + 0.10
+t_toca = next(e.t for e in alto if e.apoyado)
+golpe2 = max(e.tacto_d + e.tacto_i for e in alto)
+print(f"fórmula {1000 * np.sqrt(2 * h2 / 9.81):.0f} ms | MuJoCo {1000 * t_toca:.0f} ms | golpe {golpe2 / peso:.1f} pesos")
+print(f"cadera: mínima {min(e.cadera for e in alto):.3f} m, final {alto[-1].cadera:.3f} m")
+```
+
+Con 19,8 cm de caída: fórmula 201 ms, MuJoCo 206 ms; el golpe sube a **8,9 veces** su peso (frente a 6,4), y en el impacto la cadera baja hasta 0,726 m porque los servos (blandos, kp = 300) **ceden**... pero al final vuelve a 0,751 m, la misma altura que en la caída corta: los servos recuperan su postura. ¡En un robot real, esos picos de fuerza son los que rompen reductoras!
+
+(Lo de la grúa: un `weld` sujeta el cuerpo en la posición relativa que tenía en la postura de referencia del modelo, no en la que tenga cuando lo activas. Lo verás en el NB50.)
+</details>
+
+**Reto 3.** ★ Escribe un generador **filtro** `impactos(estados)` que, usando `pairwise`, entregue solo los estados en los que un pie **pasa** de no tocar a tocar (el instante de cada aterrizaje), y úsalo sobre `caida`. ¿Cuántos aterrizajes hay?
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+def impactos(estados):
+    for antes, ahora in it.pairwise(estados):
+        if not antes.apoyado and ahora.apoyado:
+            yield ahora
+
+for e in impactos(caida):
+    print(f"aterriza en t = {e.t:.3f} s con {e.tacto_d + e.tacto_i:.0f} N")
+```
+
+**Dos** aterrizajes: el primero y el del rebote. Es la tubería de la sección 2 (fuente → filtro), y como `caida` es una lista **finita**, no hay riesgo de quedarse colgado. Con la fuente infinita `pasos(...)` habría que limitarla antes con `islice` (la trampa de la sección 2).
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- A leer **sensores** (`sensordata` + `modelo.sensor(nombre).adr`): los de tacto miden la fuerza del suelo en newtons, y quieto suman el peso exacto del robot.
+- Que un robot que cae **rebota** y golpea con varias veces su peso, y que la caída libre de MuJoCo cumple $t = \sqrt{2h/g}$.
+- Que MuJoCo mueve la posición con la velocidad **nueva** (posición = posición + pasito · velocidad), comprobado con `pairwise`.
+- `datos.eq_active` para colgar y soltar con una grúa, empaquetado en un gestor de contexto que **siempre** suelta.
+- A grabar un vídeo tú mismo con `mujoco.Renderer` + `imageio`, sin `taller`: `update_scene` (con una cámara del `.xml`) + `render` = un fotograma.
+
+En la práctica del **P5** pondrás **tipos** a una función de MuJoCo y escribirás **excepciones propias** que digan exactamente qué está mal en un modelo o en unos parámetros antes de simular.
+"""),
+
+md(r"""## 9 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

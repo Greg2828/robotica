@@ -10,7 +10,9 @@ cierre en un bucle (enlace tardío) y sus dos arreglos; nonlocal y estado
 escalón: envolver a mano, la @, *args/**kwargs, functools.wraps, decoradores
 que cambian el comportamiento (vigilar NaN), con argumentos (@recortar), y
 apilar decoradores (orden). functools.partial frente a lambda, lru_cache /
-cache. Laboratorio de 12 retos.
+cache. Laboratorio de 12 retos. Práctica en MuJoCo: la simulación de
+Zancudo colgado como función pura (servo de rodilla siguiendo senos):
+fábricas, callback, partial, cache y determinismo (vídeo nb44p2_rodilla_2hz).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -831,7 +833,244 @@ Dos detalles profesionales: (1) se **valida** el argumento `accion` en el nivel 
 </details>
 '''),
 
-md(r"""## 10 · Posdata
+md(r"""## 10 · 🛠 Práctica en MuJoCo: una simulación convertida en función pura
+
+En toda la lección, el péndulo ha sido el banco de pruebas. En la práctica cambiamos a un robot de verdad, **Zancudo** (`robots/zancudo_v2.xml`, el que usarás en todo el Bloque A), y aplicamos todas las piezas de hoy a una pregunta de ingeniería real:
+
+> **¿Cómo de bien sigue un servo de la rodilla una orden que cambia deprisa, según lo rígido que sea?**
+
+El plan, una pieza de la lección por paso:
+
+| Paso | Pieza de Python | Para qué |
+|---|---|---|
+| 1 | función con `/`, `*` y valores por defecto | preparar a Zancudo colgado, con servos configurables |
+| 2 | **fábrica** de funciones (cierre) | órdenes de la rodilla: senos de cualquier frecuencia |
+| 3 | una simulación entera como **función pura** | un número por experimento: el error |
+| 4 | **callback** `al_paso` | grabar lo que pasa sin tocar la función |
+| 5 | `functools.partial` | fijar los servos rígidos y barrer frecuencias |
+| 6 | `functools.cache` | no repetir experimentos (gracias a que MuJoCo es **determinista**) |
+
+### Paso 1 · Zancudo colgado, con servos a elegir
+
+Zancudo tiene 6 servos **de posición**: cada uno recibe un ángulo (`datos.ctrl`) y tira hacia él como un muelle (rigidez `kp`) con amortiguador (`kv`), NB40. En MuJoCo esos dos números viven en el modelo, en `actuator_gainprm` y `actuator_biasprm` (el NB50 los explica a fondo; hoy basta saber dónde se tocan). Para que el robot no se caiga, lo colgamos de su "grúa" (una restricción que sujeta el torso; NB50).
+"""),
+
+code(r"""import matplotlib.pyplot as plt
+
+RUTA_ZANCUDO = "robots/zancudo_v2.xml"
+
+def preparar_zancudo(*, kp: float = 300.0, kv: float = 20.0) -> tuple[mujoco.MjModel, mujoco.MjData]:
+    m = mujoco.MjModel.from_xml_path(RUTA_ZANCUDO)
+    m.actuator_gainprm[:, 0] = kp           # rigidez de TODOS los servos
+    m.actuator_biasprm[:, 1] = -kp
+    m.actuator_biasprm[:, 2] = -kv          # amortiguación
+    d = mujoco.MjData(m)
+    mujoco.mj_resetDataKeyframe(m, d, m.key("colgado").id)    # postura guardada en el .xml
+    d.eq_active[m.equality("grua").id] = 1                     # colgado de la grúa
+    mujoco.mj_forward(m, d)
+    return m, d
+
+m_z, d_z = preparar_zancudo()
+print("motores:", [m_z.actuator(i).name for i in range(m_z.nu)])
+print("kp de cada servo:", m_z.actuator_gainprm[:, 0])"""),
+
+md(r"""Fíjate en el `*` al principio: `kp` y `kv` son **solo por nombre** (sección 3). `preparar_zancudo(3000, 90)` daría error; hay que escribir `preparar_zancudo(kp=3000, kv=90)`, que se lee solo. Y los valores por defecto (300 y 20) son los del `.xml`: llamarla sin nada da el Zancudo de siempre.
+
+El motor de la rodilla derecha es el número 1 (`m_rodilla_d`): ese es el que vamos a mover.
+
+### Paso 2 · Una fábrica de órdenes
+
+La orden de la rodilla será un **seno** alrededor de −1 rad (la rodilla doblada de la postura `colgado`): `orden(t) = centro + amplitud · sen(2π · frecuencia · t)`. Como queremos probar muchas frecuencias, no escribimos una función por frecuencia: escribimos una **fábrica** (sección 4):
+"""),
+
+code(r"""def crear_seno(amplitud: float = 0.5, frecuencia: float = 1.0, centro: float = -1.0):
+    def orden(t: float) -> float:
+        return centro + amplitud * np.sin(2 * np.pi * frecuencia * t)
+    return orden
+
+lento, rapido = crear_seno(frecuencia=0.5), crear_seno(frecuencia=4.0)
+print(f"t = 0,1 s → lento {lento(0.1):+.3f} rad, rápido {rapido(0.1):+.3f} rad")"""),
+
+md(r"""Cada `orden` es un **cierre** que recuerda su amplitud, su frecuencia y su centro.
+
+### Paso 3 · La simulación entera, como función pura
+
+Ahora la pieza central. Una función que recibe **todo** lo que define el experimento (la orden, los servos, la duración) y devuelve **un número**: el error de seguimiento de la rodilla, en grados, como **raíz del error cuadrático medio** (RMS, la "media" de los errores que no deja que los positivos y los negativos se cancelen: raíz de la media de los cuadrados). Medimos a partir del segundo 1, cuando ya ha pasado el arranque.
+"""),
+
+code(r"""def seguir_rodilla(orden=None, /, *, kp: float = 300.0, kv: float = 20.0,
+                   segundos: float = 3.0, al_paso=None) -> float:
+    "Error RMS (en grados) de la rodilla derecha de Zancudo, colgado, siguiendo `orden(t)`."
+    if orden is None:
+        orden = crear_seno()                    # ¡no `orden=crear_seno()` en la firma! (trampa del P1)
+    m, d = preparar_zancudo(kp=kp, kv=kv)
+    rodilla = m.joint("rodilla_d").qposadr[0]  # dónde está la rodilla dentro de qpos
+    errores = []
+    while d.time < segundos:
+        d.ctrl[1] = orden(d.time)
+        mujoco.mj_step(m, d)
+        if d.time > 1.0:
+            errores.append(d.qpos[rodilla] - orden(d.time))
+        if al_paso is not None:
+            al_paso(d, orden)
+    return float(np.degrees(np.sqrt(np.mean(np.square(errores)))))
+
+print(f"error con todo por defecto: {seguir_rodilla():.2f}°")
+print(f"servos 10 veces más rígidos: {seguir_rodilla(kp=3000, kv=90):.2f}°")"""),
+
+md(r"""Repasa la firma, porque resume la lección:
+
+- `orden=None, /`: la orden va **por posición** (es el argumento "obvio") y es **opcional**. El valor por defecto es `None` y se sustituye **dentro**: si escribieras `orden=crear_seno()` en la firma, la orden se fabricaría **una sola vez**, al leer el `def` (la trampa del valor por defecto del P1). Aquí no haría daño (`orden` no tiene estado), pero es la costumbre segura.
+- `*, kp=..., kv=..., segundos=..., al_paso=None`: todo lo demás, **solo por nombre** y con un valor por defecto razonable.
+- Devuelve un `float` de Python (no un `numpy.float64`, P1): un resultado limpio.
+
+¿Por qué decimos que es **pura**? Porque crea su propio modelo y sus propios datos **dentro**, no lee nada de fuera ni cambia nada de fuera, y MuJoCo es **determinista**: con las mismas entradas, da **exactamente** el mismo resultado, bit a bit. Compruébalo:
+"""),
+
+code(r"""print(seguir_rodilla() == seguir_rodilla())     # ¡== con decimales! Aquí sí: mismo cálculo, mismos bits"""),
+
+md(r"""### Paso 4 · Un callback para ver qué pasa
+
+El número dice **cuánto** falla; para ver **cómo** falla, le pasamos un callback que grabe la orden y la rodilla en cada paso (sección 2). `seguir_rodilla` no cambia ni una línea:
+"""),
+
+code(r"""grabacion = {"t": [], "orden": [], "rodilla": []}
+
+def grabar(d, orden):
+    grabacion["t"].append(d.time)
+    grabacion["orden"].append(orden(d.time))
+    grabacion["rodilla"].append(d.qpos[m_z.joint("rodilla_d").qposadr[0]])
+
+error_2hz = seguir_rodilla(crear_seno(frecuencia=2.0), al_paso=grabar)
+
+plt.figure(figsize=(8, 3))
+plt.plot(grabacion["t"], grabacion["orden"], "--", label="orden")
+plt.plot(grabacion["t"], grabacion["rodilla"], label="rodilla (simulada)")
+plt.xlabel("tiempo (s)"); plt.ylabel("ángulo (rad)")
+plt.title(f"Rodilla siguiendo un seno de 2 Hz con kp = 300: error RMS {error_2hz:.1f}°")
+plt.legend(); plt.grid(alpha=0.3); plt.show()"""),
+
+md(r"""La rodilla va **por detrás** de la orden (retraso) y **no llega** a los picos (se queda corta). Es lo que hace cualquier servo de verdad cuando le pides algo demasiado deprisa: un muelle blando tarda en arrastrar la inercia de la pierna. (Usamos `m_z` solo para preguntar en qué posición de `qpos` está la rodilla: es la misma en todos los Zancudos.)
+
+Míralo en vídeo. Para el vídeo, `taller.video` quiere un control con la forma `control(modelo, datos)`; lo fabricamos con un cierre:
+"""),
+
+code(r"""import taller
+
+def crear_control_rodilla(orden):
+    def control(modelo, datos):
+        datos.ctrl[1] = orden(datos.time)
+    return control
+
+m_v, d_v = preparar_zancudo()
+_ = taller.video(m_v, d_v, segundos=3.0, control=crear_control_rodilla(crear_seno(frecuencia=2.0)),
+                 nombre="nb44p2_rodilla_2hz", distancia=2.2)"""),
+
+md(r"""### Paso 5 · partial y un barrido
+
+Pregunta de ingeniería: ¿cómo crece el error con la frecuencia, con servos blandos y rígidos? Con `functools.partial` fijamos los servos y obtenemos dos funciones "ya configuradas"; con la fábrica, las órdenes:
+"""),
+
+code(r"""blando = functools.partial(seguir_rodilla, kp=300, kv=20)
+rigido = functools.partial(seguir_rodilla, kp=3000, kv=90)
+frecuencias = [0.5, 1.0, 2.0, 4.0]
+
+print("frecuencia | blando (kp 300) | rígido (kp 3000)")
+for f in frecuencias:
+    print(f"   {f:3.1f} Hz  |     {blando(crear_seno(frecuencia=f)):5.2f}°     |     {rigido(crear_seno(frecuencia=f)):5.2f}°")"""),
+
+md(r"""Dos lecciones de robótica en una tabla: el error **crece** con la frecuencia (cuanto más deprisa, peor sigue), y servos más **rígidos** siguen mejor... a costa de pares más bruscos (en un robot real, más consumo y más riesgo de vibraciones; en el NB47 aprenderás a seguir mejor **sin** subir tanto kp, usando el modelo).
+
+### Paso 6 · La caché: experimentos que no se repiten
+
+Una simulación tarda; si un experimento se repite con los mismos parámetros, ¿para qué volver a calcularlo? Como `seguir_rodilla` es **pura**, se puede cachear (sección 7). Pero la caché necesita argumentos que sirvan de **clave** de diccionario, y una función (`orden`) no es buena clave: dos senos iguales fabricados por separado son objetos **distintos**. La solución: una función "de fuera" que reciba solo **números**:
+"""),
+
+code(r"""@functools.cache
+def experimento(frecuencia: float, kp: float, kv: float) -> float:
+    return seguir_rodilla(crear_seno(frecuencia=frecuencia), kp=kp, kv=kv)
+
+inicio = time.perf_counter()
+primero = experimento(2.0, 300.0, 20.0)
+t_primero = time.perf_counter() - inicio
+inicio = time.perf_counter()
+segundo = experimento(2.0, 300.0, 20.0)
+t_segundo = time.perf_counter() - inicio
+print(f"1.ª vez: {primero:.2f}° en {1000 * t_primero:.1f} ms;  2.ª vez: {segundo:.2f}° en {1000 * t_segundo:.4f} ms")
+print(experimento.cache_info())"""),
+
+md(r"""La segunda vez ni simula: devuelve el resultado guardado, miles de veces más deprisa. En proyectos de verdad, con simulaciones de minutos, esto (o guardar resultados en disco, que es la misma idea) ahorra horas. Y solo es **correcto** porque la función es pura y MuJoCo es determinista: con una función que usara azar sin semilla, la caché te devolvería un resultado "viejo" que ya no es el que saldría.
+
+### Tus retos
+
+**Reto 1.** Usa `map` (sección 2) y `rigido` para calcular el error con servos rígidos en las frecuencias 0,25; 0,5; 1; 2; 4 y 8 Hz, en **una** línea. ¿A partir de qué frecuencia el error supera los 10°?
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+frecs = [0.25, 0.5, 1, 2, 4, 8]
+errores_rigidos = list(map(lambda f: rigido(crear_seno(frecuencia=f)), frecs))
+print([round(e, 2) for e in errores_rigidos])
+```
+
+Sale (en grados) 1,01; 1,92; 3,81; 7,34; 13,07 y 17,64: lo supera a partir de **4 Hz**. La comprensión equivalente, `[rigido(crear_seno(frecuencia=f)) for f in frecs]`, es igual de corta y más legible. Fíjate en que, de 4 a 8 Hz, el error sube cada vez menos: la rodilla casi no se mueve ya, y el error tiende al tamaño del propio seno (0,5 rad / √2 ≈ 20°, el RMS de un seno de amplitud 0,5).
+</details>
+
+**Reto 2.** Escribe otra fábrica, `crear_escalon(desde, hasta, instante)`, que dé `desde` antes del `instante` y `hasta` después. Con un callback, mide el **tiempo de asentamiento**: cuánto tarda la rodilla en quedarse a menos de 0,02 rad del valor final, tras un escalón de −1,0 a −0,5 rad en t = 1 s, con servos blandos y rígidos.
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+def crear_escalon(desde: float, hasta: float, instante: float):
+    def orden(t: float) -> float:
+        return desde if t < instante else hasta
+    return orden
+
+def asentamiento(**servos) -> float:
+    fuera = []                                    # instantes en que la rodilla está LEJOS del final
+    def vigilar(d, orden):
+        if abs(d.qpos[m_z.joint("rodilla_d").qposadr[0]] - (-0.5)) > 0.02:
+            fuera.append(d.time)
+    seguir_rodilla(crear_escalon(-1.0, -0.5, 1.0), al_paso=vigilar, **servos)
+    return fuera[-1] - 1.0                        # el último instante "fuera", contado desde el escalón
+
+print(f"blando: {asentamiento(kp=300, kv=20):.3f} s;  rígido: {asentamiento(kp=3000, kv=90):.3f} s")
+```
+
+Unos 0,18 s con el servo blando y 0,09 s con el rígido: la mitad. El callback no puede devolver nada a `seguir_rodilla`, así que guarda lo que necesita en una lista **de fuera** (el patrón de la sección 2), y `**servos` reenvía los parámetros con nombre tal cual (NB23).
+</details>
+
+**Reto 3.** ★ Rompe la pureza a propósito: escribe `experimento_ruidoso(frecuencia)` cacheado que, **dentro**, sume a la orden un ruido de `np.random.normal(0, 0.05)` sin semilla. Llámalo dos veces y después llama dos veces a la versión **sin** caché. ¿Qué te dice la caché que no es verdad?
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+def con_ruido(frecuencia):
+    base = crear_seno(frecuencia=frecuencia)
+    return seguir_rodilla(lambda t: base(t) + np.random.normal(0, 0.05))
+
+experimento_ruidoso = functools.cache(con_ruido)     # la @ es solo esta llamada (sección 6)
+print(experimento_ruidoso(1.0), experimento_ruidoso(1.0))   # idénticos: el 2.º viene de la caché
+print(con_ruido(1.0), con_ruido(1.0))                       # distintos: cada vez, ruido nuevo
+```
+
+La versión cacheada te hace creer que el experimento da **siempre** lo mismo, y no es así: el resultado depende del ruido de cada vez. Con azar, o se fija la **semilla** como un argumento más (`semilla: int`, y dentro `np.random.default_rng(semilla)`: vuelve a ser pura), o no se cachea. (Un detalle extra: `orden` ahora se llama dos veces por paso, una para el motor y otra para medir el error, así que ni siquiera se mide el error contra la orden que de verdad se mandó.)
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Que una simulación de MuJoCo, envuelta en una función que crea su propio `MjModel`/`MjData`, es una **función pura**: MuJoCo es **determinista**, mismo resultado bit a bit. Eso permite cachear, comparar y repetir experimentos con confianza.
+- Dónde viven la rigidez y la amortiguación de un servo de posición (`actuator_gainprm`, `actuator_biasprm`) y cómo cambiarlas desde Python.
+- `mj_resetDataKeyframe` + `eq_active` para empezar colgado en una postura guardada, y `joint(...).qposadr` para saber dónde está una articulación en `qpos`.
+- Una lección de control: el error de seguimiento crece con la **frecuencia** y baja con la **rigidez**.
+
+En la práctica del **P3** meterás toda la configuración de un experimento de MuJoCo en una **dataclass** y harás que cada experimento se describa, se compare y se guarde solo.
+"""),
+
+md(r"""## 11 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
