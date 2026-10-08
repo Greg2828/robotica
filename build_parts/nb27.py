@@ -15,6 +15,11 @@ np.testing.assert_allclose), un test que caza un fallo. Git: conceptos
 repositorio de juguete (init, add, commit, log, diff, branch, merge),
 .gitignore, el historial de este curso, buenas costumbres. Estilo (PEP 8) y
 cierre del bloque de Python.
+Práctica en MuJoCo (§16): tests de un simulador. Péndulo con <flag energy> (datos.energy):
+Euler vs RK4 vs con rozamiento, periodo con máscaras vs 2π√(L/g); fichero
+practica_mujoco/nb27_tests/test_simulacion.py (determinismo humanoide, caída libre,
+energía, periodo, PD del palo de escoba, plano roto) con pytest; se estropea
+pendulo.xml (damping) y el test de energía lo caza.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -744,13 +749,349 @@ Se evita con un fichero **`.gitignore`** con sus patrones, y revisando `git stat
 </details>
 """),
 
-md(r"""## 16 · Posdata: se acaba el bloque de Python
+md(r"""## 16 · 🛠 Práctica en MuJoCo: ¿cómo sabes que tu simulador no miente?
+
+Llevas desde el NB00 fiándote de MuJoCo: si dice que el palo cae en 0,68 s, te lo crees. Pero un ingeniero no se fía: **comprueba**. Y la forma
+profesional de comprobar es la de hoy: **tests** que el ordenador ejecuta solo y que gritan si algo cambia.
+
+¿Qué se puede comprobar de un simulador? Que cumpla cosas que **sabemos seguras** por la física o por cómo está hecho:
+
+1. **Determinismo** (NB24): mismo comienzo y mismas órdenes → exactamente el mismo resultado.
+2. **Caída libre** (NB02, NB04b): una pelota que cae debe seguir la fórmula **½·g·t²**.
+3. **Conservación de la energía**: un péndulo **sin rozamiento** no puede ganar ni perder energía (si la gana, el simulador "se la inventa").
+4. **El periodo del péndulo**: un péndulo de largo L oscila con un periodo de **2π·√(L/g)** (una fórmula clásica que verás en la Parte 5).
+5. **Una política conocida**: el PD del NB23 sostiene el palo de escoba de MuJoCo 10 segundos.
+
+Primero exploraremos la energía con NumPy, y después lo convertiremos todo en un fichero de tests para **pytest**, y estropearemos el modelo a
+propósito para ver cómo los tests lo cazan.
+"""),
+
+md(r"""### Paso 1 · Un péndulo que mide su energía
+
+Un péndulo sencillo: una bola de 1 kg colgada de una varilla de 1 m (casi sin masa) en una bisagra. Dos novedades en el plano:
+
+- `<flag energy="enable"/>`: le pide a MuJoCo que **calcule la energía** en cada paso. La deja en **`datos.energy`**, dos números: la energía
+  **potencial** (la de la altura) y la **cinética** (la del movimiento). Su suma es la **energía total**.
+- `integrator="{integrador}"` y `damping="{rozamiento}"` son huecos (NB20): el **integrador** es la receta con la que MuJoCo avanza cada paso
+  (la "cadena de oro" del NB02 es una de ellas, llamada `Euler`; hay otras más precisas, como `RK4`). Lo guardaremos en un fichero (NB26).
+"""),
+
+code(r"""from pathlib import Path
+import mujoco
+import numpy as np
+
+PENDULO = '''<mujoco model="pendulo">
+  <option timestep="0.001" integrator="{integrador}">
+    <flag energy="enable"/>
+  </option>
+  <worldbody>
+    <light pos="0 0 3"/>
+    <body name="bola" pos="0 0 1.5">
+      <joint name="bisagra" type="hinge" axis="0 1 0" damping="{rozamiento}"/>
+      <geom type="capsule" fromto="0 0 0 0 0 -1" size="0.005" mass="0.001"/>
+      <geom type="sphere" pos="0 0 -1" size="0.03" mass="1"/>
+    </body>
+  </worldbody>
+</mujoco>'''
+
+def simular_pendulo(integrador="Euler", rozamiento=0, segundos=10, grados=10):
+    modelo = mujoco.MjModel.from_xml_string(PENDULO.format(integrador=integrador, rozamiento=rozamiento))
+    datos = mujoco.MjData(modelo)
+    datos.qpos[0] = np.radians(grados)
+    mujoco.mj_forward(modelo, datos)
+    n = round(segundos / modelo.opt.timestep)
+    energia, angulo = np.empty(n + 1), np.empty(n + 1)        # arrays reservados de antemano
+    energia[0], angulo[0] = datos.energy.sum(), datos.qpos[0]
+    for i in range(1, n + 1):
+        mujoco.mj_step(modelo, datos)
+        energia[i], angulo[i] = datos.energy.sum(), datos.qpos[0]
+    return energia, angulo"""),
+
+md(r"""(En vez de listas con `append`, reservamos los arrays de golpe con `np.empty` y los rellenamos por índice: es lo habitual cuando sabes de antemano
+cuántos datos habrá.) Fíjate en `PENDULO.format(...)`: es el **hermano** de las f-strings, que rellena los huecos `{ }` **más tarde**, cuando lo llamas.
+Lo necesitamos porque queremos guardar la plantilla con los huecos sin rellenar.
+
+### Paso 2 · ¿Se conserva la energía?
+
+Soltamos el péndulo desde 10° y simulamos 10 segundos (10.000 pasos), con tres combinaciones: Euler sin rozamiento, RK4 sin rozamiento, y Euler
+**con** rozamiento. Con NumPy (apartados 5-6) medimos cuánto ha cambiado la energía. Para que la cifra signifique algo, la comparamos con la energía
+del **balanceo** (la que tiene el péndulo por estar levantado 10°: `m·g·L·(1 − cos 10°)`, unos 0,149 julios):
+"""),
+
+code(r"""energia_balanceo = 1 * 9.81 * 1 * (1 - np.cos(np.radians(10)))
+print(f"Energía del balanceo: {energia_balanceo:.3f} J\n")
+
+for integrador, rozamiento in [("Euler", 0), ("RK4", 0), ("Euler", 0.05)]:
+    energia, angulo = simular_pendulo(integrador, rozamiento)
+    cambio = energia[-1] - energia[0]
+    print(f"{integrador:>5}, rozamiento {rozamiento:<4}: cambio de energía {cambio:+.2e} J "
+          f"= {cambio / energia_balanceo:+.4%} del balanceo")"""),
+
+md(r"""Léelo con calma, porque dice mucho:
+
+- **Euler sin rozamiento**: la energía cambia en unas **siete cienmilésimas** de julio: un **0,05 %** del balanceo en 10 s. Casi nada, pero no cero:
+  la cadena de oro con pasos de 1 ms comete un error diminuto en cada paso.
+- **RK4 sin rozamiento**: el cambio es de **unas pocas billonésimas** de julio: prácticamente perfecto (el ruido de los decimales del NB06). RK4 es
+  más preciso... y más lento (hace cuatro cálculos por paso en vez de uno).
+- **Euler con rozamiento**: pierde **0,059 J, un 40 %** del balanceo. Correcto: el rozamiento **debe** gastar energía.
+
+Así que un buen test de energía no puede pedir "cambio == 0" (fallaría con Euler). Tiene que pedir "cambio **pequeño** comparado con el balanceo",
+por ejemplo menos del 1 %. Elegir la **tolerancia** de un test es parte del oficio.
+"""),
+
+md(r"""### Paso 3 · El periodo, con máscaras de NumPy
+
+El periodo es el tiempo de una oscilación completa. Lo medimos con NumPy **sin bucles**: el péndulo pasa por la vertical "subiendo" cuando el ángulo
+es negativo en un paso y positivo (o cero) en el siguiente. Eso es una **máscara** (apartado 5) comparando el array consigo mismo **desplazado** un
+paso, y `np.nonzero` nos da en qué pasos ocurre:
+"""),
+
+code(r"""energia, angulo = simular_pendulo("RK4")
+cruces = np.nonzero((angulo[:-1] < 0) & (angulo[1:] >= 0))[0]    # pasos donde cruza "subiendo"
+tiempos_cruce = (cruces + 1) * 0.001
+periodo = np.diff(tiempos_cruce).mean()                         # tiempo medio entre cruces
+
+formula = 2 * np.pi * np.sqrt(1 / 9.81)
+print(f"Cruces: {len(cruces)} | periodo medido: {periodo:.4f} s | fórmula: {formula:.4f} s "
+      f"| diferencia: {(periodo - formula) / formula:+.2%}")"""),
+
+md(r"""(`angulo[:-1]` es "todos menos el último" y `angulo[1:]`, "todos menos el primero": puestos uno encima del otro, cada posición compara un paso con
+el siguiente. Y `np.diff` resta cada elemento del siguiente.)
+
+MuJoCo: **2,010 s**. Fórmula: **2,006 s**. Una diferencia del **0,2 %**, y ni siquiera es un error de MuJoCo: la fórmula es para oscilaciones
+**pequeñitas**, y con 10° el periodo real es justo un 0,2 % más largo (la física fina, en la Parte 5). El simulador reproduce una ley de la física
+de hace casi 400 años (Galileo, otra vez).
+"""),
+
+md(r"""### Paso 4 · El fichero de tests
+
+Ahora, lo profesional. En una carpeta propia (`practica_mujoco/nb27_tests`) guardamos el **plano del péndulo** como fichero (NB26) y un fichero
+`test_simulacion.py` con **seis tests**, uno por idea. Los tests leen el plano del fichero que está **a su lado**: `Path(__file__).parent` es "la
+carpeta de este fichero".
+"""),
+
+code(r"""carpeta_tests = Path("practica_mujoco") / "nb27_tests"
+carpeta_tests.mkdir(parents=True, exist_ok=True)
+plano_pendulo = PENDULO.format(integrador="Euler", rozamiento=0)
+(carpeta_tests / "pendulo.xml").write_text(plano_pendulo, encoding="utf-8")
+print("Plano guardado en", carpeta_tests / "pendulo.xml")"""),
+
+code(r"""tests_mujoco = '''# test_simulacion.py: tests de MuJoCo (práctica del NB27).
+from pathlib import Path
+
+import mujoco
+import numpy as np
+import pytest
+
+AQUI = Path(__file__).parent
+RAIZ = AQUI.parent.parent                       # la carpeta notebooks/
+
+
+def cargar(ruta):
+    modelo = mujoco.MjModel.from_xml_path(str(ruta))
+    datos = mujoco.MjData(modelo)
+    mujoco.mj_forward(modelo, datos)
+    return modelo, datos
+
+
+def test_determinismo_humanoide():
+    import gymnasium
+    ruta = Path(gymnasium.__file__).parent / "envs" / "mujoco" / "assets" / "humanoid.xml"
+    finales = []
+    for _ in range(2):
+        modelo, datos = cargar(ruta)
+        azar = np.random.default_rng(7)         # misma semilla las dos veces
+        for _ in range(300):
+            datos.ctrl[:] = azar.uniform(-0.4, 0.4, size=modelo.nu)
+            mujoco.mj_step(modelo, datos)
+        finales.append(datos.qpos.copy())
+    np.testing.assert_array_equal(finales[0], finales[1])     # iguales, número por número
+
+
+def test_caida_libre():
+    modelo = mujoco.MjModel.from_xml_string(
+        '<mujoco><option timestep="0.001" gravity="0 0 -10"/><worldbody>'
+        '<body pos="0 0 2"><freejoint/><geom type="sphere" size="0.05"/></body>'
+        '</worldbody></mujoco>')
+    datos = mujoco.MjData(modelo)
+    for _ in range(500):                        # 0,5 s
+        mujoco.mj_step(modelo, datos)
+    assert datos.qpos[2] == pytest.approx(2 - 0.5 * 10 * 0.5 ** 2, abs=0.005)
+
+
+def oscilar(segundos=10, grados=10):
+    modelo, datos = cargar(AQUI / "pendulo.xml")
+    datos.qpos[0] = np.radians(grados)
+    mujoco.mj_forward(modelo, datos)
+    energia0 = datos.energy.sum()
+    angulos = [datos.qpos[0]]
+    for _ in range(round(segundos / modelo.opt.timestep)):
+        mujoco.mj_step(modelo, datos)
+        angulos.append(datos.qpos[0])
+    return energia0, datos.energy.sum(), np.array(angulos), modelo.opt.timestep
+
+
+def test_energia_se_conserva_sin_rozamiento():
+    energia0, energia1, _, _ = oscilar()
+    balanceo = 1 * 9.81 * 1 * (1 - np.cos(np.radians(10)))
+    assert abs(energia1 - energia0) < 0.01 * balanceo          # menos del 1 %
+
+
+def test_periodo_del_pendulo():
+    _, _, angulos, dt = oscilar()
+    cruces = np.nonzero((angulos[:-1] < 0) & (angulos[1:] >= 0))[0]
+    periodo = np.diff(cruces).mean() * dt
+    assert periodo == pytest.approx(2 * np.pi * np.sqrt(1 / 9.81), rel=0.01)
+
+
+def test_palo_de_escoba_pd_aguanta_10_segundos():
+    modelo, datos = cargar(RAIZ / "robots" / "palo_escoba.xml")
+    datos.qpos[1] = np.radians(5)
+    for _ in range(1000):
+        x, angulo = datos.qpos
+        vx, va = datos.qvel
+        datos.ctrl[0] = np.clip(3 * angulo + 0.8 * va + 0.1 * x + 0.2 * vx, -1, 1)
+        mujoco.mj_step(modelo, datos)
+        assert abs(angulo) < 0.785
+
+
+def test_plano_roto_da_valueerror():
+    with pytest.raises(ValueError):
+        mujoco.MjModel.from_xml_string("<mujoco><worldbody><body></worldbody></mujoco>")
+'''
+(carpeta_tests / "test_simulacion.py").write_text(tests_mujoco, encoding="utf-8")
+print("Tests escritos")"""),
+
+md(r"""Repásalos: cada uno comprueba **una** idea y su nombre dice **cuál**. Tres herramientas de hoy:
+
+- **`np.testing.assert_array_equal`**: dos arrays **idénticos** (para el determinismo queremos igualdad exacta, no "parecidos").
+- **`pytest.approx`**, con `abs=` (margen absoluto) o `rel=` (margen relativo: `rel=0.01` es "dentro del 1 %").
+- **`pytest.raises(ValueError)`**: un test que **pasa si salta** ese error (el plano roto del NB22 **debe** quejarse).
+
+Ejecutémoslos, con `subprocess` como en el apartado 11:
+"""),
+
+code(r"""import subprocess, sys
+
+def pasar_tests():
+    resultado = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--color=no"],
+                               cwd=carpeta_tests, capture_output=True, text=True)
+    print(resultado.stdout.strip()[-900:])
+
+pasar_tests()"""),
+
+md(r"""**`6 passed`**: MuJoCo es determinista, cumple la caída libre, conserva la energía, oscila con el periodo de la fórmula, el PD sostiene el palo y
+los planos rotos se quejan. Ahora tienes una **red de seguridad**: si mañana actualizas MuJoCo, cambias un plano o tocas un controlador, ejecutas
+`pytest` y en unos segundos sabes si algo se ha roto.
+"""),
+
+md(r"""### Paso 5 · Los tests cazan un fallo
+
+Como en el apartado 11, estropeamos algo **a propósito**. Imagina que alguien edita `pendulo.xml` para "que quede más realista" y le pone rozamiento
+a la bisagra (`damping="0.05"`), sin avisar. Volvemos a pasar los tests:
+"""),
+
+code(r"""ruta_plano = carpeta_tests / "pendulo.xml"
+original = ruta_plano.read_text(encoding="utf-8")
+_ = ruta_plano.write_text(original.replace('damping="0"', 'damping="0.05"'), encoding="utf-8")
+
+pasar_tests()
+
+_ = ruta_plano.write_text(original, encoding="utf-8")      # lo dejamos como estaba"""),
+
+md(r"""**`1 failed, 5 passed`**: ha fallado justo `test_energia_se_conserva_sin_rozamiento`, y pytest enseña los números: la energía ha cambiado mucho
+más del 1 % permitido. El test del **periodo**, en cambio, sigue pasando: un rozamiento pequeño apenas cambia el ritmo del péndulo, solo lo va
+frenando. Por eso conviene tener **varios** tests que miren cosas **distintas**: cada uno caza fallos diferentes.
+
+Una última vez, para comprobar que lo hemos dejado bien:
+"""),
+
+code(r"""pasar_tests()"""),
+
+md(r"""### Tus retos
+
+**Reto 1.** En el Paso 2, cambia el paso de tiempo del péndulo Euler a 0,01 s (diez veces más grande; pista: `PENDULO.replace('0.001', '0.01')`
+antes de formatear, dentro de una copia de `simular_pendulo`). ¿Cuánto cambia ahora la energía en 10 s? ¿Pasaría el test del 1 %?
+
+**Reto 2.** Añade al fichero de tests uno nuevo, `test_luna`: con gravedad `0 0 -1.62`, la pelota del test de caída libre debe estar, a los 0,5 s, a
+**2 − ½·1,62·0,5²** metros. Escríbelo y pasa los tests.
+
+**Reto 3 (para pensar).** El test `test_determinismo_humanoide` compara **dos ejecuciones en el mismo ordenador**. ¿Crees que dos ordenadores distintos
+(la Pi y un portátil) darían exactamente los mismos números? ¿Qué tolerancia pondrías si quisieras comparar con unos resultados guardados en otro ordenador?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+def simular_pendulo_paso(paso, segundos=10, grados=10):
+    plano = PENDULO.replace('timestep="0.001"', f'timestep="{paso}"').format(integrador="Euler", rozamiento=0)
+    modelo = mujoco.MjModel.from_xml_string(plano)
+    datos = mujoco.MjData(modelo)
+    datos.qpos[0] = np.radians(grados)
+    mujoco.mj_forward(modelo, datos)
+    e0 = datos.energy.sum()
+    for _ in range(round(segundos / paso)):
+        mujoco.mj_step(modelo, datos)
+    return datos.energy.sum() - e0
+
+cambio = simular_pendulo_paso(0.01)
+print(f"{cambio:+.2e} J = {cambio / energia_balanceo:+.2%} del balanceo")
+```
+
+Con pasos 10 veces más grandes, el error de Euler se hace unas 10 veces más grande: **+8,5·10⁻⁴ J, un 0,57 %** del balanceo en 10 s (frente al 0,05 % con pasos de 1 ms). Todavía pasaría
+el test del 1 %, pero por poco; y en una simulación más larga, no. Es la regla del NB22: el paso tiene que ser pequeño comparado con lo rápido que pasan
+las cosas. (Y es otra razón para tener tests: si alguien "acelera" la simulación subiendo el paso, el test de energía avisará.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+Añade al texto de `tests_mujoco` (y vuelve a ejecutar esa celda y la de `pasar_tests()`):
+
+```python
+def test_luna():
+    modelo = mujoco.MjModel.from_xml_string(
+        '<mujoco><option timestep="0.001" gravity="0 0 -1.62"/><worldbody>'
+        '<body pos="0 0 2"><freejoint/><geom type="sphere" size="0.05"/></body>'
+        '</worldbody></mujoco>')
+    datos = mujoco.MjData(modelo)
+    for _ in range(500):
+        mujoco.mj_step(modelo, datos)
+    assert datos.qpos[2] == pytest.approx(2 - 0.5 * 1.62 * 0.5 ** 2, abs=0.005)
+```
+
+Resultado: **`7 passed`**. (La pelota está a unos 1,80 m: en la Luna, en medio segundo, solo cae 20 cm.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Probablemente **no** idénticos. MuJoCo es determinista en un mismo ordenador y con la misma versión, pero distintos procesadores (ARM en la Pi, x86 en
+muchos portátiles) o distintas versiones de las bibliotecas pueden redondear los decimales de forma ligeramente distinta, y en un sistema caótico como
+un humanoide cayendo esas diferencias diminutas crecen. Para comparar con resultados de **otro** ordenador usarías `np.testing.assert_allclose` con una
+tolerancia, y mejor sobre una simulación **corta** o sobre algo estable (como el péndulo), no sobre 300 pasos de caída caótica.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Con `<flag energy="enable"/>`, MuJoCo calcula en **`datos.energy`** la energía potencial y cinética.
+- El **integrador** (`Euler`, `RK4`...) es la receta de cada paso: RK4 conserva la energía casi perfectamente; Euler comete un error pequeño que crece
+  con el paso de tiempo. El rozamiento (`damping`) **debe** gastar energía.
+- MuJoCo reproduce leyes de la física (caída libre, periodo del péndulo) con errores de décimas de porcentaje, y es **determinista**.
+- Un fichero de **tests con pytest** (`assert_array_equal`, `pytest.approx`, `pytest.raises`) es tu red de seguridad: caza al instante un cambio
+  indebido en un plano o en el código.
+
+Con esto cierras el bloque de Python **sabiendo simular, envolver, guardar y verificar** robots en MuJoCo. En la práctica del NB28 empezarás a usar el
+**azar** de forma controlada: estados iniciales aleatorios y la distribución de los tiempos de caída del palo de escoba.
+"""),
+
+md(r"""## 17 · Posdata: se acaba el bloque de Python
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
 **Enhorabuena: has terminado el bloque "Python de verdad".** Mira todo lo que sabes ahora: texto y f-strings, colecciones y la trampa del alias, `while` y excepciones, depurar, funciones a fondo
 (cierres, decoradores, generadores), clases y herencia, tu propio entorno de Gymnasium, ficheros y formatos, módulos, scripts, la terminal, `pip`, NumPy a fondo con ejes y broadcasting, entornos
-vectorizados, tests y Git. **Es, sin exagerar, el Python que se usa en un trabajo de verdad.** A partir de aquí, el código de las bibliotecas profesionales dejará de parecer magia.
+vectorizados, tests y Git; y, en las prácticas, cómo generar, recorrer, romper, envolver, guardar y verificar simulaciones de MuJoCo. **Es, sin exagerar, el Python que se usa en un trabajo de verdad.** A partir de aquí, el código de las bibliotecas profesionales dejará de parecer magia.
 
 En la **Parte 4** vuelve la robótica, a lo grande: el **aprendizaje por refuerzo de verdad**. Empezaremos por la **probabilidad desde cero** (la campana de Gauss que ya ha asomado hoy), para construir
 políticas que **exploran** con azar; y con ella, el primer algoritmo que aprende **solo con recompensas**, sin maestro: **REINFORCE**. Después vendrán PyTorch, actor-crítico y PPO, el algoritmo con el que

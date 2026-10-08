@@ -14,6 +14,10 @@ defaultdict), datetime, itertools.product, statistics. Proyecto: barrido de
 ruedecillas (rejilla) guardado en una carpeta con fecha: config JSON +
 resultados CSV + mejores pesos .npy, y vuelta a leerlo todo.
 Todo se hace dentro de notebooks/practica_nb26/ (en .gitignore).
+Práctica en MuJoCo (§18), en notebooks/practica_mujoco/nb26_* (generado al ejecutar,
+también ignorado por git): MJCF del palo largo a fichero + from_xml_path,
+mj_saveLastXML (lo que MuJoCo entendió), config JSON + trayectoria np.savez (qpos.copy),
+script nb26_video.py con argparse + MUJOCO_GL=egl lanzado con ! y subprocess que graba un MP4.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -790,11 +794,328 @@ más semillas, el retorno medio es más **fiable** (está medido en más mundos 
 </details>
 """),
 
-md(r"""## 19 · Posdata
+md(r"""## 18 · 🛠 Práctica en MuJoCo: tu robot en un fichero y un script que graba vídeos
+
+Hasta hoy, tus planos MJCF vivían **dentro del cuaderno**, como cadenas de texto. Pero los robots de verdad (el humanoide, el Zancudo que construirás
+en la Parte 5) viven en **ficheros `.xml`**, y los vídeos y entrenamientos de verdad se lanzan con **scripts** desde la terminal. Hoy vas a cerrar
+ese círculo:
+
+1. Fabricar un palo de escoba **más largo** con una f-string (NB20) y **guardarlo en un fichero** `.xml`.
+2. Cargarlo **desde el fichero** con `mujoco.MjModel.from_xml_path`.
+3. Pedirle a MuJoCo que **escriba** el plano tal y como lo ha entendido (`mj_saveLastXML`).
+4. Guardar una **trayectoria** simulada con `np.savez` y la **configuración** del experimento en JSON.
+5. Escribir un **script** que, lanzado desde la terminal con sus opciones (`argparse`), carga el fichero, simula y **graba un vídeo él solo**.
+
+Todo irá a una carpeta nueva, `practica_mujoco`, al lado de este cuaderno (como `practica_nb26`, se crea al ejecutar y Git la ignora), con nombres
+que empiezan por `nb26_`.
+"""),
+
+md(r"""### Paso 1 · El plano, al disco
+
+La carpeta, con `Path` y `mkdir` (apartado 2):
+"""),
+
+code(r"""from pathlib import Path
+import mujoco
+import numpy as np
+
+carpeta_mj = Path("practica_mujoco")
+carpeta_mj.mkdir(exist_ok=True)"""),
+
+md(r"""Ahora la plantilla del palo de escoba del NB20 (la de `robots/palo_escoba.xml` con un hueco para el largo), y la escribimos en un fichero con
+`write_text` (apartado 4). Un palo de **1,5 m**:
+"""),
+
+code(r"""def palo_xml(largo):
+    return f'''<mujoco model="palo_{largo}">
+  <option timestep="0.01"/>
+  <worldbody>
+    <light pos="0 0 4"/>
+    <geom type="plane" size="4 2 0.1" rgba=".8 .9 .8 1"/>
+    <geom type="capsule" fromto="-2 0 0.5 2 0 0.5" size="0.02" rgba=".4 .4 .4 1" contype="0" conaffinity="0"/>
+    <body name="carro" pos="0 0 0.5">
+      <joint name="deslizar" type="slide" axis="1 0 0" range="-1.8 1.8" limited="true" damping="0.1"/>
+      <geom type="box" size="0.15 0.1 0.05" mass="1" rgba=".2 .4 .9 1" contype="0" conaffinity="0"/>
+      <body name="palo">
+        <joint name="bisagra" type="hinge" axis="0 1 0" damping="0.01"/>
+        <geom type="capsule" fromto="0 0 0 0 0 {largo}" size="0.03" mass="0.5" rgba="1 .5 .1 1" contype="0" conaffinity="0"/>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="empuje" joint="deslizar" gear="10" ctrlrange="-1 1" ctrllimited="true"/>
+  </actuator>
+</mujoco>
+'''
+
+ruta_xml = carpeta_mj / "nb26_palo_largo.xml"
+ruta_xml.write_text(palo_xml(1.5), encoding="utf-8")
+print(ruta_xml, "->", ruta_xml.stat().st_size, "bytes")"""),
+
+md(r"""(`ruta.stat().st_size` es el tamaño del fichero en bytes: una propiedad más de `Path`.) Comprobémoslo desde la **terminal**, con `!` y `head`
+(apartado 12), que enseña sus primeras líneas:
+"""),
+
+code(r"""!head -4 practica_mujoco/nb26_palo_largo.xml"""),
+
+md(r"""### Paso 2 · Cargar desde el fichero
+
+Hasta ahora usabas `from_xml_string` (desde un texto). Para un fichero, **`from_xml_path`** (desde una ruta). Ojo: MuJoCo quiere la ruta como
+**texto**, así que convertimos el `Path` con `str` (NB20):
+"""),
+
+code(r"""modelo = mujoco.MjModel.from_xml_path(str(ruta_xml))
+datos = mujoco.MjData(modelo)
+print("Cargado:", modelo.nbody, "piezas,", modelo.njnt, "articulaciones,", modelo.nu, "motor")
+print("Largo del palo (mitad de la cápsula x 2):", 2 * modelo.geom_size[3][1], "m")"""),
+
+md(r"""¿Por qué usar ficheros si `from_xml_string` funciona igual? Por tres razones: el plano se puede **compartir** y reutilizar desde cualquier
+programa (como `robots/palo_escoba.xml`, que usan todas las prácticas); se puede abrir con un **editor**; y los robots de verdad usan **mallas**
+(ficheros `.stl` con la forma 3D de cada pieza) que el plano nombra **por su ruta, relativa a la carpeta del `.xml`**. Con `from_xml_string`,
+MuJoCo no sabría dónde buscarlas.
+
+Y si la ruta está mal, el error del NB22, ahora con fichero:
+"""),
+
+code(r"""try:
+    mujoco.MjModel.from_xml_path("practica_mujoco/no_existe.xml")
+except ValueError as e:
+    print("ValueError:", str(e).split("\n")[0])"""),
+
+md(r"""### Paso 3 · Lo que MuJoCo ha entendido
+
+MuJoCo puede hacer el viaje de vuelta: **escribir en un fichero** el plano del último modelo que ha cargado, con `mujoco.mj_saveLastXML`. Lo
+interesante es que no escribe **tu** texto, sino **lo que ha entendido**:
+"""),
+
+code(r"""ruta_entendido = carpeta_mj / "nb26_palo_entendido.xml"
+mujoco.mj_saveLastXML(str(ruta_entendido), modelo)
+print(ruta_entendido.read_text(encoding="utf-8"))"""),
+
+md(r"""Compara con tu plano y verás que MuJoCo lo ha "traducido" a su forma interna:
+
+- Tu `fromto="0 0 0 0 0 1.5"` (de un punto a otro) se ha convertido en un **centro** (`pos="0 0 0.75"`), un **giro** (`quat`: cuatro números para
+  un giro, como los 4 de la articulación `root` del humanoide que viste en el NB21) y un **tamaño** (`size="0.03 0.75"`: radio y **media** longitud).
+- Tu `<motor>` es ahora un `<general>`: `motor` era un **atajo** para el actuador general con unas opciones concretas.
+- Ha añadido `<compiler angle="radian"/>`: deja claro que los ángulos están en radianes.
+
+Es muy útil para **depurar** (NB22): si un robot no se comporta como esperas, mira lo que MuJoCo ha entendido, no lo que tú crees que escribiste.
+"""),
+
+md(r"""### Paso 4 · Guardar un experimento: configuración y trayectoria
+
+Un experimento bien guardado (apartado 16) lleva su **configuración** en JSON y sus **resultados**. Simulamos el palo largo inclinado 10° con el
+controlador PD del NB23-NB25 durante 5 s, y apuntamos el reloj y las posiciones de cada paso:
+"""),
+
+code(r"""import json
+
+config = {"plano": ruta_xml.name, "inclinacion_grados": 10, "k": 3, "d": 0.8, "segundos": 5}
+(carpeta_mj / "nb26_config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+mujoco.mj_resetData(modelo, datos)
+datos.qpos[1] = np.radians(config["inclinacion_grados"])
+tiempos, posiciones = [], []
+for _ in range(round(config["segundos"] / modelo.opt.timestep)):
+    x, angulo = datos.qpos
+    vx, vel_angulo = datos.qvel
+    datos.ctrl[0] = np.clip(config["k"] * angulo + config["d"] * vel_angulo + 0.1 * x + 0.2 * vx, -1, 1)
+    mujoco.mj_step(modelo, datos)
+    tiempos.append(datos.time)
+    posiciones.append(datos.qpos.copy())          # ¡copy! (la trampa del alias, NB21)
+
+np.savez(carpeta_mj / "nb26_trayectoria.npz", t=np.array(tiempos), qpos=np.array(posiciones))
+print("Guardados:", sorted(p.name for p in carpeta_mj.glob("nb26_*")))"""),
+
+md(r"""Un detalle **importantísimo**: `datos.qpos.copy()`. `datos.qpos` es **siempre el mismo array**, que MuJoCo va sobrescribiendo en cada paso.
+Si guardaras `datos.qpos` a secas, tu lista tendría 500 **alias** del mismo array (NB21), y al final todos valdrían lo del último paso.
+
+Ahora, como si fuera otro día y otro programa, lo leemos todo de vuelta:
+"""),
+
+code(r"""config_leida = json.loads((carpeta_mj / "nb26_config.json").read_text(encoding="utf-8"))
+tray = np.load(carpeta_mj / "nb26_trayectoria.npz")
+
+print("Configuración:", config_leida)
+print("Forma de qpos:", tray["qpos"].shape)
+angulos = np.degrees(tray["qpos"][:, 1])
+print(f"Ángulo: empieza en {angulos[0]:.1f}°, el más lejano {abs(angulos).max():.1f}°, acaba en {angulos[-1]:.2f}°")"""),
+
+md(r"""500 filas (una por paso) y 2 columnas (carro y palo). El palo de 1,5 m empieza a 10°, el controlador lo endereza y acaba prácticamente vertical.
+Todo leído **del disco**: si reinicias el kernel, sigue ahí.
+"""),
+
+md(r"""### Paso 5 · Un script que graba vídeos
+
+Ahora, lo más profesional de la práctica: un **script** que se lanza desde la terminal. Recibe con `argparse` (apartado 11) la ruta del plano, los
+segundos, las ganancias del controlador y dónde guardar el vídeo; carga el fichero, simula, fotografía con `mujoco.Renderer` (como tu `mi_video` del
+NB23) y guarda el MP4 con `imageio`. Fíjate en tres cosas:
+
+- La **primera línea de código** pone `MUJOCO_GL=egl` **antes** de importar MuJoCo: en la Pi no hay pantalla, y así MuJoCo dibuja "a ciegas".
+  (En el cuaderno lo hacía `taller` por ti.)
+- Todo va en funciones, y al final el `if __name__ == "__main__":` (apartado 11).
+- Al terminar, escribe una línea de **resumen**: es lo que verás en la terminal.
+"""),
+
+code(r"""codigo_script = '''# nb26_video.py: carga un palo de escoba desde un fichero MJCF, lo controla con un PD y graba un vídeo.
+import os
+os.environ.setdefault("MUJOCO_GL", "egl")          # dibujar sin pantalla
+
+import argparse
+import imageio
+import mujoco
+import numpy as np
+
+
+def simular_y_grabar(ruta_xml, segundos, k, d, grados, salida):
+    modelo = mujoco.MjModel.from_xml_path(ruta_xml)
+    datos = mujoco.MjData(modelo)
+    datos.qpos[1] = np.radians(grados)
+    camara = mujoco.MjvCamera()
+    mujoco.mjv_defaultFreeCamera(modelo, camara)
+    camara.distance, camara.azimuth, camara.elevation = 5.0, 90, -15
+    cada = max(1, round(1 / (30 * modelo.opt.timestep)))
+    fotos = []
+    with mujoco.Renderer(modelo, 270, 360) as dibujante:
+        for paso in range(round(segundos / modelo.opt.timestep)):
+            x, angulo = datos.qpos
+            vx, vel_angulo = datos.qvel
+            datos.ctrl[0] = np.clip(k * angulo + d * vel_angulo + 0.1 * x + 0.2 * vx, -1, 1)
+            mujoco.mj_step(modelo, datos)
+            if paso % cada == 0:
+                dibujante.update_scene(datos, camera=camara)
+                fotos.append(dibujante.render())
+    imageio.mimsave(salida, fotos, fps=1 / (cada * modelo.opt.timestep), macro_block_size=1)
+    return np.degrees(datos.qpos[1]), len(fotos)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Simula un palo de escoba MJCF con un PD y graba un vídeo.")
+    parser.add_argument("xml", help="ruta del fichero MJCF")
+    parser.add_argument("--segundos", type=float, default=4.0, help="duración simulada")
+    parser.add_argument("--k", type=float, default=3.0, help="ganancia de inclinación")
+    parser.add_argument("--d", type=float, default=0.8, help="ganancia de velocidad")
+    parser.add_argument("--grados", type=float, default=10.0, help="inclinación inicial")
+    parser.add_argument("--salida", default="video.mp4", help="fichero MP4 de salida")
+    args = parser.parse_args()
+
+    angulo_final, n_fotos = simular_y_grabar(args.xml, args.segundos, args.k, args.d, args.grados, args.salida)
+    print(f"{args.xml}: {args.segundos} s, k={args.k}, d={args.d} -> palo a {angulo_final:.1f} grados; "
+          f"{n_fotos} fotos en {args.salida}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+(carpeta_mj / "nb26_video.py").write_text(codigo_script, encoding="utf-8")
+print("Script escrito:", carpeta_mj / "nb26_video.py")"""),
+
+md(r"""Primero, la ayuda que `argparse` fabrica sola. Lo lanzamos con `!` como si estuviéramos en la terminal. (`{sys.executable}` entre llaves en una
+orden con `!` es un truco de Jupyter: escribe ahí el valor de la variable de Python, la ruta del Python del proyecto, apartado 11.)
+"""),
+
+code(r"""import sys
+!{sys.executable} practica_mujoco/nb26_video.py --help"""),
+
+md(r"""Fíjate en `xml` sin guiones: es un argumento **obligatorio** y **posicional** (va el primero, sin nombre). Los que llevan `--` son opcionales y
+tienen su valor por defecto.
+
+Y ahora, a grabar. Lo lanzamos con `subprocess` (apartado 11), para recoger su resumen, y guardamos el vídeo en la carpeta de vídeos de las prácticas:
+"""),
+
+code(r"""import subprocess
+
+salida = Path("assets") / "practicas" / "nb26_script.mp4"
+salida.parent.mkdir(parents=True, exist_ok=True)
+resultado = subprocess.run(
+    [sys.executable, "practica_mujoco/nb26_video.py", "practica_mujoco/nb26_palo_largo.xml",
+     "--segundos", "4", "--grados", "10", "--salida", str(salida)],
+    capture_output=True, text=True)
+print(resultado.stdout.strip() or resultado.stderr.strip())"""),
+
+md(r"""El script ha trabajado **él solo**, en otro proceso, sin saber nada de este cuaderno: ha leído el fichero, simulado, dibujado y guardado. Veamos su
+vídeo:
+"""),
+
+code(r"""from IPython.display import Video
+Video(str(salida), embed=True, html_attributes="controls loop autoplay muted")"""),
+
+md(r"""El palo de 1,5 m, con la misma receta que sostenía el de 1 m. Ese script lo podrías lanzar igual desde una terminal de la Pi, por SSH desde otro
+ordenador, o cien veces seguidas con distintas opciones desde un bucle. Así se trabaja en un laboratorio.
+
+### Tus retos
+
+**Reto 1.** Lanza el script con `--k 0 --d 0` (sin control) y `--salida` a otro fichero. ¿A qué ángulo acaba el palo? ¿Por qué no se queda en 90°?
+
+**Reto 2.** Con un bucle, fabrica y guarda **tres** ficheros, `nb26_palo_1.0.xml`, `nb26_palo_2.0.xml` y `nb26_palo_3.0.xml` (con `palo_xml` y f-strings
+para el nombre), y luego lista con `glob` (apartado 9) todos los `.xml` de la carpeta.
+
+**Reto 3.** Lanza el script sobre los ficheros del Reto 2 con `subprocess` en un bucle, con `--segundos 4 --grados 20`, y mira su línea de resumen.
+¿Qué palos aguanta el controlador?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+r = subprocess.run([sys.executable, "practica_mujoco/nb26_video.py", "practica_mujoco/nb26_palo_largo.xml",
+                    "--k", "0", "--d", "0", "--salida", "assets/practicas/nb26_sin_control.mp4"],
+                   capture_output=True, text=True)
+print(r.stdout)
+```
+
+El resumen dice **1236,3 grados**: ¡más de **tres vueltas** completas! Como el palo no choca con nada (`contype="0"`), cae, pasa por debajo del
+carro y, como casi no hay rozamiento en la bisagra, llega con fuerza para subir por el otro lado y seguir dando vueltas, como un molinillo. Y el
+ángulo de MuJoCo no vuelve a 0 al pasar de 360°: **cuenta las vueltas**. (Míralo en el vídeo que ha grabado.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+for largo in [1.0, 2.0, 3.0]:
+    (carpeta_mj / f"nb26_palo_{largo}.xml").write_text(palo_xml(largo), encoding="utf-8")
+
+for ruta in sorted(carpeta_mj.glob("*.xml")):
+    print(ruta.name)
+```
+
+Salen los tres nuevos más los del Paso 1 y el Paso 3. `glob("*.xml")` es "todo lo que termine en `.xml`".
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+for largo in [1.0, 2.0, 3.0]:
+    r = subprocess.run([sys.executable, "practica_mujoco/nb26_video.py", f"practica_mujoco/nb26_palo_{largo}.xml",
+                        "--segundos", "4", "--grados", "20", "--salida", f"assets/practicas/nb26_palo_{largo}.mp4"],
+                       capture_output=True, text=True)
+    print(r.stdout.strip())
+```
+
+Con 20° de partida, el controlador `k=3, d=0,8` sostiene los palos de **1 m** (acaba a 2,7°) y de **2 m** (a 3,9°; a los 4 s aún están
+corrigiendo). Pero el de **3 m** acaba a **354°**: ¡ha caído y ha dado casi una vuelta entera! ¿No decía el NB20 que los palos largos son más
+fáciles? Para **ti** sí, porque tú adaptas tus reflejos a cada palo. Este controlador tiene sus números **fijos**, pensados para el de 1 m, y no se
+adapta. Cada robot necesita su propio ajuste: justo lo que hará por ti el aprendizaje por refuerzo.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Un robot es un **fichero `.xml`**: se escribe con `write_text` y se carga con **`mujoco.MjModel.from_xml_path(str(ruta))`**. Los ficheros permiten
+  compartir el robot y usar mallas con rutas relativas.
+- **`mujoco.mj_saveLastXML(ruta, modelo)`** escribe lo que MuJoCo ha **entendido** de tu plano (`fromto` → `pos`/`quat`/`size`, `motor` → `general`).
+- Para guardar una trayectoria, **copia** `datos.qpos` en cada paso (`.copy()`): MuJoCo reutiliza siempre el mismo array.
+- Un **script** con `argparse` y `MUJOCO_GL=egl` simula y graba vídeos sin cuaderno ni pantalla, y se lanza desde la terminal o con `subprocess`.
+
+En la práctica del NB27 harás que el ordenador **compruebe solo** que tu simulación es correcta: escribirás **tests** de MuJoCo (determinismo,
+conservación de la energía) y los pasarás con `pytest`.
+"""),
+
+md(r"""## 20 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Hoy has salido del cuaderno: ficheros, módulos, scripts, la terminal, `pip`... Ya sabes cómo se **organiza** y se **guarda** un proyecto de verdad. En el **NB27**, la última lección del bloque de
+Hoy has salido del cuaderno: ficheros, módulos, scripts, la terminal, `pip`... y tu robot de MuJoCo vive ya en un fichero y se graba con un script. Ya sabes cómo se **organiza** y se **guarda** un proyecto de verdad. En el **NB27**, la última lección del bloque de
 Python, cerramos con tres herramientas imprescindibles en cualquier trabajo: **NumPy a fondo** (para que nunca más te atasques con las formas de los arrays, y para simular **cien robots a la vez**),
 los **tests** (programas que comprueban que tu código funciona) y **Git** (el control de versiones con el que se trabaja en equipo, y con el que este mismo curso se sube a GitHub).
 """),

@@ -8,6 +8,9 @@ especiales (\n, \t, comillas), cadenas multilínea, f-strings y formato
 (decimales, ancho, alineación, miles, signo, porcentaje), comparar texto.
 Proyecto: parsear un registro de entrenamiento ("episodio=12 retorno=455.3
 pasos=500") y producir un informe alineado.
+Práctica en MuJoCo (§15): el MJCF es texto -> plantillas con f-strings (pelota,
+mundo de 5 pelotas con :02d + join, palo de escoba de largo variable) y tabla
+alineada del tiempo de caída según el largo (doble de largo ~ x1,4 de tiempo).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -559,11 +562,293 @@ que se parte igual que antes. En el mundo real, limpiar datos "sucios" como este
 </details>
 """),
 
-md(r"""## 15 · Posdata
+md(r"""## 15 · 🛠 Práctica en MuJoCo: fabrica robots con f-strings
+
+En el NB02 escribiste tu primer **plano MJCF**, el de una pelota. ¿Te has fijado en qué es ese plano? **Texto**. Una cadena larga,
+multilínea, con etiquetas como `<body>` y números como `pos="0 0 2"`. Y hoy has aprendido a **fabricar texto** como un profesional.
+
+Eso tiene una consecuencia enorme: si un robot es texto, **un programa puede fabricar robots**. En lugar de escribir a mano diez
+pelotas, escribes **una plantilla** con huecos `{ }` y un bucle la rellena diez veces. Así trabajan los laboratorios de verdad cuando
+quieren probar un robot con piernas de 20 largos distintos: no escriben 20 ficheros, escriben **un generador**.
+
+En esta práctica vas a:
+
+1. Escribir la plantilla de una pelota con una **f-string** multilínea y cargarla en MuJoCo.
+2. Fabricar **un mundo con muchas pelotas** usando un bucle, `:02d` y `join`.
+3. Fabricar **palos de escoba de cualquier largo** y descubrir, con una tabla alineada, qué palo es más fácil de equilibrar.
+"""),
+
+md(r"""### Paso 1 · Una pelota con huecos
+
+Empezamos guardando en variables los dos números que queremos poder cambiar: el **radio** de la pelota y la **altura** desde la que cae.
+"""),
+
+code(r"""import mujoco
+import taller
+
+radio = 0.1
+altura = 1.5"""),
+
+md(r"""Ahora, el plano. Es el de la pelota del NB02, pero con dos novedades de hoy:
+
+- Va entre **comillas triples** (`'''`), porque ocupa varias líneas (apartado 9).
+- Lleva una **`f` delante**: es una f-string. Donde antes ponía `size="0.05"` ahora pone `size="{radio}"`, y Python escribirá ahí el
+  valor de la caja `radio` (apartado 10).
+
+Fíjate en que dentro del plano hay comillas dobles (`"`) por todas partes; como la cadena va entre comillas **simples** triples, no hay
+ningún lío.
+"""),
+
+code(r"""plano = f'''
+<mujoco>
+  <option timestep="0.002"/>
+  <worldbody>
+    <light pos="0 0 5"/>
+    <geom type="plane" size="5 5 0.1" rgba=".8 .9 .8 1"/>
+    <body name="pelota" pos="0 0 {altura}">
+      <freejoint/>
+      <geom type="sphere" size="{radio}" rgba="1 .3 .1 1"/>
+    </body>
+  </worldbody>
+</mujoco>
+'''
+print(plano)"""),
+
+md(r"""Mira la salida: donde estaban los huecos ahora pone `pos="0 0 1.5"` y `size="0.1"`. Para Python, `plano` es **solo una cadena**:
+puedes medirla con `len`, buscar en ella con `in` o contar cosas con `count`, como cualquier texto de hoy.
+"""),
+
+code(r"""print(len(plano), "caracteres")
+print("sphere" in plano)
+print(plano.count("<body"), "pieza(s)")"""),
+
+md(r"""### Paso 2 · Del texto al robot
+
+`taller.cargar` acepta un texto que empiece por `<` y se lo da a MuJoCo para que lo convierta en un **modelo** (NB02). Comprobemos que
+MuJoCo ha entendido nuestros números leyéndolos de vuelta del modelo: `modelo.geom_size` guarda el tamaño de cada forma (la fila 0 es
+el suelo; la fila 1, la pelota).
+"""),
+
+code(r"""modelo, datos = taller.cargar(plano)
+print("Radio que MuJoCo ha entendido:", modelo.geom_size[1][0])
+print("Altura inicial:", datos.qpos[2])"""),
+
+md(r"""El 0.1 y el 1.5 que escribimos en **variables de Python** han viajado, dentro de un texto, hasta el **modelo de MuJoCo**. Ese es todo
+el truco.
+"""),
+
+md(r"""### Paso 3 · Un mundo con muchas pelotas
+
+Ahora fabricaremos **cinco** pelotas, cada una más grande que la anterior, puestas en fila. La idea, en tres movimientos:
+
+1. Una lista vacía, `trozos`.
+2. Un bucle que, en cada vuelta, rellena la plantilla de **una** pelota y la añade a la lista. El nombre de cada pelota lleva su número
+   con dos cifras (`pelota_00`, `pelota_01`...) gracias a `:02d` (apartado 10); la posición en el eje x avanza 0,5 m por vuelta; y el
+   radio crece.
+3. `"\n".join(trozos)` pega todos los trozos en un solo texto, uno por línea (apartado 6).
+"""),
+
+code(r"""trozos = []
+for i in range(5):
+    r = 0.05 + 0.03 * i
+    x = -1 + 0.5 * i
+    trozos.append(f'    <body name="pelota_{i:02d}" pos="{x:.2f} 0 1.5"><freejoint/>'
+                  f'<geom type="sphere" size="{r:.2f}" rgba="1 .3 .1 1"/></body>')
+
+pelotas = "\n".join(trozos)
+print(pelotas)"""),
+
+md(r"""(Un detalle: la f-string del `append` está partida en **dos líneas**. Cuando dos cadenas van seguidas sin nada en medio, Python las
+**pega** solas; es una forma cómoda de partir una línea demasiado larga.)
+
+Ahora metemos esas cinco piezas dentro del mundo con **otra** f-string, que tiene un único hueco, `{pelotas}`:
+"""),
+
+code(r"""mundo = f'''
+<mujoco>
+  <option timestep="0.002"/>
+  <worldbody>
+    <light pos="0 0 5"/>
+    <geom type="plane" size="5 5 0.1" rgba=".8 .9 .8 1"/>
+{pelotas}
+  </worldbody>
+</mujoco>
+'''
+modelo, datos = taller.cargar(mundo)
+print("Piezas del modelo:", modelo.nbody, "(el mundo + 5 pelotas)")
+print("Nombre de la pieza 3:", modelo.body(3).name)"""),
+
+md(r"""MuJoCo ha creado las cinco piezas con los nombres que fabricó tu bucle. (La pieza 0 es siempre el **mundo**, así que la pieza 3
+es la tercera pelota, `pelota_02`: las nuestras empiezan a contar en 0, las de MuJoCo también, pero él tiene una más delante.) Míralas caer (cámara quieta, algo apartada):"""),
+
+code(r"""taller.video(modelo, datos, segundos=1.5, nombre="nb20_pelotas", seguir=False, distancia=4);"""),
+
+md(r"""Las cinco caen **a la vez** y llegan al suelo juntas, aunque unas sean mucho más gordas (y pesadas) que otras. Es lo que
+descubrió Galileo: sin aire, todo cae igual de deprisa. (Si te fijas, la gorda toca el suelo un pelín antes: no porque caiga más
+rápido, sino porque su **borde** de abajo está más cerca del suelo.)
+"""),
+
+md(r"""### Paso 4 · Palos de escoba a medida
+
+Ahora un robot de verdad: el **palo de escoba** de MuJoCo que vive en `robots/palo_escoba.xml` (un carrito con un palo encima, el banco
+de pruebas de las prácticas). Lo convertimos en una **función** (NB10) que recibe el **largo** del palo y devuelve el plano. El único
+hueco está en la forma del palo: `fromto="0 0 0 0 0 {largo}"` dice "del punto (0, 0, 0) al punto (0, 0, largo)".
+"""),
+
+code(r"""def palo_xml(largo):
+    return f'''
+<mujoco>
+  <option timestep="0.01"/>
+  <worldbody>
+    <light pos="0 0 4"/>
+    <geom type="plane" size="4 2 0.1" rgba=".8 .9 .8 1"/>
+    <body name="carro" pos="0 0 0.5">
+      <joint name="deslizar" type="slide" axis="1 0 0" range="-1.8 1.8" limited="true" damping="0.1"/>
+      <geom type="box" size="0.15 0.1 0.05" mass="1" rgba=".2 .4 .9 1" contype="0" conaffinity="0"/>
+      <body name="palo">
+        <joint name="bisagra" type="hinge" axis="0 1 0" damping="0.01"/>
+        <geom type="capsule" fromto="0 0 0 0 0 {largo}" size="0.03" mass="0.5" rgba="1 .5 .1 1" contype="0" conaffinity="0"/>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="empuje" joint="deslizar" gear="10" ctrlrange="-1 1" ctrllimited="true"/>
+  </actuator>
+</mujoco>'''"""),
+
+md(r"""Y ahora una función que **mide** cuánto tarda en caer un palo de cierto largo. La receta:
+
+- Carga el plano y, con `taller.poner_angulo` (NB01), inclina la bisagra **5 grados**.
+- Da pasitos (`mj_step`, NB02) hasta que el palo pase de **45 grados**. En `datos.qpos[1]` está el ángulo del palo, en **radianes**
+  (NB03b), y 45 grados son **0,785** radianes. Usamos `abs` porque puede caer hacia cualquier lado.
+- Devuelve el reloj, `datos.time`.
+
+Nadie empuja el carrito (`ctrl` se queda a 0): queremos ver cuánto tarda en caerse **solo**.
+"""),
+
+code(r"""def tiempo_de_caida(largo):
+    modelo, datos = taller.cargar(palo_xml(largo))
+    taller.poner_angulo(modelo, datos, "bisagra", 5)
+    for paso in range(1000):
+        mujoco.mj_step(modelo, datos)
+        if abs(datos.qpos[1]) > 0.785:
+            break
+    return datos.time
+
+print(f"Palo de 1 m: cae en {tiempo_de_caida(1.0):.2f} s")"""),
+
+md(r"""Y ahora el experimento, con una **tabla alineada** como la del proyecto del apartado 12: cinco largos, del palo de 25 cm al de 4 m.
+"""),
+
+code(r"""print(f"{'largo (m)':>9} | {'cae en (s)':>10}")
+print("-" * 22)
+for largo in [0.25, 0.5, 1.0, 2.0, 4.0]:
+    print(f"{largo:>9.2f} | {tiempo_de_caida(largo):>10.2f}")"""),
+
+md(r"""Mira la columna de la derecha: **0,37 → 0,49 → 0,68 → 0,95 → 1,34 s**. ¡Cuanto **más largo**, **más tarda** en caer! Y hay un patrón:
+cada vez que el largo se **duplica**, el tiempo se multiplica por **1,4** más o menos (0,68 × 1,4 = 0,95; 0,95 × 1,4 = 1,33).
+(Ese 1,4 es la raíz cuadrada de 2; ya verás por qué en la Parte 5, la de física.)
+
+Lo has vivido seguro: equilibrar una **escoba** en la palma de la mano es fácil, pero un **lápiz** es casi imposible. El lápiz cae tan
+deprisa que no te da tiempo a reaccionar. Para un robot pasa igual: **cuanto más alto es el cuerpo que equilibra, más tiempo tiene su
+mente para corregir**. Y lo has descubierto fabricando cinco robots con **una sola f-string**.
+
+Vamos a ver los dos extremos. Primero, el palo corto:
+"""),
+
+code(r"""modelo, datos = taller.cargar(palo_xml(0.25))
+taller.poner_angulo(modelo, datos, "bisagra", 5)
+taller.video(modelo, datos, segundos=1.5, nombre="nb20_palo_corto", seguir=False, distancia=3);"""),
+
+md(r"""Y el palo de 2 metros, con el mismo empujoncito inicial de 5 grados y los mismos 1,5 segundos de vídeo:"""),
+
+code(r"""modelo, datos = taller.cargar(palo_xml(2.0))
+taller.poner_angulo(modelo, datos, "bisagra", 5)
+taller.video(modelo, datos, segundos=1.5, nombre="nb20_palo_largo", seguir=False, distancia=5);"""),
+
+md(r"""El corto se desploma casi al instante; el largo se toma su tiempo. (El palo no choca con nada, ni con el carro ni con el suelo, así
+que cuando cae no se para: sigue girando por debajo del carrito, como un columpio. Para medir solo nos importa el momento en que pasa de 45°.)
+
+### Tus retos
+
+**Reto 1.** En el Paso 3, haz que cada pelota tenga un **color distinto**: que el rojo baje de 1 a 0 a medida que avanza `i` y el azul
+suba de 0 a 1. (Pista: calcula `rojo = 1 - 0.25 * i` y `azul = 0.25 * i` dentro del bucle y pon `rgba="{rojo:.2f} .3 {azul:.2f} 1"`.)
+
+**Reto 2.** Usa la regla del "×1,4" para **predecir** cuánto tardará en caer un palo de **8 metros**. Después compruébalo con
+`tiempo_de_caida(8.0)`.
+
+**Reto 3.** Con `palo_xml(1.0).count("contype")` cuenta cuántas formas del palo tienen apagados los choques. Y con `.replace` fabrica
+una versión del palo **naranja** convertida en **verde**: cambia `"1 .5 .1 1"` por `"0 .8 0 1"`, cárgala y haz una `taller.foto`.
+
+**Reto 4 (para pensar).** ¿Qué crees que pasa si llamas a `palo_xml("largo")` (con el texto `"largo"` en vez de un número) y lo
+cargas? Pruébalo. ¿Quién se queja, Python o MuJoCo?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+trozos = []
+for i in range(5):
+    r = 0.05 + 0.03 * i
+    x = -1 + 0.5 * i
+    rojo = 1 - 0.25 * i
+    azul = 0.25 * i
+    trozos.append(f'    <body name="pelota_{i:02d}" pos="{x:.2f} 0 1.5"><freejoint/>'
+                  f'<geom type="sphere" size="{r:.2f}" rgba="{rojo:.2f} .3 {azul:.2f} 1"/></body>')
+pelotas = "\n".join(trozos)
+```
+
+Después vuelve a ejecutar la celda del `mundo` y la del vídeo. La primera pelota sale roja (`1.00 .3 0.00`) y la última, azul
+(`0.00 .3 1.00`). Los colores en MuJoCo son cuatro números entre 0 y 1: rojo, verde, azul y opacidad.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+Predicción: el de 4 m tardaba 1,34 s; el doble de largo, × 1,4 → unos **1,9 s**. MuJoCo dice **1,89 s**. La regla funciona: has
+encontrado una **ley** de la física fabricando y midiendo robots, que es exactamente para lo que sirve un simulador.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+print(palo_xml(1.0).count("contype"))      # 2: el carro y el palo
+verde = palo_xml(1.0).replace("1 .5 .1 1", "0 .8 0 1")
+modelo, datos = taller.cargar(verde)
+taller.foto(modelo, datos, seguir=False, distancia=5)
+```
+
+Sale **2**. Y recuerda el apartado 3: `replace` **no cambia** el texto de `palo_xml(1.0)`; devuelve uno **nuevo**, que guardamos en `verde`.
+</details>
+
+<details>
+<summary>▶ Solución Reto 4</summary>
+
+**Python no se queja**: una f-string mete en el hueco lo que le des, sea un número o la palabra `largo`, y el plano queda con
+`fromto="0 0 0 0 0 largo"`. Quien se queja es **MuJoCo** al cargarlo, con un `ValueError` que dice, más o menos, que ha encontrado
+un problema leyendo los números de `fromto`. Es una lección importante: para Python el plano es **solo texto**; quien lo entiende (o no)
+es MuJoCo. En el **NB22** aprenderás a leer esos errores de MuJoCo y a atraparlos con `try/except`.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Un plano **MJCF es texto**: lo puedes fabricar, medir y modificar con todo lo que sabes de cadenas.
+- Una **f-string multilínea** es una **plantilla de robot**: los huecos `{radio}`, `{largo}`... se rellenan con variables de Python.
+- Con un bucle, `:02d` y `"\n".join(...)` fabricas **muchas piezas con nombre** de golpe; `modelo.body(3).name` te devuelve el nombre.
+- `modelo.geom_size` guarda los tamaños de las formas: así compruebas que MuJoCo ha entendido tus números.
+- **Experimento real:** un palo de doble largo tarda unas 1,4 veces más en caer. Por eso un cuerpo alto es más fácil de equilibrar.
+
+En la práctica del NB21 usarás **diccionarios** para hacerte un "listín telefónico" del humanoide: de cada nombre de articulación, su
+número, y recorrerás sus piezas y articulaciones una a una.
+"""),
+
+md(r"""## 16 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Hoy has aprendido a manejar texto como un profesional: cortarlo, buscarlo, transformarlo, convertirlo y darle formato, y has parseado un registro de entrenamiento.
+Hoy has aprendido a manejar texto como un profesional: cortarlo, buscarlo, transformarlo, convertirlo y darle formato, has parseado un registro de entrenamiento
+y, en la práctica, has fabricado robots de MuJoCo con f-strings.
 En el **NB21** vamos a por las **colecciones**: las listas a fondo (con una trampa muy famosa que hay que conocer), las **tuplas**, los **conjuntos** y, sobre todo,
 los **diccionarios**, la estructura con la que se guardan todas las configuraciones de un entrenamiento.
 """),

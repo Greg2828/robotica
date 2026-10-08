@@ -11,6 +11,10 @@ con __call__ (objeto que se llama como una función); bucle de episodio con
 objetos (mismos resultados: 44,8 / 296,0 / 499,9); @dataclass para la
 configuración (y field(default_factory=list), la trampa del NB23); todo en
 Python es un objeto (type, isinstance, dir).
+Práctica en MuJoCo (§17): clase Simulacion que envuelve modelo/datos (reiniciar con
+mj_resetData, paso, poner, @property tiempo, foto, video, return self encadenable),
+determinismo tras reiniciar, ControlPD con __call__ que cuenta saturaciones, dos palos
+de escoba MuJoCo a la vez (sin control vs PD) y vídeo.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -634,11 +638,269 @@ Las dataclasses también pueden tener métodos y propiedades: son clases normale
 </details>
 """),
 
-md(r"""## 17 · Posdata
+md(r"""## 17 · 🛠 Práctica en MuJoCo: tu clase `Simulacion`
+
+Desde el NB00 has llevado siempre **dos cajas sueltas**, `modelo` y `datos`, de función en función: `taller.foto(modelo, datos)`,
+`taller.video(modelo, datos, ...)`, `mujoco.mj_step(modelo, datos)`... Es exactamente el problema del apartado 1: **datos sueltos por todas
+partes**, que siempre viajan juntos. La solución también es la de hoy: meterlos en **un objeto**.
+
+Vas a escribir la clase `Simulacion`, que envuelve un modelo y sus datos y sabe **reiniciarse**, **avanzar**, **colocar articulaciones por
+nombre**, **hacerse una foto** y **grabar un vídeo**. Después la usarás para tener **dos** palos de escoba de MuJoCo a la vez, cada uno con su
+propio controlador, y convertirás el controlador en un **objeto que se llama como una función** (`__call__`).
+
+Dos funciones nuevas de MuJoCo que vas a necesitar:
+
+- **`mujoco.mj_resetData(modelo, datos)`**: devuelve los datos al **estado inicial** (reloj a 0, articulaciones en su postura de partida,
+  velocidades a 0). Es el "reset" de MuJoCo.
+- **`mujoco.mj_forward(modelo, datos)`**: recalcula dónde está cada pieza **sin avanzar el tiempo** (lo viste dentro de `taller.cargar` en el NB23).
+"""),
+
+md(r"""### Paso 1 · El molde
+
+Léelo método a método: no hay nada que no hayas visto hoy. El `__init__` carga el robot con `taller.cargar` y guarda **modelo y datos como
+atributos** (apartado 4); `control` empieza vacío (`None`). `tiempo` es una **propiedad** (apartado 9): se lee sin paréntesis y siempre está al día.
+"""),
+
+code(r"""import mujoco
+import numpy as np
+import taller
+
+class Simulacion:
+    def __init__(self, que):
+        self.nombre = que if not que.lstrip().startswith("<") else "plano propio"
+        self.modelo, self.datos = taller.cargar(que)
+        self.control = None                      # función control(modelo, datos), o None
+
+    def reiniciar(self):
+        mujoco.mj_resetData(self.modelo, self.datos)
+        mujoco.mj_forward(self.modelo, self.datos)
+        return self
+
+    def paso(self, n=1):
+        for _ in range(n):
+            if self.control is not None:
+                self.control(self.modelo, self.datos)
+            mujoco.mj_step(self.modelo, self.datos)
+        return self
+
+    def poner(self, articulacion, grados):
+        taller.poner_angulo(self.modelo, self.datos, articulacion, grados)
+        return self
+
+    @property
+    def tiempo(self):
+        return self.datos.time
+
+    def foto(self, **opciones):
+        taller.foto(self.modelo, self.datos, **opciones)
+
+    def video(self, segundos, nombre, **opciones):
+        taller.video(self.modelo, self.datos, segundos, control=self.control, nombre=nombre, **opciones)
+
+    def __repr__(self):
+        return (f"Simulacion({self.nombre!r}, t={self.tiempo:.2f} s, "
+                f"{self.modelo.njnt} articulaciones, {self.modelo.nu} motores)")"""),
+
+md(r"""Tres detalles:
+
+- `paso`, `poner` y `reiniciar` terminan con **`return self`**: devuelven el propio objeto. Así se pueden **encadenar**:
+  `sim.reiniciar().poner("bisagra", 5).paso(10)`, igual que encadenabas métodos de cadenas en el NB20.
+- `foto` y `video` reciben `**opciones` (NB23) y se las pasan a `taller`: así no hace falta repetir aquí todos sus parámetros.
+- `__repr__` (apartado 7) nos enseñará el estado de un vistazo.
+"""),
+
+md(r"""### Paso 2 · Una galleta: el humanoide
+
+Creamos un objeto y lo miramos:
+"""),
+
+code(r"""humano = Simulacion("humanoide")
+print(humano)
+humano.paso(100)
+print(humano)"""),
+
+md(r"""Cien pasos de 0,003 s: el reloj marca 0,30 s. Ya no hay que acordarse de pasar `modelo` y `datos` a nadie: el objeto los lleva dentro.
+Y para volver a empezar, `reiniciar`:
+"""),
+
+code(r"""altura_antes = humano.datos.qpos[2]
+humano.reiniciar()
+print(humano)
+print(f"Altura del torso: {altura_antes:.3f} m -> tras reiniciar: {humano.datos.qpos[2]:.3f} m")"""),
+
+md(r"""El reloj vuelve a 0 y el torso a su altura de partida, 1,40 m. `mj_resetData` es mucho más barato que volver a cargar el plano, que obliga a
+MuJoCo a leer y "compilar" el XML otra vez: por eso los entornos de Gymnasium reinician así entre episodio y episodio.
+"""),
+
+md(r"""### Paso 3 · ¿Reiniciar deja todo igual? El determinismo
+
+Una propiedad muy importante de MuJoCo: con los mismos datos de partida y las mismas órdenes, **da exactamente el mismo resultado**, número por
+número. Comprobémoslo con un encadenado: reiniciar, simular 1 segundo, guardar la altura; y otra vez.
+"""),
+
+code(r"""a = humano.reiniciar().paso(333).datos.qpos[2]
+b = humano.reiniciar().paso(333).datos.qpos[2]
+print(a, b, "¿idénticos?", a == b)"""),
+
+md(r"""**Idénticos**, hasta el último decimal (no "parecidos": iguales). Eso se llama **determinismo**, y es la razón por la que un experimento en
+MuJoCo se puede **repetir**: si algo sale raro, lo reproduces y lo estudias. (En el NB27 convertirás esta comprobación en un **test**.)
+"""),
+
+md(r"""### Paso 4 · El controlador como objeto: `__call__`
+
+En el NB23 fabricaste controladores con un cierre, `crear_pd(k, d)`. Ahora, con la idea del apartado 11: una **clase** con `__call__`. El
+objeto se podrá pasar como `control`, porque se **llama** igual que una función, `control(modelo, datos)`. Y, a diferencia del cierre,
+sus números quedan **a la vista** (`pd.k`) y puede **llevar la cuenta** de cosas: aquí, cuántas veces ha empujado al máximo.
+"""),
+
+code(r"""class ControlPD:
+    def __init__(self, k, d):
+        self.k = k
+        self.d = d
+        self.saturado = 0                       # veces que pidió más de lo que da el motor
+
+    def __call__(self, modelo, datos):
+        x, angulo = datos.qpos
+        vx, vel_angulo = datos.qvel
+        empuje = self.k * angulo + self.d * vel_angulo + 0.1 * x + 0.2 * vx
+        if abs(empuje) > 1:
+            self.saturado += 1
+        datos.ctrl[0] = np.clip(empuje, -1, 1)
+
+    def __repr__(self):
+        return f"ControlPD(k={self.k}, d={self.d}, saturado={self.saturado})"
+
+pd = ControlPD(3, 0.8)
+print(pd)"""),
+
+md(r"""### Paso 5 · Dos palos de escoba a la vez
+
+Ahora el apartado 6 (**cada objeto, sus propios datos**) con MuJoCo. Dos simulaciones del palo de escoba, las dos con el palo inclinado 5°:
+una **sin** controlador y otra con el `ControlPD`. Las avanzamos **en el mismo bucle**, de 0,1 en 0,1 segundos (10 pasos de 0,01 s), y
+miramos el ángulo de cada palo (`qpos[1]`) en grados:
+"""),
+
+code(r"""solo = Simulacion("palo_escoba").poner("bisagra", 5)
+con_pd = Simulacion("palo_escoba").poner("bisagra", 5)
+con_pd.control = pd
+
+print(" tiempo |  sin control | con ControlPD")
+for _ in range(8):
+    solo.paso(10)
+    con_pd.paso(10)
+    print(f"{con_pd.tiempo:6.1f}  | {np.degrees(solo.datos.qpos[1]):10.1f}° | {np.degrees(con_pd.datos.qpos[1]):10.1f}°")
+print(pd)"""),
+
+md(r"""Dos mundos de MuJoCo independientes, cada uno con su modelo, sus datos y su reloj, avanzando lado a lado. El palo sin control pasa de 5° a
+**72°** en 0,8 segundos (y luego sigue girando hasta colgar por debajo del carro); el del `ControlPD` se endereza hasta **0°** en 0,6 s (y se
+pasa un pelín, a −1°, que irá corrigiendo). Y el controlador ha **llevado la cuenta**: `saturado=0`, ni una sola vez ha necesitado más fuerza
+de la que da el motor. Con 5° le sobra.
+
+Una foto de cada uno, en el mismo instante:
+"""),
+
+code(r"""solo.foto(seguir=False, distancia=4, titulo=f"Sin control, t = {solo.tiempo:.1f} s")
+con_pd.foto(seguir=False, distancia=4, titulo=f"Con ControlPD, t = {con_pd.tiempo:.1f} s")"""),
+
+md(r"""### Paso 6 · Un vídeo, con el objeto
+
+Y por último, el vídeo del palo con el controlador, reiniciado e inclinado ahora **20°** (cuatro veces más), todo encadenado. Creamos un
+`ControlPD` **nuevo** para que su cuenta empiece en cero:
+"""),
+
+code(r"""pd10 = ControlPD(3, 0.8)
+con_pd.control = pd10
+con_pd.reiniciar().poner("bisagra", 20)
+con_pd.video(5, "nb24_palo_objeto", seguir=False, distancia=4)
+print(con_pd)
+print(pd10)"""),
+
+md(r"""Con 20° de partida, el carro tiene que hacer una carrera brusca para meterse debajo del palo, pero lo consigue y se queda quieto con el
+palo de pie. Esta vez el contador dice `saturado=2`: en dos pasos el controlador pidió más de lo que el motor puede dar. Vamos **al límite**
+(en el Reto 3 verás qué pasa un poco más allá). Fíjate en lo que **no** has tenido que escribir: ni una vez `modelo, datos`.
+
+### Tus retos
+
+**Reto 1.** Añade a `Simulacion` una **propiedad** `angulos` que devuelva un **diccionario** articulación → ángulo en grados, para todas las
+articulaciones con bisagra (NB21: `self.modelo.joint(i).name`, `self.datos.joint(nombre).qpos[0]`; las bisagras tienen
+`self.modelo.jnt_type[i] == mujoco.mjtJoint.mjJNT_HINGE`). Pruébala con el palo de escoba.
+
+**Reto 2.** Con dos objetos `Simulacion("humanoide")`, comprueba que son **independientes**: avanza uno 300 pasos y el otro no, y mira el reloj
+de cada uno. ¿Qué pasaría si escribieras `otro = humano` en vez de `otro = Simulacion("humanoide")`? (Piensa en los alias del NB21.)
+
+**Reto 3.** Busca, con un bucle, el **ángulo inicial más grande** (de 5 en 5 grados, hasta 40) del que `ControlPD(3, 0.8)` consigue recuperar el
+palo (que a los 5 s esté a menos de 5° de la vertical).
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+class Simulacion2(Simulacion):          # (truco del NB25: "copia Simulacion y añade esto")
+    @property
+    def angulos(self):
+        resultado = {}
+        for i in range(self.modelo.njnt):
+            if self.modelo.jnt_type[i] == mujoco.mjtJoint.mjJNT_HINGE:
+                nombre = self.modelo.joint(i).name
+                resultado[nombre] = np.degrees(self.datos.joint(nombre).qpos[0])
+        return resultado
+
+print(Simulacion2("palo_escoba").poner("bisagra", 5).angulos)     # {'bisagra': 5.0}
+```
+
+También puedes, sencillamente, añadir el método dentro de la clase `Simulacion` y volver a ejecutar su celda. El carro (`deslizar`) no sale porque
+es una articulación **deslizante** (mide metros, no grados).
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+humano = Simulacion("humanoide")
+otro = Simulacion("humanoide")
+humano.paso(300)
+print(humano.tiempo, otro.tiempo)       # 0.9 y 0.0
+```
+
+Cada objeto tiene sus propios datos. Con `otro = humano` **no** habría dos simulaciones: habría **dos nombres para la misma** (un alias, NB21), y
+al avanzar una "avanzaría la otra", porque son la misma.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+sim = Simulacion("palo_escoba")
+for grados in range(5, 41, 5):
+    sim.control = ControlPD(3, 0.8)
+    sim.reiniciar().poner("bisagra", grados).paso(500)
+    final = abs(np.degrees(sim.datos.qpos[1]))
+    print(f"{grados:>2}° -> a los 5 s: {final:6.1f}°")
+```
+
+Recupera el palo hasta **20°** (acaba a 0,5°); desde **25°** ya no puede (a los 5 s el palo ha dado media vuelta). Si imprimes el controlador,
+con 25° verás `saturado=376`: el motor, limitado a ±1, pasa casi todo el rato al máximo, y el carro acaba estrellado contra el tope del raíl
+(`qpos[0]` = 1,8 m). Llega un momento en que el palo cae más deprisa de lo que el carrito puede correr para meterse debajo.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- `modelo` y `datos` viajan siempre juntos: una clase que los **envuelva** simplifica todo tu código.
+- **`mujoco.mj_resetData(modelo, datos)`** reinicia la simulación (reloj a 0, postura inicial) sin recargar el plano; con **`mj_forward`** se
+  recalculan las posiciones.
+- MuJoCo es **determinista**: mismo punto de partida + mismas órdenes = el mismo resultado, número por número.
+- Puedes tener **varias simulaciones a la vez**, cada una con sus datos y su reloj.
+- Un controlador puede ser **un objeto con `__call__`**: MuJoCo (y `taller`) solo necesitan algo que se pueda llamar como `control(modelo, datos)`.
+
+En la práctica del NB25 darás el salto final: tu palo de escoba de MuJoCo se convertirá en un **entorno oficial de Gymnasium**, heredando de
+`gym.Env`, con su `reset`, su `step` y sus espacios de observación y de acción.
+"""),
+
+md(r"""## 18 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Hoy has aprendido a construir tus propios objetos, y has convertido el palo de escoba en un entorno con la misma forma que los de Gymnasium. En el **NB25** veremos la otra mitad de
+Hoy has aprendido a construir tus propios objetos, has convertido el palo de escoba en un entorno con la misma forma que los de Gymnasium y has envuelto MuJoCo en tu clase `Simulacion`. En el **NB25** veremos la otra mitad de
 las clases: la **herencia** (una clase que "hereda" todo de otra y cambia solo lo que necesita, que es como se construyen **todos** los entornos de Gymnasium y **todas** las redes
 de PyTorch), más métodos especiales para que tus objetos se sumen o se midan con `len`. Y el gran final: convertiremos el palo de escoba en un **entorno oficial de Gymnasium**,
 que pasará el verificador de Gymnasium y se podrá crear con `gym.make`, igual que el humanoide.

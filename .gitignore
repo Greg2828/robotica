@@ -25,3 +25,7 @@ trabajo_nb35/err_*.txt
 
 # Vídeos de las prácticas de MuJoCo (se regeneran al ejecutar; ya van incrustados en el notebook)
 notebooks/assets/practicas/
+
+# Log de errores de MuJoCo
+MUJOCO_LOG.TXT
+notebooks/MUJOCO_LOG.TXT

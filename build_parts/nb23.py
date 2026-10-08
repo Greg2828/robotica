@@ -9,6 +9,10 @@ cajas globales del NB11) evaluada en el palo de escoba; decoradores (@cronometro
 functools.wraps); recursión (mostrar una configuración anidada); iteradores
 (iter/next, StopIteration real) y generadores (yield, lotes de datos, expresión
 generadora y memoria con sys.getsizeof); docstrings (help) y anotaciones de tipo.
+Práctica en MuJoCo (§17): abrir taller.py (help + inspect.getsource), mi_cargar con
+docstring/tipos/**opciones, generador de pasos (yield), al_azar es un cierre ->
+fábrica crear_pd para el palo de escoba MuJoCo, mi_video con Renderer + @cronometro.
+taller.py NO se modifica.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -624,11 +628,343 @@ esto es justo lo que hacen los **objetos** de las clases.
 </details>
 """),
 
-md(r"""## 18 · Posdata
+md(r"""## 17 · 🛠 Práctica en MuJoCo: abre la caja negra (`taller.py`)
+
+Desde el NB00 has usado `taller.cargar`, `taller.video`, `taller.al_azar`... como una **caja negra**: las llamabas y funcionaban, sin saber
+qué hacían por dentro. Hoy, con todo lo que sabes de funciones, toca **abrir la caja**. Vas a:
+
+1. Leer la "ficha" (docstring) y el **código** de las funciones de `taller` sin salir del cuaderno.
+2. Escribir **tu propia versión** de `cargar`, con docstring, anotaciones de tipo y `**opciones`.
+3. Convertir el bucle de simulación en un **generador** (`yield`).
+4. Descubrir que `taller.al_azar` es un **cierre**, y fabricar con la misma idea **controladores** para el palo de escoba.
+5. Escribir tu propio `video`, cronometrado con un **decorador**.
+
+Una regla importante: **no vamos a modificar `taller.py`** (otras prácticas lo usan tal cual). Tu versión vive aquí, en el cuaderno, con
+nombres que empiezan por `mi_`.
+"""),
+
+md(r"""### Paso 1 · ¿Dónde está la caja y qué dice su ficha?
+
+Un módulo de Python es un fichero `.py`, y `__file__` dice **dónde** está. Y como las funciones de `taller` tienen **docstring** (apartado 15),
+`help` las explica:
+"""),
+
+code(r"""import taller
+
+print(taller.__file__)
+help(taller.cargar)"""),
+
+md(r"""Exactamente la ficha que escribirías tú: qué devuelve, `(modelo, datos)`, y los **tres casos** que acepta: un nombre conocido, un texto que
+empieza por `<` o la ruta de un fichero.
+
+### Paso 2 · Leer el código de verdad
+
+El módulo `inspect` ("inspeccionar") de Python puede enseñarte el **código fuente** de cualquier función escrita en Python. Leamos `cargar`:
+"""),
+
+code(r"""import inspect
+
+print(inspect.getsource(taller.cargar))"""),
+
+md(r"""Léelo despacio; ya entiendes **cada línea**:
+
+- `def cargar(nombre_o_xml: str):` → un parámetro con **anotación de tipo** (apartado 15): espera un texto.
+- `if nombre_o_xml in _MODELOS:` → `_MODELOS` es un **diccionario** nombre → fichero (NB21). Si el nombre está, busca su fichero y lo carga
+  con `mujoco.MjModel.from_xml_path` ("desde la ruta de un XML").
+- `elif nombre_o_xml.lstrip().startswith("<"):` → métodos de cadena del NB20: quita espacios de la izquierda y mira si empieza por `<`. Si sí,
+  es un plano escrito a mano: `from_xml_string`.
+- `else:` → si no, lo trata como la ruta de un fichero.
+- `datos = mujoco.MjData(modelo)` y `mujoco.mj_forward(modelo, datos)` → crea los datos y calcula dónde está cada pieza **sin avanzar el
+  tiempo** (por eso las fotos salen bien antes de simular).
+- `return modelo, datos` → devuelve una **tupla** (NB21), que tú desempaquetas con `modelo, datos = taller.cargar(...)`.
+
+(¿Y el guion bajo de `_MODELOS`? Es una **costumbre**: un nombre que empieza por `_` significa "esto es de uso interno del módulo; no lo
+toques desde fuera". Python no lo prohíbe, pero es de buena educación respetarlo.)
+"""),
+
+md(r"""### Paso 3 · Tu propio `cargar`
+
+Ahora, tu versión. Hará lo mismo para dos robots, y algo **más**: aceptará `**opciones` (apartado 5) para cambiar el **paso de tiempo** y la
+**gravedad** al cargar. Así, `mi_cargar("humanoide", gravedad=-1.62)` te da el humanoide en la Luna en una sola línea.
+
+Primero, el diccionario de robots. El humanoide vive dentro de la biblioteca Gymnasium; `os.path.join` pega trozos de una ruta de carpetas
+(lo verás a fondo en el NB26):
+"""),
+
+code(r"""import os
+import gymnasium
+import mujoco
+
+CARPETA_GYM = os.path.join(os.path.dirname(gymnasium.__file__), "envs", "mujoco", "assets")
+MIS_MODELOS = {
+    "humanoide": os.path.join(CARPETA_GYM, "humanoid.xml"),
+    "palo_escoba": os.path.join("robots", "palo_escoba.xml"),
+}
+print(MIS_MODELOS["palo_escoba"])"""),
+
+md(r"""Y la función, con su docstring y sus anotaciones. Fíjate en el tipo que devuelve: `tuple[mujoco.MjModel, mujoco.MjData]`, una tupla con
+un modelo y unos datos.
+"""),
+
+code(r"""def mi_cargar(que: str, **opciones) -> tuple[mujoco.MjModel, mujoco.MjData]:
+    '''Carga un robot y devuelve (modelo, datos).
+
+    que: un nombre de MIS_MODELOS o un plano MJCF escrito como texto.
+    opciones: paso=... (segundos) y/o gravedad=... (m/s², negativa = hacia abajo).
+    '''
+    if que in MIS_MODELOS:
+        modelo = mujoco.MjModel.from_xml_path(MIS_MODELOS[que])
+    else:
+        modelo = mujoco.MjModel.from_xml_string(que)
+    if "paso" in opciones:
+        modelo.opt.timestep = opciones["paso"]
+    if "gravedad" in opciones:
+        modelo.opt.gravity[2] = opciones["gravedad"]
+    datos = mujoco.MjData(modelo)
+    mujoco.mj_forward(modelo, datos)
+    return modelo, datos"""),
+
+md(r"""Probémosla con y sin opciones:"""),
+
+code(r"""modelo, datos = mi_cargar("palo_escoba")
+print("Palo de escoba:", modelo.nu, "motor, paso", modelo.opt.timestep, "s")
+
+modelo, datos = mi_cargar("humanoide", gravedad=-1.62, paso=0.005)
+print("Humanoide:     ", modelo.nu, "motores, paso", modelo.opt.timestep, "s, gravedad", modelo.opt.gravity)"""),
+
+md(r"""### Paso 4 · El bucle de simulación como generador
+
+En todas las prácticas repetimos el mismo bucle: "aplica el control, da un paso, mira". Vamos a escribirlo **una vez**, como un **generador**
+(apartado 14): en cada paso hace su trabajo y **entrega** (`yield`) los datos, pausándose hasta que le pidan el siguiente. Quien lo usa decide
+qué hacer con cada paso, sin repetir el bucle. El parámetro `control=None` (apartado 1) permite simular sin controlador:
+"""),
+
+code(r"""def pasos(modelo, datos, segundos, control=None):
+    '''Simula `segundos` y entrega los datos después de cada paso.'''
+    for _ in range(round(segundos / modelo.opt.timestep)):
+        if control is not None:
+            control(modelo, datos)
+        mujoco.mj_step(modelo, datos)
+        yield datos"""),
+
+md(r"""(El `_` como nombre de la variable del `for` es otra costumbre: "esta variable no la voy a usar".)
+
+Ahora, la magia. Con una **comprensión** sobre el generador registramos la altura del torso del humanoide (en `qpos[2]`, NB21) durante 1 segundo
+de caída, en **una** línea:
+"""),
+
+code(r"""modelo, datos = mi_cargar("humanoide")
+alturas = [d.qpos[2] for d in pasos(modelo, datos, 1.0)]
+
+print(len(alturas), "pasos")
+print(f"Altura al principio: {alturas[0]:.2f} m  |  la más baja: {min(alturas):.2f} m")"""),
+
+md(r"""333 pasos de 0,003 s y el torso ha bajado de 1,40 m a menos de 30 cm: se ha desplomado (NB00). El generador ha simulado y la comprensión ha
+recogido; cada uno hace **una** cosa.
+
+### Paso 5 · `al_azar` era un cierre
+
+Ahora mira el código de `taller.al_azar`, el que mueve los motores al azar desde el NB00:
+"""),
+
+code(r"""print(inspect.getsource(taller.al_azar))"""),
+
+md(r"""¡Es una **fábrica de funciones**, un **cierre** (apartado 10)! `al_azar(semilla)` crea un generador de números aleatorios, `azar`, y fabrica
+una función `control` que lo **recuerda**. Por eso pasabas `control=taller.al_azar(0)`: estabas pasando la función fabricada.
+
+Con la misma idea, fabriquemos **controladores** para el palo de escoba de MuJoCo. El palo tiene dos articulaciones (`qpos` = posición del
+carro y ángulo del palo; `qvel` = sus velocidades). Un buen controlador empuja el carro **hacia donde se cae** el palo: tanto más cuanto más
+inclinado (`k`) y cuanto más deprisa cae (`d`), igual que tus ruedecillas del NB11. Le añadimos dos términos pequeños fijos (0,1 y 0,2) para que
+el carro no se escape del raíl, y recortamos a ±1, el rango del motor:
+"""),
+
+code(r"""import numpy as np
+
+def crear_pd(k, d):
+    def control(modelo, datos):
+        x, angulo = datos.qpos               # desempaquetar (NB21)
+        vx, vel_angulo = datos.qvel
+        empuje = k * angulo + d * vel_angulo + 0.1 * x + 0.2 * vx
+        datos.ctrl[0] = np.clip(empuje, -1, 1)
+    return control"""),
+
+md(r"""Y una función que mide cuánto aguanta un controlador, usando el generador: inclinamos el palo 5 grados y recorremos los pasos de 10 segundos.
+Si en algún paso el palo pasa de 45° (0,785 rad), devolvemos el reloj con `return` (que también sale del `for`). Si llega al final, aguantó
+los 10 segundos:
+"""),
+
+code(r"""def aguanta(control, segundos=10):
+    modelo, datos = mi_cargar("palo_escoba")
+    datos.qpos[1] = np.radians(5)
+    for d in pasos(modelo, datos, segundos, control):
+        if abs(d.qpos[1]) > 0.785:
+            return d.time
+    return segundos
+
+print(f"sin controlador: aguanta {aguanta(None):.2f} s")
+for k, d in [(3, 0), (1, 0.8), (3, 0.8)]:
+    print(f"k={k}, d={d}: aguanta {aguanta(crear_pd(k, d)):.2f} s")"""),
+
+md(r"""- Sin controlador (`control=None`), cae en **0,68 s**.
+- Solo con inclinación (`k=3, d=0`), aguanta **1,5 s**: empuja, pero se pasa de frenada y el palo oscila cada vez más (el mismo fallo del NB11).
+- Con poca fuerza (`k=1`), aunque frene bien, aguanta **3,22 s**: no empuja lo bastante.
+- Con **`k=3, d=0,8`**, aguanta los **10 segundos** enteros.
+
+Cuatro controladores fabricados con la **misma** fábrica, cada uno recordando sus números.
+"""),
+
+md(r"""### Paso 6 · Tu propio `video`, con cronómetro
+
+Ahora lee el código de `taller.video` (es más largo; tómate tu tiempo):
+"""),
+
+code(r"""print(inspect.getsource(taller.video))"""),
+
+md(r"""Su receta: (1) calcular cuántos pasos dar y **cada cuántos** pasos hacer una foto (para sacar unas 30 fotos por segundo de vídeo); (2) crear un
+**dibujante** (`mujoco.Renderer`) y una **cámara**; (3) en el bucle, simular y, de vez en cuando, hacer una foto; (4) guardar las fotos como MP4
+con `imageio.mimsave` y enseñarlo con `display(Video(...))`.
+
+Tu versión hará lo mismo, pero usando **tu generador** para el bucle y con el **decorador cronómetro** del apartado 11 encima. Primero, el
+decorador (copiado tal cual del apartado 11):
+"""),
+
+code(r"""import time
+import functools
+
+def cronometro(funcion):
+    @functools.wraps(funcion)
+    def envuelta(*args, **kwargs):
+        inicio = time.perf_counter()
+        resultado = funcion(*args, **kwargs)
+        print(f"[{funcion.__name__} tardó {time.perf_counter() - inicio:.1f} s]")
+        return resultado
+    return envuelta"""),
+
+md(r"""Y `mi_video`. La cámara es "libre" (`mjv_defaultFreeCamera` la coloca mirando al centro del robot) y la giramos para mirar de lado
+(`azimuth=90`) y un poco desde arriba (`elevation=-15`), como hace `taller`. Las fotos se guardan en la misma carpeta que las de `taller`:
+"""),
+
+code(r"""import imageio
+from IPython.display import Video, display
+
+@cronometro
+def mi_video(modelo, datos, segundos, control=None, nombre="mi_video", distancia=4.0):
+    '''Simula `segundos`, guarda un MP4 de unas 30 fotos por segundo y lo enseña.'''
+    cada = max(1, round(1 / (30 * modelo.opt.timestep)))      # una foto cada `cada` pasos
+    camara = mujoco.MjvCamera()
+    mujoco.mjv_defaultFreeCamera(modelo, camara)
+    camara.distance, camara.azimuth, camara.elevation = distancia, 90, -15
+    fotos = []
+    with mujoco.Renderer(modelo, 270, 360) as dibujante:
+        for i, d in enumerate(pasos(modelo, datos, segundos, control)):
+            if i % cada == 0:
+                dibujante.update_scene(d, camera=camara)
+                fotos.append(dibujante.render())
+    ruta = os.path.join("assets", "practicas", f"{nombre}.mp4")
+    imageio.mimsave(ruta, fotos, fps=1 / (cada * modelo.opt.timestep), macro_block_size=1)
+    display(Video(ruta, embed=True, html_attributes="controls loop autoplay muted"))
+    return len(fotos)"""),
+
+md(r"""(`with ... as dibujante:` abre el dibujante y lo **cierra solo** al terminar el bloque, aunque haya un error; es como un `try/finally` del
+NB22 ya hecho. Lo verás a fondo con los ficheros, en el NB26. Y `i % cada == 0` es el truco del NB21: verdadero cada `cada` pasos.)
+
+¡A probarlo! El palo de escoba con tu mejor controlador, 4 segundos. (Si al ejecutarlo aparece alguna línea rara como *"Couldn't open plugin directory"*, es un aviso inofensivo de la parte gráfica. `taller`
+los tapa con un truco, `_dibujante`, que puedes leer con `inspect` si tienes curiosidad.)
+"""),
+
+code(r"""modelo, datos = mi_cargar("palo_escoba")
+datos.qpos[1] = np.radians(5)
+mi_video(modelo, datos, 4, control=crear_pd(3, 0.8), nombre="nb23_palo_pd")"""),
+
+md(r"""El carrito corrige con un par de vaivenes y el palo se queda **de pie**. Y el decorador te ha dicho cuánto ha tardado en fabricar el vídeo,
+sin tocar el código de `mi_video`. Ahora el controlador que solo mira la inclinación (`k=3, d=0`), para ver el fallo:
+"""),
+
+code(r"""modelo, datos = mi_cargar("palo_escoba")
+datos.qpos[1] = np.radians(5)
+mi_video(modelo, datos, 2, control=crear_pd(3, 0), nombre="nb23_palo_sin_d")"""),
+
+md(r"""Cada vaivén es más grande que el anterior, hasta que el palo cae: le falta el término de la **velocidad** (`d`), que es el que frena.
+
+### Tus retos
+
+**Reto 1.** Usa `mi_cargar` con `**` (apartado 6): guarda las opciones en un diccionario `luna = {"gravedad": -1.62}` y carga el palo de escoba
+con `mi_cargar("palo_escoba", **luna)`. ¿Cuánto tarda en caer **sin controlador** en la Luna? (Pista: `aguanta` usa `mi_cargar` sin opciones;
+copia sus líneas y añade el `**luna`.)
+
+**Reto 2.** Un controlador no tiene por qué fabricarse con `def`: escribe uno con **`lambda`** (apartado 9) que empuje siempre al máximo,
+`lambda modelo, datos: datos.ctrl.fill(1)`, y pásalo a `aguanta`. ¿Aguanta más o menos que sin controlador? ¿Por qué?
+
+**Reto 3.** Escribe un generador `hasta_caer(modelo, datos, control)` que entregue los datos paso a paso **solo mientras** el palo no pase
+de 45°, y que se pare solo (un `return` dentro de un generador lo termina). Úsalo para contar los pasos que aguanta `crear_pd(1, 0.8)`.
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+luna = {"gravedad": -1.62}
+modelo, datos = mi_cargar("palo_escoba", **luna)
+datos.qpos[1] = np.radians(5)
+for d in pasos(modelo, datos, 10):
+    if abs(d.qpos[1]) > 0.785:
+        break
+print(f"En la Luna cae en {d.time:.2f} s")
+```
+
+Cae en **1,69 s**, frente a 0,68 s en la Tierra: unas 2,5 veces más despacio. (La gravedad es 6 veces más débil y el tiempo crece con su raíz
+cuadrada, √6 ≈ 2,45: otra raíz cuadrada, como la de los palos largos del NB20.) En la Luna, equilibrar es más fácil.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+print(aguanta(lambda modelo, datos: datos.ctrl.fill(1)))
+```
+
+Cae en **0,37 s**, mucho **antes** que sin controlador (0,68 s). Empujar el carro hacia +x sin mirar hace que el palo se vaya hacia atrás
+(como cuando arrancas un autobús de golpe y te vas hacia atrás) y, si estaba cayendo hacia el otro lado, lo empeora. Un controlador que no
+**mira** no es un controlador. (`fill(1)` es un método de los arrays de NumPy que pone todos sus números a 1.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+def hasta_caer(modelo, datos, control):
+    for d in pasos(modelo, datos, 10, control):
+        if abs(d.qpos[1]) > 0.785:
+            return              # termina el generador
+        yield d
+
+modelo, datos = mi_cargar("palo_escoba")
+datos.qpos[1] = np.radians(5)
+print(sum(1 for _ in hasta_caer(modelo, datos, crear_pd(1, 0.8))), "pasos")
+```
+
+Unos **321 pasos** (3,22 s con pasos de 0,01 s). Fíjate: un generador puede usar **otro** generador por dentro. `sum(1 for _ in ...)` es una
+expresión generadora que cuenta cuántos elementos entrega.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- `taller` no tiene magia: `cargar` = `MjModel.from_xml_path` / `from_xml_string` + `MjData` + **`mj_forward`** (colocar las piezas sin avanzar
+  el tiempo).
+- `video` = un bucle de `mj_step` + un **`mujoco.Renderer`** (`update_scene` y `render` dan una foto como array) + una **`MjvCamera`** +
+  `imageio` para el MP4.
+- Puedes cambiar el paso y la gravedad de un modelo ya cargado: `modelo.opt.timestep`, `modelo.opt.gravity`.
+- Un **generador** de pasos separa "simular" de "qué hago con cada paso"; un **cierre** fabrica controladores que recuerdan sus parámetros.
+- En el palo de escoba de MuJoCo, el controlador `crear_pd(3, 0.8)` lo sostiene 10 s; sin el término de velocidad (`d=0`) cae a los 1,5 s.
+
+En la práctica del NB24 meterás `modelo`, `datos` y estas funciones dentro de **una sola cosa**: una **clase** `Simulacion`, con sus propios
+`reiniciar`, `paso` y `foto`.
+"""),
+
+md(r"""## 19 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Hoy has visto todo lo que pueden hacer las funciones: configurarse, combinarse, fabricarse, envolverse y producir datos de uno en uno. En el **NB24** llega la gran herramienta
+Hoy has visto todo lo que pueden hacer las funciones: configurarse, combinarse, fabricarse, envolverse y producir datos de uno en uno, y has abierto la caja negra de `taller.py`. En el **NB24** llega la gran herramienta
 para organizar programas grandes, y la base de **todo** Gymnasium y PyTorch: las **clases** y los **objetos**. Convertiremos el palo de escoba en un objeto con su propio
 `reset` y su propio `step`... como los entornos de verdad.
 """),

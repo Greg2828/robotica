@@ -10,6 +10,10 @@ explosión numérica (NaN/infinito, math.isfinite) y parar con un mensaje claro.
 Depurar: método (reproducir, leer, aislar, comprobar suposiciones), print con
 f"{x=}", %debug / breakpoint() / pdb (explicado), catálogo de bugs típicos y un
 ejercicio de "encuentra los fallos".
+Práctica en MuJoCo (§13): planos rotos -> ValueError (catálogo de erratas con
+try/except/else); palo con muelle rígido que explota con paso grande (x-20 por
+paso) y el reinicio silencioso de MuJoCo; vigilante con datos.warning +
+while con límite de seguridad; humanoide con paso 0,02 (vídeo + contar explosiones).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -661,11 +665,317 @@ devolver `None`.)
 </details>
 """),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: rompe MuJoCo a propósito (y atrapa sus errores)
+
+Hasta ahora, en todas las prácticas MuJoCo ha funcionado a la primera. En la vida real no es así: escribirás planos con erratas, elegirás
+pasos de tiempo demasiado grandes y verás simulaciones que **explotan**. Hoy vas a provocar todo eso **a propósito**, en un sitio seguro,
+para reconocerlo cuando te pase de verdad.
+
+Hay dos familias de errores en MuJoCo, y se comportan de forma muy distinta:
+
+1. **Errores al cargar** (un plano mal escrito): MuJoCo **se queja en voz alta** con una excepción. Fácil: lo has aprendido hoy.
+2. **Errores al simular** (la física se vuelve loca): MuJoCo **no lanza ninguna excepción**. Lo arregla "a su manera" y sigue como si nada.
+   Este es el peligroso, y tendrás que construirte un **vigilante** como el del apartado 8.
+"""),
+
+md(r"""### Paso 1 · Un plano con una errata
+
+Este plano de una pelota tiene un fallo típico: se abre `<body>` y **nunca se cierra** (falta `</body>`). Intentamos cargarlo directamente
+con MuJoCo:
+"""),
+
+code(r"""import mujoco
+import numpy as np
+import taller
+
+ROTO = '''
+<mujoco>
+  <worldbody>
+    <body name="pelota" pos="0 0 1">
+      <freejoint/>
+      <geom type="sphere" size="0.1"/>
+  </worldbody>
+</mujoco>
+'''"""),
+
+code_err(r"""modelo = mujoco.MjModel.from_xml_string(ROTO)"""),
+
+md(r"""Lee la traza **de abajo arriba** (apartado 5). La última línea es la importante: **`ValueError: XML parse error 14`** y, debajo,
+`XML_ERROR_MISMATCHED_ELEMENT ... XMLElement name=body`: "error leyendo el XML: **elemento que no casa**, el `body`". Es decir: has abierto
+un `body` y lo que viene después no encaja. MuJoCo te dice incluso el **tipo** de excepción: un `ValueError`, el mismo que `float("hola")`
+(NB20): "el tipo está bien (es texto), pero el valor no tiene sentido".
+"""),
+
+md(r"""### Paso 2 · Atrapar el error con `try` / `except`
+
+Como sabemos qué excepción lanza MuJoCo, podemos **capturarla** (apartado 6), avisar con un mensaje claro y seguir. Usamos `as e` para
+leer el mensaje, y nos quedamos solo con su **primera línea** con `split` (NB20):
+"""),
+
+code(r"""try:
+    modelo = mujoco.MjModel.from_xml_string(ROTO)
+except ValueError as e:
+    print("MuJoCo no ha podido leer el plano.")
+    print("Motivo:", str(e).split("\n")[0])"""),
+
+md(r"""Ahora, un **catálogo de erratas**. Un diccionario (NB21) con cuatro planos rotos de cuatro formas distintas, y un bucle que intenta cargar
+cada uno. El `else` del `try` se ejecuta solo si **no** hubo error. Fíjate en que las erratas 2, 3 y 4 son **una sola palabra** mal escrita:
+"""),
+
+code(r"""erratas = {
+    "sin cerrar":         ROTO,
+    "etiqueta mal":       '<mujoco><worldbody><bodi/></worldbody></mujoco>',
+    "número en letras":   '<mujoco><worldbody><geom type="sphere" size="dos"/></worldbody></mujoco>',
+    "forma inventada":    '<mujoco><worldbody><geom type="esfera" size="1"/></worldbody></mujoco>',
+}
+
+for nombre, plano in erratas.items():
+    try:
+        mujoco.MjModel.from_xml_string(plano)
+    except ValueError as e:
+        lineas = str(e).strip().split("\n")
+        print(f"{nombre:>17}: {lineas[0]}  ({lineas[-1].strip()})")
+    else:
+        print(f"{nombre:>17}: se ha cargado bien")"""),
+
+md(r"""MuJoCo es un buen chivato: para cada errata dice **qué** está mal y **dónde** (en qué elemento y en qué línea del plano):
+
+- `<bodi/>` → *unrecognized element*: "elemento desconocido" (no existe la etiqueta `bodi`).
+- `size="dos"` → *bad format in attribute 'size'*: "formato malo en el atributo `size`" (esperaba números).
+- `type="esfera"` → *invalid keyword: 'esfera'*: "palabra no válida" (MuJoCo habla inglés: `sphere`).
+
+Ese **"y en qué línea"** es oro cuando el plano tiene 300 líneas, como el del humanoide.
+"""),
+
+md(r"""### Paso 3 · Una simulación que explota
+
+Ahora el error peligroso. Este plano es un **palo de medio metro sobre una bisagra con muelle**: el atributo `stiffness="10000"`
+("rigidez") pone en la bisagra un muelle **durísimo** que empuja el palo hacia la vertical, como el muelle de un tentetieso. Lo inclinamos
+0,3 radianes (unos 17°) y lo soltamos. Debería vibrar muy deprisa alrededor de la vertical.
+"""),
+
+code(r"""MUELLE = '''
+<mujoco>
+  <option timestep="0.01"/>
+  <worldbody>
+    <light pos="0 0 4"/>
+    <geom type="plane" size="4 4 0.1"/>
+    <body name="palo" pos="0 0 1">
+      <joint name="bisagra" type="hinge" axis="0 1 0" stiffness="10000"/>
+      <geom type="capsule" fromto="0 0 0 0 0 0.5" size="0.03" mass="0.5"/>
+    </body>
+  </worldbody>
+</mujoco>
+'''
+modelo, datos = taller.cargar(MUELLE)
+datos.qpos[0] = 0.3
+print("paso   reloj      ángulo (rad)")
+for paso in range(7):
+    mujoco.mj_step(modelo, datos)
+    print(f"{paso:>4}   {datos.time:5.2f}   {datos.qpos[0]:>14.2f}")"""),
+
+md(r"""Mira la columna del ángulo: 0,3 → **−6,59** → **137,89** → **−2.884,93** → **60.357,98** radianes... ¡En el cuarto paso el palo ha
+girado **diez mil vueltas**! En cada paso el ángulo se multiplica por unas **−20**: cambia de lado y crece. Es **exactamente** la
+explosión del apartado 8 (y del NB18), con otro disfraz.
+
+¿Por qué? Un muelle tan duro hace vibrar el palo unas **77 veces por segundo** (lo he medido con pasos diminutos): una vibración completa
+dura 0,013 segundos. Y nuestro paso es de **0,01**: MuJoCo solo "mira" el palo una vez por vibración. Con la cadena de oro del NB02 (la
+fuerza cambia la velocidad y la velocidad cambia la posición), cada paso **se pasa de frenada**, cada vez más. Igual que la tasa de
+aprendizaje demasiado grande del NB18: **paso demasiado grande = explosión**.
+
+Ahora mira las tres últimas filas: el reloj ha vuelto a **0,01** y el ángulo a **0,00**. ¿Qué ha pasado?
+"""),
+
+md(r"""### Paso 4 · El vigilante de MuJoCo (y por qué no basta)
+
+MuJoCo lleva dentro su propio vigilante, como el del apartado 8. Cuando ve un número **infinito, `nan` o enorme** (más de diez mil
+millones) en las posiciones, velocidades o aceleraciones, hace dos cosas:
+
+1. **Reinicia la simulación** al estado inicial (reloj a 0, piezas en su sitio). Por eso el reloj ha vuelto atrás.
+2. Apunta un **aviso** (*warning*): escribe una línea `WARNING: Nan, Inf or huge value in QACC... The simulation is unstable` ("valor
+   `nan`, infinito o enorme en la aceleración: la simulación es inestable"), que seguramente ves debajo de la tabla; la copia en el fichero
+   `MUJOCO_LOG.TXT`; y suma 1 a un contador dentro de `datos.warning`.
+
+Lo que **no** hace es lanzar una excepción. Tu **programa** no se entera de nada y sigue tan tranquilo. Y esa línea de aviso, en un
+entrenamiento de horas que escribe miles de líneas, pasa desapercibida: estarías entrenando un robot en un mundo que se reinicia solo
+cada cuatro pasos. Miremos esos contadores. Hay uno por tipo de aviso; los que nos interesan son tres,
+los de "valor malo" en posición (`QPOS`), velocidad (`QVEL`) y aceleración (`QACC`):
+"""),
+
+code(r"""MALOS = [mujoco.mjtWarning.mjWARN_BADQPOS,
+         mujoco.mjtWarning.mjWARN_BADQVEL,
+         mujoco.mjtWarning.mjWARN_BADQACC]
+
+for tipo in MALOS:
+    print(f"{tipo.name:<16} -> {datos.warning[tipo].number} aviso(s)")"""),
+
+md(r"""Ahí está la huella: un aviso de **aceleración mala** (`BADQACC`). Con esto ya podemos escribir **nuestro** vigilante, que convierta ese
+aviso silencioso en una excepción con un buen mensaje (apartado 7: **fallar pronto**):
+"""),
+
+code(r"""def comprobar(datos):
+    for tipo in MALOS:
+        if datos.warning[tipo].number > 0:
+            raise RuntimeError(f"La simulación ha explotado ({tipo.name}) "
+                               f"con paso de {modelo.opt.timestep} s. Prueba un paso más pequeño.")"""),
+
+md(r"""### Paso 5 · Un bucle `while` vigilado
+
+Ahora simulamos **mientras** el reloj no llegue a 1 segundo (`while`, apartado 1), comprobando después de cada paso. Pero ojo: acabamos de
+ver que MuJoCo **pone el reloj a 0** cuando explota. Si la simulación explotara cada cuatro pasos sin que nadie lo comprobara, el reloj nunca
+llegaría a 1 y el `while` sería un **bucle infinito**. Por eso, además del vigilante, le ponemos un **límite de seguridad** de pasos (apartado 1):
+"""),
+
+code(r"""def simular_vigilado(modelo, datos, segundos, limite=100_000):
+    pasos = 0
+    while datos.time < segundos:
+        mujoco.mj_step(modelo, datos)
+        comprobar(datos)
+        pasos += 1
+        if pasos >= limite:
+            raise RuntimeError("Demasiados pasos: ¿el reloj está volviendo atrás?")
+    return pasos"""),
+
+md(r"""Y la usamos para **buscar un paso que funcione**: probamos pasos cada vez más pequeños, capturamos la explosión con `try/except`, y en cuanto
+uno va bien, `break`. El `else` del `for` (apartado 3) solo saltaría si **ninguno** funcionara:
+"""),
+
+code(r"""for paso in [0.01, 0.005, 0.002, 0.001]:
+    modelo, datos = taller.cargar(MUELLE)
+    modelo.opt.timestep = paso
+    datos.qpos[0] = 0.3
+    try:
+        n = simular_vigilado(modelo, datos, segundos=1)
+    except RuntimeError as e:
+        print("✗", e)
+    else:
+        print(f"✓ Con paso de {paso} s: 1 segundo simulado en {n} pasos, sin explotar.")
+        print(f"  Ángulo final: {datos.qpos[0]:.3f} rad")
+        break
+else:
+    print("Ningún paso ha funcionado.")"""),
+
+md(r"""Con 0,01 y con 0,005 explota (con 0,005 MuJoCo mira el palo dos veces y media por vibración: todavía poco). Con **0,002** (unas seis
+miradas por vibración) ya va bien: el palo vibra alrededor de la vertical, como debe.
+
+La regla de oro que te llevas: **el paso de tiempo tiene que ser bastante más pequeño que lo más rápido que pase en tu robot.** Un muelle
+duro, un motor muy fuerte o un choque violento piden pasos pequeños.
+"""),
+
+md(r"""### Paso 6 · Así se ve una explosión
+
+Ahora el humanoide, que normalmente usa pasos de 0,003 s, con un paso **casi siete veces más grande**, 0,02 s, y los motores al azar (NB00).
+Mira el vídeo con atención:
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+print("Paso normal del humanoide:", modelo.opt.timestep, "s")
+modelo.opt.timestep = 0.02
+taller.video(modelo, datos, segundos=2, control=taller.al_azar(0), nombre="nb22_explota");"""),
+
+md(r"""El humanoide da **tirones** y vuelve una y otra vez a la postura inicial, como un vídeo rayado, y algún fotograma sale vacío (cuando el robot
+está en las posiciones absurdas justo antes del reinicio). Cada "vuelta atrás" es una explosión y un reinicio de MuJoCo. Contémoslos con el
+vigilante, capturando la excepción cada vez y siguiendo (`continue`, apartado 2):
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+modelo.opt.timestep = 0.02
+control = taller.al_azar(0)
+explosiones = 0
+for paso in range(100):                 # 100 pasos de 0,02 s = 2 segundos
+    control(modelo, datos)
+    mujoco.mj_step(modelo, datos)
+    try:
+        comprobar(datos)
+    except RuntimeError:
+        explosiones += 1
+        datos.warning[mujoco.mjtWarning.mjWARN_BADQACC].number = 0   # bajamos las banderas
+        datos.warning[mujoco.mjtWarning.mjWARN_BADQVEL].number = 0
+        datos.warning[mujoco.mjtWarning.mjWARN_BADQPOS].number = 0
+        continue
+print(f"En 2 segundos simulados: {explosiones} explosiones, o sea, {explosiones} reinicios")"""),
+
+md(r"""**22** explosiones en dos segundos (una cada 0,09 s, más o menos): la simulación no llega a vivir ni cinco pasos seguidos. (Verás también
+un montón de líneas `WARNING`: los gritos de MuJoCo, uno por explosión.) Si estuvieras
+entrenando, tu robot aprendería en un mundo roto... y sin un solo mensaje de error en pantalla. Por eso, en cualquier simulación tuya, **vigila
+los avisos**.
+
+### Tus retos
+
+**Reto 1.** En el catálogo de erratas, añade una quinta: un plano donde la pelota tenga `size="-0.1"` (radio negativo). ¿Se queja MuJoCo?
+¿Qué te dice eso sobre lo que MuJoCo comprueba y lo que no?
+
+**Reto 2.** Escribe una función `cargar_seguro(plano)` que devuelva `(modelo, datos)` si el plano está bien, y `None` (NB10) si está mal,
+avisando con la primera línea del mensaje. Pruébala con `ROTO` y con `MUELLE`.
+
+**Reto 3.** En el Paso 5, cambia la rigidez del muelle de 10000 a **100** (con `MUELLE.replace(...)`, NB20). ¿Sigue explotando con paso 0,01?
+¿Por qué?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+erratas["radio negativo"] = '<mujoco><worldbody><geom type="sphere" size="-0.1"/></worldbody></mujoco>'
+```
+
+**Sí** se queja: `Error: size 0 must be positive in geom`, "el tamaño 0 (el primero, el radio) debe ser positivo en la forma". MuJoCo no solo revisa que el
+texto esté bien escrito; también comprueba que algunos números tengan **sentido físico**. Pero no puede comprobarlo todo: un `timestep`
+demasiado grande, como en el Paso 3, se acepta sin rechistar, porque solo se sabe que es malo **al simular**.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+def cargar_seguro(plano):
+    try:
+        modelo, datos = taller.cargar(plano)
+    except ValueError as e:
+        print("Plano roto:", str(e).split("\n")[0])
+        return None
+    return modelo, datos
+
+print(cargar_seguro(ROTO))          # avisa y devuelve None
+print(cargar_seguro(MUELLE))        # devuelve la pareja (modelo, datos)
+```
+
+Quien llame a `cargar_seguro` tendrá que comprobar `if resultado is None:` (apartado 4) antes de usarlo.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+modelo, datos = taller.cargar(MUELLE.replace('stiffness="10000"', 'stiffness="100"'))
+datos.qpos[0] = 0.3
+print(simular_vigilado(modelo, datos, segundos=1))     # 100 pasos, sin explotar
+```
+
+**Ya no explota.** Un muelle 100 veces más blando vibra 10 veces más despacio (unas 7,5 veces por segundo): ahora el paso de 0,01 s mira el
+palo más de trece veces por vibración, de sobra. No es que el paso sea "bueno" o "malo" en sí: es bueno o malo **comparado con lo rápido que
+pasan las cosas** en tu robot.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Un plano mal escrito hace que `MjModel.from_xml_string` lance un **`ValueError`** que dice **qué** falla y **en qué línea**. Se captura con
+  `try/except ValueError as e`.
+- MuJoCo también comprueba algunas cosas con sentido físico (tamaños positivos), pero no puede saber si tu **paso de tiempo** es bueno hasta simular.
+- Con un paso demasiado grande para lo rápido que pasan las cosas (muelles duros, motores fuertes), la simulación **explota**, como un descenso
+  por gradiente con tasa demasiado grande.
+- Cuando explota, MuJoCo **no lanza una excepción**: **reinicia** la simulación en silencio y apunta un aviso en **`datos.warning`**
+  (`mjWARN_BADQPOS`, `mjWARN_BADQVEL`, `mjWARN_BADQACC`) y en `MUJOCO_LOG.TXT`.
+- Un buen bucle de simulación lleva un **vigilante** que convierte esos avisos en excepciones y un **límite de seguridad** de pasos.
+
+En la práctica del NB23 abrirás por fin la caja negra: leerás `taller.py`, el fichero que has usado desde el NB00, y escribirás tu propia versión
+de sus funciones.
+"""),
+
+md(r"""## 14 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Hoy has aprendido a controlar los bucles con precisión y, sobre todo, a convivir con los errores: leerlos, capturarlos, lanzarlos y cazarlos. Es, de verdad, la mitad del oficio.
+Hoy has aprendido a controlar los bucles con precisión y, sobre todo, a convivir con los errores: leerlos, capturarlos, lanzarlos y cazarlos (también los de MuJoCo, que no siempre avisan). Es, de verdad, la mitad del oficio.
 En el **NB23** vamos a por las **funciones a fondo**: parámetros con valores por defecto, `*args` y `**kwargs`, las `lambda`, funciones que fabrican funciones (con las que crearemos
 una "fábrica de políticas"), **decoradores** (como un cronómetro que se le pone a cualquier función) y **generadores**, la forma de producir datos uno a uno sin llenar la memoria.
 """),

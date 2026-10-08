@@ -11,6 +11,10 @@ acción normalizada [-1, 1] (×40), reset con super().reset(seed) y
 self.np_random, check_env (y sus avisos explicados), gym.register con
 max_episode_steps → gym.make lo envuelve (TimeLimit...). Evaluación: nada ~44,6,
 solo inclinación ~353,4, a mano ~499,9. Cómo es una red de PyTorch (nn.Module).
+Práctica en MuJoCo (§12): PaloEscobaMuJoCoEnv(gym.Env) sobre robots/palo_escoba.xml
+(mj_resetData + np_random, ctrl + mj_step, qfrc_applied como viento, render con
+Renderer), check_env, gym.register/make, nada 92,2 / azar 114,4 / PD 500 pasos,
+vídeos con render(); reto: con viento el carro se sale del raíl.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -610,11 +614,315 @@ entrenar con sensores imperfectos prepara para el mundo real.
 </details>
 """),
 
-md(r"""## 12 · Posdata
+md(r"""## 12 · 🛠 Práctica en MuJoCo: tu entorno de Gymnasium con física de verdad
+
+En el apartado 8 convertiste en entorno oficial de Gymnasium el palo de escoba **de juguete** del NB11 (tres líneas de física hechas a mano).
+Ahora vas a hacer lo mismo con el palo de escoba **de MuJoCo**, el de `robots/palo_escoba.xml`: un carro de verdad sobre un raíl de verdad,
+con masas, rozamiento y un motor con su fuerza máxima.
+
+Esto es, literalmente, lo que hay dentro de `gym.make("Humanoid-v5")`: una clase que **hereda de `gym.Env`** y que, por dentro, lleva un
+modelo y unos datos de MuJoCo. En su `reset` llama a `mj_resetData`; en su `step` escribe la acción en `datos.ctrl` y llama a `mj_step`. Hoy
+escribes **tu** versión, la pasas por el verificador, la registras, la pruebas con una política al azar y con el controlador PD del NB23-NB24, y
+grabas un vídeo con su método `render`.
+
+Las decisiones de diseño (las mismas preguntas que te harás con cualquier robot):
+
+| Pregunta | Nuestra respuesta |
+|---|---|
+| ¿Qué observa? | 4 números: posición del carro, ángulo del palo, y sus dos velocidades (`qpos` y `qvel` juntos) |
+| ¿Qué hace? | 1 número entre −1 y 1, que va directo a `datos.ctrl[0]` (el motor ya multiplica por 10, su `gear`) |
+| ¿Cuándo pierde? | Si el palo pasa de 45° (0,785 rad) **o** el carro llega al final del raíl (más de 1,7 m) |
+| ¿Qué premio da? | +1 por cada paso que sigue en pie |
+| ¿Cuánto dura? | 500 pasos de 0,01 s = 5 segundos (lo pone `max_episode_steps`) |
+| ¿Cómo empieza? | Palo inclinado al azar entre −0,1 y 0,1 rad (±5,7°), usando `self.np_random` |
+"""),
+
+md(r"""### Paso 1 · La clase
+
+Es larga, pero cada método es corto. Léela de arriba abajo con la lista del apartado 8 al lado (heredar, espacios, `reset`, `step`). Hay dos
+piezas nuevas:
+
+- **`metadata`** (atributo de clase, NB24): le dice a Gymnasium cómo sabe **dibujarse** el entorno (`"rgb_array"`: devolviendo la foto como un array)
+  y a cuántas fotos por segundo.
+- **`render`**: hace una foto con un `mujoco.Renderer`, como tu `mi_video` del NB23. El dibujante se crea la primera vez que hace falta y se cierra
+  en **`close`** (otro método del contrato de Gymnasium).
+
+La ruta del plano la calculamos a partir de dónde está `taller.py` (NB23), para que funcione la ejecutes desde donde la ejecutes.
+"""),
+
+code(r"""import os
+import gymnasium as gym
+from gymnasium import spaces
+import mujoco
+import numpy as np
+import taller
+
+RUTA_PALO = os.path.join(os.path.dirname(taller.__file__), "robots", "palo_escoba.xml")
+
+
+class PaloEscobaMuJoCoEnv(gym.Env):
+    '''El palo de escoba de MuJoCo como entorno de Gymnasium.
+
+    Observación: [x del carro, ángulo del palo, velocidad del carro, velocidad del ángulo].
+    Acción: [orden al motor entre -1 y 1].
+    '''
+    metadata = {"render_modes": ["rgb_array"], "render_fps": 100}
+
+    def __init__(self, render_mode=None, viento_maximo=0.0):
+        super().__init__()
+        self.modelo = mujoco.MjModel.from_xml_path(RUTA_PALO)
+        self.datos = mujoco.MjData(self.modelo)
+        self.render_mode = render_mode
+        self.viento_maximo = viento_maximo
+        self._dibujante = None
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)                                  # prepara self.np_random
+        mujoco.mj_resetData(self.modelo, self.datos)              # NB24
+        self.datos.qpos[1] = self.np_random.uniform(-0.1, 0.1)    # palo algo inclinado
+        mujoco.mj_forward(self.modelo, self.datos)
+        return self._observacion(), {}
+
+    def step(self, action):
+        self.datos.ctrl[0] = np.clip(action[0], -1.0, 1.0)
+        viento = self.np_random.uniform(-self.viento_maximo, self.viento_maximo)
+        self.datos.qfrc_applied[1] = viento                       # un "soplido" sobre la bisagra
+        mujoco.mj_step(self.modelo, self.datos)
+        x, angulo = self.datos.qpos
+        terminado = bool(abs(angulo) > 0.785 or abs(x) > 1.7)
+        recompensa = 0.0 if terminado else 1.0
+        return self._observacion(), recompensa, terminado, False, {"tiempo": self.datos.time}
+
+    def _observacion(self):
+        return np.concatenate([self.datos.qpos, self.datos.qvel])
+
+    def render(self):
+        if self._dibujante is None:
+            self._dibujante = mujoco.Renderer(self.modelo, 270, 360)
+        camara = mujoco.MjvCamera()
+        mujoco.mjv_defaultFreeCamera(self.modelo, camara)
+        camara.distance, camara.azimuth, camara.elevation = 4.0, 90, -15
+        self._dibujante.update_scene(self.datos, camera=camara)
+        return self._dibujante.render()
+
+    def close(self):
+        if self._dibujante is not None:
+            self._dibujante.close()
+            self._dibujante = None"""),
+
+md(r"""Tres detalles:
+
+- `np.concatenate([qpos, qvel])` pega los dos arrays de 2 números en uno de 4. Como `qpos` y `qvel` son `float64` (el formato normal de MuJoCo),
+  el espacio de observación también lo es.
+- **El viento.** `datos.qfrc_applied` es una lista de **fuerzas extra** que tú puedes aplicar a cada articulación desde fuera (una por cada número
+  de `qvel`). Escribir en la posición 1 es dar un empujoncito de giro a la **bisagra** del palo: un soplido. De momento `viento_maximo=0`: sin viento.
+- No contamos pasos ni truncamos: eso lo hará el envoltorio `TimeLimit` al registrarlo (apartado 8).
+"""),
+
+md(r"""### Paso 2 · El verificador
+
+Igual que en el apartado 8:
+"""),
+
+code(r"""from gymnasium.utils.env_checker import check_env
+
+entorno_prueba = PaloEscobaMuJoCoEnv(render_mode="rgb_array")
+check_env(entorno_prueba)
+entorno_prueba.close()
+print("El entorno MuJoCo ha pasado el verificador de Gymnasium")"""),
+
+md(r"""Pasado. Los avisos de color son los mismos del apartado 8 (límites infinitos en la observación y "no puedo probar otros modos de dibujo"):
+consejos, no errores. Fíjate en que ahora el verificador **sí** ha llamado a nuestro `render`, porque declaramos `"rgb_array"` en `metadata`
+(por eso salen también dos líneas sueltas, *"Couldn't open plugin directory..."*: las escribe la parte gráfica al crear el dibujante, y son
+inofensivas).
+"""),
+
+md(r"""### Paso 3 · Registrar y crear con `gym.make`
+"""),
+
+code(r"""gym.register(id="PaloEscobaMuJoCo-v0", entry_point=PaloEscobaMuJoCoEnv, max_episode_steps=500)
+
+entorno = gym.make("PaloEscobaMuJoCo-v0")
+print(entorno)
+print("Observaciones:", entorno.observation_space)
+print("Acciones:     ", entorno.action_space)
+
+observacion, info = entorno.reset(seed=0)
+print("Primera observación:", observacion.round(3))"""),
+
+md(r"""La misma muñeca rusa de envoltorios que antes (`TimeLimit<OrderEnforcing<PassiveEnvChecker<...>>>`). Y la primera observación: el carro en
+0, el palo inclinado unos pocos centirradianes (lo ha sorteado `self.np_random` con la semilla 0) y todo quieto.
+"""),
+
+md(r"""### Paso 4 · Tres políticas, el mismo bucle
+
+Las políticas reciben la observación de 4 números y devuelven la acción como un array de 1 número. Tres candidatas:
+
+- **nada**: siempre 0.
+- **al azar**: `entorno.action_space.sample()`, una acción válida cualquiera (apartado 8).
+- **PD**: el controlador de los NB23-NB24, ahora leyendo la **observación** en vez de `datos` (desempaquetada en sus 4 números, NB21).
+"""),
+
+code(r"""def nada(observacion):
+    return np.zeros(1, dtype=np.float32)
+
+def al_azar(observacion):
+    return entorno.action_space.sample()
+
+def pd(observacion):
+    x, angulo, vx, vel_angulo = observacion
+    empuje = 3 * angulo + 0.8 * vel_angulo + 0.1 * x + 0.2 * vx
+    return np.array([np.clip(empuje, -1, 1)], dtype=np.float32)"""),
+
+md(r"""Y la función de evaluar: juega un episodio por semilla y devuelve la lista de retornos (con +1 por paso, el retorno es **cuántos pasos aguantó**):"""),
+
+code(r"""def evaluar(entorno, politica, semillas=range(5)):
+    retornos = []
+    for semilla in semillas:
+        observacion, info = entorno.reset(seed=semilla)
+        retorno = 0.0
+        while True:
+            observacion, recompensa, terminado, truncado, info = entorno.step(politica(observacion))
+            retorno += recompensa
+            if terminado or truncado:
+                break
+        retornos.append(retorno)
+    return retornos
+
+entorno.action_space.seed(0)            # para que "al azar" sea repetible
+for politica in [nada, al_azar, pd]:
+    retornos = evaluar(entorno, politica)
+    print(f"{politica.__name__:>8}: {retornos}  -> media {np.mean(retornos):.1f}")"""),
+
+md(r"""- **nada**: entre 67 y 151 pasos (media **92,2**): el palo cae en menos de 1,5 s. Cuánto aguanta depende de lo inclinado que lo deje la semilla.
+- **al azar**: media **114,4**, apenas mejor que no hacer nada. Sacudir el carro a ciegas no equilibra nada.
+- **PD**: **500** en las cinco semillas. Aguanta los 5 segundos enteros: lo trunca `TimeLimit`.
+
+(`politica.__name__` es el nombre de la función como texto: las funciones también son objetos, NB23-NB24.)
+
+Fíjate en que `evaluar` es **la misma** del apartado 8, palabra por palabra. Le da igual que dentro haya física de juguete o MuJoCo: solo
+usa `reset` y `step`. Eso es lo que compra el contrato de `gym.Env`.
+"""),
+
+md(r"""### Paso 5 · El vídeo, con `render`
+
+Creamos el entorno con `render_mode="rgb_array"` y, en cada paso, le pedimos una foto con `entorno.render()`. Así graban vídeos los entornos
+de Gymnasium (y los programas que entrenan robots). Para no hacer 500 fotos, una de cada 3 pasos (unas 33 por segundo):
+"""),
+
+code(r"""import imageio
+from IPython.display import Video, display
+
+def grabar(politica, nombre, semilla=0):
+    entorno_video = gym.make("PaloEscobaMuJoCo-v0", render_mode="rgb_array")
+    observacion, info = entorno_video.reset(seed=semilla)
+    fotos, paso = [entorno_video.render()], 0
+    while True:
+        observacion, recompensa, terminado, truncado, info = entorno_video.step(politica(observacion))
+        paso += 1
+        if paso % 3 == 0:
+            fotos.append(entorno_video.render())
+        if terminado or truncado:
+            break
+    entorno_video.close()
+    ruta = os.path.join("assets", "practicas", f"{nombre}.mp4")
+    imageio.mimsave(ruta, fotos, fps=100 / 3, macro_block_size=1)
+    display(Video(ruta, embed=True, html_attributes="controls loop autoplay muted"))
+    print(f"{paso} pasos ({info['tiempo']:.2f} s) | terminado={terminado} | truncado={truncado}")
+
+grabar(pd, "nb25_env_pd")"""),
+
+md(r"""500 pasos, `truncado=True` (se acabó el tiempo) y `terminado=False` (no perdió): el carro se coloca debajo del palo y lo mantiene. Ahora
+la política al azar con la misma semilla:
+"""),
+
+code(r"""grabar(al_azar, "nb25_env_azar")"""),
+
+md(r"""Esta vez `terminado=True`: el palo ha pasado de 45° en **0,94 s**, mientras el carro daba tirones sin sentido.
+
+### Tus retos
+
+**Reto 1.** Crea el entorno con viento: `gym.make("PaloEscobaMuJoCo-v0", viento_maximo=3)` (los `**kwargs` llegan al `__init__`, apartado 8) y
+evalúa el `pd`. ¿Aguanta igual? Mira la **última observación** de cada episodio para averiguar **por qué** termina.
+
+**Reto 2.** Añade una **propiedad** (NB24) `angulo_grados` a la clase, que devuelva el ángulo del palo en grados. ¿Puedes usarla desde el entorno
+de `gym.make`? (Pista: los envoltorios tienen un atributo `unwrapped`, "desenvuelto", que te da el entorno de dentro.)
+
+**Reto 3 (para pensar).** En el NB15 creaste el humanoide con `gym.make("Humanoid-v5")`. Con lo que has hecho hoy, ¿qué crees que hay dentro de
+su `step`? ¿Y por qué su observación tiene 348 números y la nuestra 4?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+ventoso = gym.make("PaloEscobaMuJoCo-v0", viento_maximo=3)
+for semilla in range(5):
+    observacion, info = ventoso.reset(seed=semilla)
+    pasos = 0
+    while True:
+        observacion, r, terminado, truncado, info = ventoso.step(pd(observacion))
+        pasos += 1
+        if terminado or truncado:
+            break
+    x, angulo = observacion[0], np.degrees(observacion[1])
+    print(f"semilla {semilla}: {pasos} pasos | carro en x = {x:.2f} m | palo a {angulo:.0f}°")
+```
+
+Media de **341** pasos: con viento solo aguanta en 2 de las 5 semillas. Y lo interesante es el **porqué**: en los episodios que acaban antes de
+tiempo el palo está casi derecho (entre −7° y 10°), pero el carro está en **x = ±1,7 m**: ¡se ha salido del raíl! El viento empuja el palo siempre
+un poco, el PD lo persigue con el carro, y el carro va "a la deriva" hasta el final. Los dos términos pequeños (0,1 y 0,2) que debían traerlo de
+vuelta al centro son demasiado flojos. (Y si los subes a lo bruto, el palo se cae antes: lo he probado. Afinar las cuatro ganancias a la vez es
+justo el tipo de problema que resolverá el **aprendizaje por refuerzo** en este mismo entorno, a partir del NB29.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+class PaloConGrados(PaloEscobaMuJoCoEnv):          # herencia: todo igual, más una propiedad
+    @property
+    def angulo_grados(self):
+        return np.degrees(self.datos.qpos[1])
+
+gym.register(id="PaloConGrados-v0", entry_point=PaloConGrados, max_episode_steps=500)
+e = gym.make("PaloConGrados-v0")
+e.reset(seed=0)
+print(e.unwrapped.angulo_grados)
+```
+
+`gym.make` te devuelve la muñeca rusa de envoltorios; tu objeto está en el centro, en `e.unwrapped`. (Los envoltorios no saben nada de tu propiedad
+nueva, así que se la pedimos directamente al de dentro.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Su `step` hace lo mismo que el tuyo: escribe la acción (17 números) en `datos.ctrl`, llama a `mj_step` (varias veces seguidas, de hecho: 5 pasos
+de 0,003 s por cada `step`, lo que se llama *frame skip*) y calcula recompensa y final. Su observación es más larga porque describe un cuerpo
+mucho más complejo: posiciones y velocidades de todas sus articulaciones, y además datos de sus piezas (masas, fuerzas, contactos...). La forma
+es la misma; solo cambia el tamaño. **Tú ya sabes construir un entorno de MuJoCo como los profesionales.**
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Un entorno de Gymnasium con MuJoCo es una clase que **hereda de `gym.Env`** y **tiene** un `MjModel` y un `MjData` (herencia + composición).
+- `reset` = `super().reset(seed)` + **`mj_resetData`** + estado inicial al azar con **`self.np_random`** + `mj_forward`.
+- `step` = acción en **`datos.ctrl`** + **`mj_step`** + observación (`qpos` y `qvel`), recompensa y condición de final.
+- **`datos.qfrc_applied`** aplica fuerzas externas a las articulaciones (nuestro "viento").
+- `render` con `mujoco.Renderer` y `metadata = {"render_modes": ["rgb_array"], ...}`; se cierra en `close`.
+- `check_env` + `gym.register(..., max_episode_steps=500)` + `gym.make`: tu palo de MuJoCo es intercambiable con el humanoide.
+
+En la práctica del NB26 sacarás el robot del cuaderno: guardarás un plano MJCF en un **fichero**, lo cargarás con `from_xml_path` y escribirás un
+**script** que se lanza desde la terminal y fabrica un vídeo él solo.
+"""),
+
+md(r"""## 13 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Ya sabes construir jerarquías de clases, contratos, objetos que se comportan como los de Python... y has creado un **entorno oficial de Gymnasium**. En el **NB26** salimos del cuaderno:
+Ya sabes construir jerarquías de clases, contratos, objetos que se comportan como los de Python... y has creado **dos entornos oficiales de Gymnasium**, uno de ellos con física de MuJoCo. En el **NB26** salimos del cuaderno:
 **ficheros** (guardar y cargar datos, configuraciones y políticas entrenadas), **módulos** propios (tu código en ficheros `.py` que se importan), **scripts** que se lanzan desde la
 **terminal**, y las herramientas para instalar bibliotecas (`pip`, los entornos virtuales). Es decir: cómo se organiza un proyecto de verdad.
 """),

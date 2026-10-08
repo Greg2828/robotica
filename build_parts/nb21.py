@@ -9,6 +9,9 @@ get, añadir/cambiar/borrar, in, keys/values/items, anidados = configuración,
 comprensión de diccionario, contar frecuencias); conjuntos (sin duplicados,
 unión/intersección/diferencia); any/all; ordenar por una clave con key=función.
 Proyecto: configuración de un entrenamiento + ranking de políticas.
+Práctica en MuJoCo (§14): listines del humanoide con diccionarios (nombre->id,
+mj_name2id, jnt_qposadr: root ocupa 7 en qpos; topes como tuplas; motores en
+otro orden que las juntas; set de juntas sin motor; pose y órdenes por nombre).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -682,11 +685,292 @@ es una costumbre muy profesional: en un robot real, un solo episodio malo puede 
 </details>
 """),
 
-md(r"""## 14 · Posdata
+md(r"""## 14 · 🛠 Práctica en MuJoCo: el listín telefónico del humanoide
+
+En el NB01 contaste las piezas, articulaciones y motores del humanoide. Pero contar no basta para **trabajar** con un robot. Cuando
+quieras mover la rodilla derecha, necesitas saber **qué número** tiene la rodilla derecha dentro de MuJoCo. Y cuando leas una lista de
+17 números del sensor, necesitas saber **de quién** es cada uno.
+
+MuJoCo, por dentro, lo numera **todo** (la pieza 0, la articulación 7, el motor 3...), porque al ordenador le encantan los números.
+A las personas nos encantan los **nombres**. El puente entre los dos mundos es, exactamente, lo que has aprendido hoy: los
+**diccionarios**. Vas a construir el "listín telefónico" del humanoide: de cada nombre, su número.
+
+Por el camino vas a descubrir **dos trampas** reales de MuJoCo en las que cae todo el mundo al principio (y que un diccionario resuelve).
+"""),
+
+md(r"""### Paso 1 · Los nombres de todas las articulaciones
+
+Cargamos el humanoide. `modelo.njnt` es el número de articulaciones (NB01) y `modelo.joint(i)` es la articulación número `i`; su
+`.name` es su nombre. Con una **comprensión** (apartado 6) fabricamos la lista de todos los nombres de una sola vez:
+"""),
+
+code(r"""import mujoco
+import taller
+
+modelo, datos = taller.cargar("humanoide")
+nombres = [modelo.joint(i).name for i in range(modelo.njnt)]
+print(modelo.njnt, "articulaciones")
+print(nombres)"""),
+
+md(r"""18 nombres. El primero, `root` ("raíz"), es la articulación **libre** del tronco (la que deja al humanoide moverse y caerse por el
+mundo, NB01); las otras 17 son las del cuerpo. Recorrámoslas con su número usando **`enumerate`** (apartado 4):
+"""),
+
+code(r"""for i, nombre in enumerate(nombres):
+    print(f"{i:>2}  {nombre}")"""),
+
+md(r"""### Paso 2 · El listín: nombre → número
+
+Ahora, el **diccionario**. Con una comprensión de diccionario (apartado 7), cada nombre será una **clave** y su número, el **valor**:
+"""),
+
+code(r"""junta_id = {modelo.joint(i).name: i for i in range(modelo.njnt)}
+print(junta_id["right_knee"])
+print(junta_id["left_elbow"])"""),
+
+md(r"""La rodilla derecha es la **7** y el codo izquierdo, la **17**. Ya no hay que contar con el dedo.
+
+MuJoCo trae su propio "listín" incorporado, la función `mujoco.mj_name2id` ("de nombre a número"). Hay que decirle **qué tipo de cosa**
+buscas (articulación = `mujoco.mjtObj.mjOBJ_JOINT`; pieza sería `mjOBJ_BODY`; motor, `mjOBJ_ACTUATOR`) y el nombre:
+"""),
+
+code(r"""print(mujoco.mj_name2id(modelo, mujoco.mjtObj.mjOBJ_JOINT, "right_knee"))
+print(mujoco.mj_name2id(modelo, mujoco.mjtObj.mjOBJ_JOINT, "rodilla"))"""),
+
+md(r"""Para la rodilla, da **7**, igual que tu diccionario. Pero mira la segunda línea: si el nombre **no existe**, MuJoCo no da un error,
+sino **−1**. Es su forma de decir "no lo encuentro" (como el `find` de las cadenas del NB20). Tu diccionario, en cambio, daría un
+`KeyError`; con `get` puedes imitar a MuJoCo:
+"""),
+
+code(r"""print(junta_id.get("rodilla", -1))"""),
+
+md(r"""### Paso 3 · Trampa 1: el número de la articulación NO es su sitio en `qpos`
+
+En el NB02 leíste `datos.qpos`, la lista de **posiciones** de la simulación. Lo natural sería pensar que el ángulo de la rodilla (la
+articulación 7) está en `datos.qpos[7]`. **Error.** Mira cuánto mide `qpos`:
+"""),
+
+code(r"""print("Articulaciones:", modelo.njnt)
+print("Números en qpos:", modelo.nq)"""),
+
+md(r"""¡18 articulaciones, pero **24** números! ¿Por qué? Porque la articulación libre `root` no es un simple ángulo: para decir dónde
+está el tronco hacen falta **3** números (su posición x, y, z) y para decir hacia dónde mira, **4** más (una forma de guardar giros que
+verás mucho más adelante). En total, **7** para ella sola; las otras 17 usan uno cada una: 7 + 17 = 24.
+
+MuJoCo guarda **dónde empieza** cada articulación dentro de `qpos` en `modelo.jnt_qposadr` ("dirección en qpos"). Otro listín:
+"""),
+
+code(r"""junta_qpos = {nombre: modelo.jnt_qposadr[i] for nombre, i in junta_id.items()}
+print("root empieza en", junta_qpos["root"])
+print("abdomen_z está en", junta_qpos["abdomen_z"])
+print("right_knee está en", junta_qpos["right_knee"])"""),
+
+md(r"""La rodilla es la articulación **7**, pero su ángulo vive en **`qpos[13]`**. Si hubieras leído `qpos[7]`, habrías leído el
+ángulo de `abdomen_z`, sin enterarte. Este despiste tiene arruinados más experimentos de los que te imaginas. Doblemos la rodilla
+45 grados con `taller.poner_angulo` (NB01) y leámosla de las dos maneras:
+"""),
+
+code(r"""taller.poner_angulo(modelo, datos, "right_knee", -45)
+print("qpos[13] =", round(datos.qpos[junta_qpos["right_knee"]], 3), "radianes  <- la rodilla")
+print("qpos[7]  =", round(datos.qpos[7], 3), "radianes  <- ¡esto no es la rodilla!")"""),
+
+md(r"""−0,785 radianes = −45 grados (NB03b): el sitio bueno es el 13. (MuJoCo trae también un atajo por nombre, `datos.joint("right_knee").qpos`,
+que es justo lo que usa `taller.poner_angulo` por dentro: en el NB23 lo verás.)
+"""),
+
+md(r"""### Paso 4 · Los topes de cada articulación (tuplas dentro de un diccionario)
+
+Cada articulación tiene sus **topes**: el ángulo mínimo y el máximo (una rodilla humana no se dobla hacia delante). MuJoCo los guarda,
+en radianes, en `modelo.jnt_range`. Fabricamos un diccionario cuyo valor es una **tupla** `(mínimo, máximo)` en grados (apartado 1). La
+comprensión lleva un **`if`** para saltarse `root`, que no tiene topes (`modelo.jnt_limited[i]` dice si los tiene):
+"""),
+
+code(r"""import numpy as np
+
+topes = {nombre: tuple(np.degrees(modelo.jnt_range[i]).round())
+         for nombre, i in junta_id.items() if modelo.jnt_limited[i]}
+
+for nombre, (minimo, maximo) in topes.items():
+    print(f"{nombre:>16}: de {minimo:>6.0f} a {maximo:>4.0f} grados")"""),
+
+md(r"""Fíjate en `for nombre, (minimo, maximo) in topes.items()`: cada pareja es `(nombre, tupla)`, y la tupla se **desempaqueta** a su vez
+en sus dos números, todo en la misma línea.
+
+Lee la tabla como un médico: las rodillas van de **−160 a −2** (solo se doblan hacia un lado, y casi nada hacia el otro); las caderas,
+`right_hip_y`, de −110 a 20 (mucho hacia delante, poco hacia atrás). Son los límites del cuerpo humano, copiados al robot.
+
+¿Qué articulación tiene **más recorrido**? Una pregunta perfecta para `max` con **`key`** (apartado 9):
+"""),
+
+code(r"""def recorrido(nombre):
+    minimo, maximo = topes[nombre]
+    return maximo - minimo
+
+mas_movil = max(topes, key=recorrido)
+print(mas_movil, "->", recorrido(mas_movil), "grados")"""),
+
+md(r"""(`max(topes, key=...)` recorre las **claves** del diccionario y se queda con la que da el mayor `recorrido`.) La rodilla derecha:
+**158 grados** de recorrido.
+"""),
+
+md(r"""### Paso 5 · Trampa 2: los motores van en OTRO orden
+
+Ahora, los **motores** (actuadores, NB01). Hagamos su listín, nombre → número, y miremos los tres primeros al lado de las tres primeras
+articulaciones con cuerpo (de la 1 a la 3), usando **`zip`** (apartado 5):
+"""),
+
+code(r"""motor_id = {modelo.actuator(i).name: i for i in range(modelo.nu)}
+nombres_motores = list(motor_id)
+
+for junta, motor in zip(nombres[1:4], nombres_motores[:3]):
+    print(f"articulación: {junta:<10} | motor: {motor}")"""),
+
+md(r"""¿Lo ves? La articulación 1 es `abdomen_z`, pero el motor 0 es `abdomen_y`. **El orden de los motores no tiene por qué coincidir con el
+de las articulaciones.** Si escribes `datos.ctrl[0] = 1` creyendo que mueves `abdomen_z`, estarás moviendo otra cosa. Moraleja: **trabaja
+por nombre**, con el listín, nunca contando posiciones.
+
+Cada motor tiene una **fuerza máxima** (su "gear", NB01). Hagamos el diccionario motor → fuerza y ordenémoslo de más fuerte a más débil:
+"""),
+
+code(r"""fuerza = {nombre: modelo.actuator_gear[i][0] for nombre, i in motor_id.items()}
+
+for nombre in sorted(fuerza, key=fuerza.get, reverse=True)[:5]:
+    print(f"{nombre:>12}: {fuerza[nombre]:.0f}")"""),
+
+md(r"""`key=fuerza.get` es un truco muy usado: "ordena las claves por lo que valen en el diccionario". Los más fuertes son las **caderas**
+(300) y las **rodillas** (200): sostienen y mueven todo el cuerpo. Los hombros y codos solo tienen 25.
+
+Y una última pregunta, para los **conjuntos** (apartado 8): ¿qué articulaciones **no** tienen motor? Restamos el conjunto de nombres de
+motores al de nombres de articulaciones (aquí cada motor se llama como la articulación que mueve):
+"""),
+
+code(r"""sin_motor = set(nombres) - set(nombres_motores)
+print(sin_motor)"""),
+
+md(r"""Solo `root`. Tiene todo el sentido: nadie empuja al humanoide desde fuera; si su tronco se mueve por el mundo es porque sus **piernas**
+empujan el suelo. (Por eso hay 18 articulaciones y 17 motores, el misterio del NB01.)
+"""),
+
+md(r"""### Paso 6 · Mover el robot por nombre
+
+Ahora que tienes los listines, puedes dar órdenes **por nombre**. Primero, una **pose** escrita como un diccionario articulación → grados.
+Un bucle con `.items()` la aplica entera:
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+pose = {"right_hip_y": -90, "right_knee": -100, "right_shoulder1": -85,
+        "left_shoulder1": 85, "right_elbow": -90, "left_elbow": -90}
+
+for articulacion, grados in pose.items():
+    taller.poner_angulo(modelo, datos, articulacion, grados)
+taller.foto(modelo, datos, titulo="Una pose escrita como diccionario");"""),
+
+md(r"""Y ahora con **física**: un diccionario de **órdenes a los motores** (motor → valor entre −1 y 1, NB03). La función `control` lo
+traduce a `datos.ctrl` usando el listín `motor_id`, así que da igual en qué orden estén los motores por dentro. Ordenamos a las dos
+caderas y las dos rodillas que se doblen al máximo:
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+ordenes = {"right_hip_y": -1, "left_hip_y": -1, "right_knee": -1, "left_knee": -1}
+
+def control(modelo, datos):
+    for motor, valor in ordenes.items():
+        datos.ctrl[motor_id[motor]] = valor
+
+taller.video(modelo, datos, segundos=2, control=control, nombre="nb21_ovillo");"""),
+
+md(r"""El humanoide se hace un **ovillo** y se queda en el suelo. ¿Dónde ha quedado cada pieza? Un último diccionario, pieza → altura (la
+altura es el tercer número de `datos.xpos`, la posición de cada pieza; la pieza 0 es el mundo y la saltamos):
+"""),
+
+code(r"""altura = {modelo.body(i).name: datos.xpos[i][2] for i in range(1, modelo.nbody)}
+
+for pieza in sorted(altura, key=altura.get, reverse=True)[:3]:
+    print(f"{pieza:>15}: {altura[pieza]:.2f} m")
+print("La más baja:", min(altura, key=altura.get))"""),
+
+md(r"""Lo más alto del ovillo es la cintura (`lwaist`, a **0,34 m**) y el torso (**0,29 m**); lo más bajo, las **espinillas** (`shin`), a 5 cm
+del suelo: está de rodillas, hecho una bola.
+
+### Tus retos
+
+**Reto 1.** Haz el listín de las **piezas** (bodies), nombre → número, con una comprensión. ¿Qué número tiene `"left_foot"`? Compruébalo con
+`mujoco.mj_name2id` y el tipo `mujoco.mjtObj.mjOBJ_BODY`.
+
+**Reto 2.** Con una comprensión con `if`, fabrica la lista de articulaciones cuyo nombre contenga `"left"` (pista: `in`, NB20). ¿Cuántas son?
+
+**Reto 3.** Con los diccionarios `topes` y `pose`, escribe un bucle que avise si algún ángulo de la pose se sale de los topes. Prueba
+añadiendo a la pose `"left_knee": 30` (una rodilla doblada hacia delante).
+
+**Reto 4.** Cambia el diccionario `ordenes` para que el humanoide **levante los brazos** (hombros `"right_shoulder1"` y `"left_shoulder1"`)
+en vez de doblar las piernas. ¿Qué valor les das a cada uno? (Pista: mira sus topes en el Paso 4: no son simétricos.)
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+pieza_id = {modelo.body(i).name: i for i in range(modelo.nbody)}
+print(pieza_id["left_foot"])                                               # 9
+print(mujoco.mj_name2id(modelo, mujoco.mjtObj.mjOBJ_BODY, "left_foot"))   # 9
+```
+
+Las piezas son 14: `world` (0), `torso` (1), `lwaist`, `pelvis`, muslos, espinillas, pies y brazos. El pie izquierdo es la **9**.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+izquierdas = [n for n in nombres if "left" in n]
+print(izquierdas, len(izquierdas))
+```
+
+Son **7**: `left_hip_x`, `left_hip_z`, `left_hip_y`, `left_knee`, `left_shoulder1`, `left_shoulder2` y `left_elbow`. (Y otras 7 `right`:
+el humanoide es simétrico.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+pose["left_knee"] = 30
+for articulacion, grados in pose.items():
+    minimo, maximo = topes[articulacion]
+    if not (minimo <= grados <= maximo):
+        print(f"¡{articulacion} a {grados}° se sale de [{minimo:.0f}, {maximo:.0f}]!")
+```
+
+Avisa de `left_knee`: 30 grados se sale de [−160, −2]. (Es lo mismo que hace `taller.poner_angulo` por dentro cuando te avisa de los topes.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 4</summary>
+
+En el Paso 4 viste que `right_shoulder1` va de −85 a 60 y `left_shoulder1` de −60 a 85: son **espejo** uno del otro. Para el mismo gesto
+hay que darles órdenes de **signo contrario**, por ejemplo `ordenes = {"right_shoulder1": -1, "left_shoulder1": 1}`. Si les das el mismo
+signo, un brazo sube y el otro baja. Moverlos por nombre no te libra de pensar en la geometría del robot, pero sí de equivocarte de motor.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- MuJoCo lo **numera todo**; tú trabajas con **nombres**. El puente: diccionarios nombre → número (`{modelo.joint(i).name: i ...}`) o la
+  función **`mujoco.mj_name2id`** (que da −1 si el nombre no existe).
+- `modelo.joint(i)`, `modelo.body(i)`, `modelo.actuator(i)` te dan cada articulación, pieza o motor; `.name` es su nombre.
+- **Trampa 1:** la articulación libre `root` ocupa **7** números de `qpos`; por eso el número de una articulación no es su sitio en
+  `qpos`. Usa **`modelo.jnt_qposadr`** (o `datos.joint(nombre).qpos`).
+- **Trampa 2:** los **motores** no van en el mismo orden que las articulaciones. Da las órdenes **por nombre**.
+- `modelo.jnt_range` (topes, en radianes), `modelo.actuator_gear` (fuerza de cada motor) y `datos.xpos` (posición de cada pieza) se
+  ordenan y consultan de maravilla con diccionarios, `sorted(..., key=...)` y `max(..., key=...)`.
+
+En la práctica del NB22 vas a **romper** MuJoCo a propósito: planos mal escritos, simulaciones que explotan y números que se vuelven
+`nan`. Y aprenderás a atrapar esos errores con `try/except`.
+"""),
+
+md(r"""## 15 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Ya sabes elegir y manejar la colección adecuada para cada cosa, y conoces la trampa del alias, que te ahorrará muchas horas de buscar errores. En el **NB22** vamos con el
+Ya sabes elegir y manejar la colección adecuada para cada cosa (en la práctica, hasta para orientarte dentro del humanoide de MuJoCo), y conoces la trampa del alias, que te ahorrará muchas horas de buscar errores. En el **NB22** vamos con el
 **control del flujo** y los **errores**: el bucle `while`, `continue`, las **excepciones** (cómo provocar, capturar y manejar errores para que un entrenamiento de horas no se
 caiga por un fallo tonto) y, sobre todo, cómo **depurar**: el arte de encontrar por qué un programa no hace lo que esperas.
 """),
