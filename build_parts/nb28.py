@@ -13,6 +13,11 @@ La política estocástica: acción = media + σ·ruido normal (explorar, NB03), 
 coste de explorar (retorno vs σ, 1.000 palos vectorizados). Herramienta para
 el NB29: el logaritmo (inverso de exp, convierte productos en sumas) y la
 log-probabilidad de una normal.
+🛠 Práctica en MuJoCo (apartado 12): el palo de escoba de MuJoCo es determinista
+(5° → cae en 0,58 s siempre); el azar se pone en el estado inicial (ángulo
+uniforme ±5°, semilla) → 1.000 tiempos de caída (media 0,81 s, cola larga,
+mediana < media), error típico e intervalo, semillas; política estocástica
+(PD + σ·ruido) en MuJoCo: aguanta hasta σ 0,5, se hunde con σ 2; 2 vídeos.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -565,11 +570,285 @@ Por eso, en un entrenamiento, la exploración suele empezar grande e ir **dismin
 </details>
 """),
 
-md(r"""## 12 · Posdata
+md(r"""## 12 · 🛠 Práctica en MuJoCo: tirar los dados con física de verdad
+
+Toda la lección ha girado en torno a una idea: **el mismo experimento, repetido, no da siempre lo mismo**, y hay que medirlo con
+medias, desviaciones, histogramas e intervalos. Hoy lo comprobarás en **MuJoCo**, con el palo de escoba de física real
+(`taller.cargar("palo_escoba")`: un carrito sobre un raíl, un palo de 1 m sujeto con una bisagra y un motor que empuja el carrito).
+
+Vas a descubrir algo curioso: **MuJoCo no tira dados**. Si le das exactamente la misma situación, da exactamente el mismo resultado,
+siempre. Entonces, ¿de dónde sale el azar en un entrenamiento de robots? De **dos sitios**, los dos del apartado 1: de **dónde
+empieza** el robot (cada episodio, un poco distinto) y de la **política que explora**. Los dos los vas a controlar tú con un
+**generador** y su **semilla**.
+
+Recordatorio del palo de MuJoCo: `datos.qpos` tiene dos números, la posición del carro (metros) y el **ángulo del palo** (en
+**radianes**, NB03b); `datos.qvel`, sus dos velocidades. Diremos que el palo **se ha caído** cuando pase de **30 grados**, como
+en el palo de siempre.
+"""),
+
+md(r"""### Paso 1 · Cargar el palo de escoba
+
+Lo de siempre: el **modelo** (el plano, que no cambia) y unos **datos** (el estado de ahora). El paso de tiempo de este mundo es
+de una centésima de segundo.
+"""),
+
+code(r"""import mujoco
+import taller
+
+modelo, datos = taller.cargar("palo_escoba")
+print("Paso de tiempo:", modelo.opt.timestep, "s")
+print("qpos (carro, ángulo):", datos.qpos)"""),
+
+md(r"""### Paso 2 · Una función que mide cuánto tarda en caer
+
+Con lo que sabes de funciones (NB10), bucles `while` (NB07) y radianes (NB03b): un **mundo nuevo** (`mujoco.MjData(modelo)`, un
+estado recién estrenado), el palo torcido `angulo` grados, **sin motor**, y pasitos hasta que pase de 30 grados (o hasta 5 segundos).
+Devuelve el tiempo que tardó.
+"""),
+
+code(r"""def tiempo_de_caida(angulo, segundos_max=5.0):
+    datos = mujoco.MjData(modelo)                  # un episodio nuevo, desde cero
+    datos.qpos[1] = np.radians(angulo)             # el palo, torcido (MuJoCo quiere radianes)
+    while datos.time < segundos_max:
+        mujoco.mj_step(modelo, datos)
+        if abs(np.degrees(datos.qpos[1])) > 30:    # ¿se ha caído?
+            return datos.time
+    return segundos_max"""),
+
+md(r"""### Paso 3 · MuJoCo no tira dados
+
+Lancemos **tres veces** el mismo experimento: el palo torcido 5 grados.
+"""),
+
+code(r"""for intento in range(3):
+    print(f"intento {intento}: cae en {tiempo_de_caida(5):.2f} s")"""),
+
+md(r"""**0,58 s las tres veces**, clavado. Un simulador es **determinista**: mismas condiciones, mismo resultado (por eso se pueden
+repetir los experimentos y cazar errores, NB27). Y mira cómo cambia con el ángulo de partida:
+"""),
+
+code(r"""for angulo in [5, 1, 0.1, 0]:
+    print(f"torcido {angulo:>3} grados: cae en {tiempo_de_caida(angulo):.2f} s")"""),
+
+md(r"""Cuanto más derecho empieza, más tarda: desde 1 grado, casi un segundo; desde una décima, 1,5 s. Y desde **0 exactos** no se cae
+**nunca** (los 5 s del máximo): un palo perfectamente vertical, sin nada que lo empuje, se queda en equilibrio para siempre... en
+un simulador. En el mundo real siempre hay un soplo de aire, una vibración, un error de un milímetro. Por eso, para que el robot
+aprenda a manejar el mundo real, **el azar hay que ponerlo nosotros**.
+"""),
+
+md(r"""### Paso 4 · El azar, en el estado inicial
+
+Cada episodio empezará con el palo torcido un ángulo **uniforme** (apartado 5) entre −5 y +5 grados, sorteado con un generador con
+**semilla** (NB11). Mil episodios (tarda unos segundos):
+"""),
+
+code(r"""generador = np.random.default_rng(0)
+angulos = generador.uniform(-5, 5, size=1000)
+tiempos = np.array([tiempo_de_caida(a) for a in angulos])
+
+print(f"media {tiempos.mean():.3f} s | desviación típica {tiempos.std():.3f} s")
+print(f"el más rápido {tiempos.min():.2f} s | el más lento {tiempos.max():.2f} s")"""),
+
+md(r"""Una media de unos **0,81 s**, con una desviación de unos **0,24 s**. El más rápido, 0,58 s (los que empezaron casi a 5
+grados); el más lento, casi **3 segundos** (alguno que empezó casi derecho del todo).
+"""),
+
+md(r"""### Paso 5 · El histograma: no todo es una campana
+
+Dibujemos la **distribución** de los tiempos (apartado 5):
+"""),
+
+code(r"""plt.figure(figsize=(7, 3.5))
+plt.hist(tiempos, bins=40, color="tab:orange")
+plt.axvline(tiempos.mean(), color="black", linestyle="--", label=f"media {tiempos.mean():.2f} s")
+plt.axvline(np.median(tiempos), color="tab:blue", label=f"mediana {np.median(tiempos):.2f} s")
+plt.xlabel("tiempo hasta caer (s)")
+plt.ylabel("episodios")
+plt.legend()
+plt.show()"""),
+
+md(r"""¡No es una campana de Gauss! Es una montaña pegada a la izquierda (nadie baja de 0,58 s) con una **cola larga** hacia la derecha:
+unos pocos episodios que empezaron casi derechos duran muchísimo. En distribuciones así, la media (0,81) queda por encima de la
+**mediana** (`np.median`, el valor que deja la mitad de los datos a cada lado: unos 0,74 s), porque la cola tira de ella. Muchas
+cosas en robótica tienen colas así (la duración de los episodios, sobre todo), y por eso conviene **mirar el histograma**, no
+solo la media.
+
+(Aunque los tiempos no sean una campana, la **media** de muchos de ellos sí se comporta como una: el teorema central del límite del
+apartado 6. Por eso el error típico del paso siguiente vale igual.)
+"""),
+
+md(r"""### Paso 6 · ¿Cuánto fiarse de la media? (y la semilla)
+
+El error típico (apartado 7) de estos mil episodios, y el intervalo de confianza del 95 %:
+"""),
+
+code(r"""error = tiempos.std() / np.sqrt(len(tiempos))
+print(f"media {tiempos.mean():.3f} ± {2 * error:.3f} s  → entre {tiempos.mean() - 2 * error:.3f} y {tiempos.mean() + 2 * error:.3f}")"""),
+
+md(r"""Con mil episodios, la media del tiempo de caída está casi seguro entre **0,80 y 0,83 s**. Ahora, el papel de la **semilla**.
+Tres "ingenieros" que solo miran **10** episodios cada uno, con semillas distintas... y uno que repite la semilla 0:
+"""),
+
+code(r"""for semilla in [0, 1, 2, 0]:
+    g = np.random.default_rng(semilla)
+    diez = np.array([tiempo_de_caida(a) for a in g.uniform(-5, 5, size=10)])
+    print(f"semilla {semilla}: media de 10 episodios = {diez.mean():.3f} s | los tres primeros: {diez[:3]}")"""),
+
+md(r"""Dos lecciones en cuatro líneas:
+
+- **Con la misma semilla, todo se repite exactamente** (la semilla 0 sale dos veces idéntica): los ángulos sorteados son los mismos,
+  y MuJoCo, que es determinista, hace lo mismo con ellos. Así se puede **reproducir** un experimento con azar.
+- **Con 10 episodios, cada semilla cuenta una historia distinta** (unos 0,76, 0,85, 0,75 s): el error típico de 10 episodios es
+  unas 0,24/√10 ≈ 0,08 s. Con mil, todas coincidirían en torno a 0,81. Es la ley de los grandes números, con física de verdad.
+"""),
+
+md(r"""### Paso 7 · La política que explora, en MuJoCo
+
+Ahora el otro azar: el de la **política estocástica** (apartado 8). El palo de MuJoCo tiene un buen controlador hecho a mano (lo
+verás a fondo en la Parte 5): empuja el carro según el ángulo y la velocidad del palo, y un poquito según dónde está el carro, para
+que no se escape del raíl. Ese controlador hará de **media**, y le sumamos σ × (ruido normal), como en el apartado 8. La orden al motor
+va de −1 a 1 (`np.clip`).
+"""),
+
+code(r"""def aguante(sigma, generador, segundos_max=5.0):
+    datos = mujoco.MjData(modelo)
+    datos.qpos[1] = np.radians(generador.uniform(-5, 5))         # empieza algo torcido, al azar
+    while datos.time < segundos_max:
+        x, angulo = datos.qpos
+        v, giro = datos.qvel
+        media = 3 * angulo + 0.8 * giro + 0.1 * x + 0.2 * v        # lo que la política "cree mejor"
+        datos.ctrl[0] = np.clip(media + sigma * generador.standard_normal(), -1, 1)   # ...más azar
+        mujoco.mj_step(modelo, datos)
+        if abs(np.degrees(datos.qpos[1])) > 30:
+            return datos.time
+    return segundos_max"""),
+
+md(r"""(`x, angulo = datos.qpos` reparte los dos números de `qpos` en dos variables de golpe, NB21.)
+
+Cien episodios de 5 segundos para cada σ:
+"""),
+
+code(r"""for sigma in [0, 0.5, 1, 2, 5]:
+    g = np.random.default_rng(0)
+    t = np.array([aguante(sigma, g) for _ in range(100)])
+    print(f"σ = {sigma:>3}: aguanta {t.mean():.2f} s de media (desviación {t.std():.2f}) | llega a los 5 s el {(t >= 5).mean():.0%}")"""),
+
+md(r"""El dilema **explorar contra aprovechar**, ahora con física real:
+
+- Con σ = 0 y σ = 0,5, el palo aguanta los **5 s** en el 100 % de los episodios: el controlador corrige el azar sin despeinarse.
+- Con σ = 1, ya se cae en uno de cada tres episodios (aguanta 4,4 s de media, y la desviación se dispara: unos aguantan, otros no).
+- Con σ = 2, **nunca** llega al final (1,7 s de media).
+- Con σ = 5, el motor va prácticamente al azar (casi siempre a tope a un lado u otro) y el palo cae en 0,8 s: ¡lo mismo que sin motor!
+
+Igual que en el apartado 8: la política aguanta bastante ruido... hasta que deja de poder corregirlo, y se hunde de golpe.
+"""),
+
+md(r"""### Paso 8 · Míralo
+
+Dos vídeos de 4 segundos con el mismo palo y el mismo controlador: con poca exploración (σ = 0,5) y con mucha (σ = 2). La función
+`control` es la que `taller.video` llama en cada pasito para que escriba la orden del motor en `datos.ctrl`.
+"""),
+
+code(r"""def explorador(sigma, semilla):
+    g = np.random.default_rng(semilla)
+    def control(modelo, datos):
+        x, angulo = datos.qpos
+        v, giro = datos.qvel
+        media = 3 * angulo + 0.8 * giro + 0.1 * x + 0.2 * v
+        datos.ctrl[0] = np.clip(media + sigma * g.standard_normal(), -1, 1)
+    return control
+
+modelo, datos = taller.cargar("palo_escoba")
+datos.qpos[1] = np.radians(4)
+taller.video(modelo, datos, segundos=4, control=explorador(0.5, semilla=1), nombre="nb28_poco_azar");"""),
+
+code(r"""modelo, datos = taller.cargar("palo_escoba")
+datos.qpos[1] = np.radians(4)
+taller.video(modelo, datos, segundos=4, control=explorador(2, semilla=1), nombre="nb28_mucho_azar");"""),
+
+md(r"""Con σ = 0,5 el carro tiembla un poco (son los "experimentos" de la exploración) pero el palo sigue de pie. Con σ = 2, el carro
+da tirones a lo loco y el palo se cae y acaba **colgando** bajo el carro (en este modelo el palo no choca con nada: atraviesa el
+raíl como un fantasma; para aprender a equilibrar no hace falta más). (La función `explorador` fabrica y **devuelve** otra función, `control`, que
+recuerda su σ y su generador: es un truco de Python que ya viste en `taller.al_azar`.)
+"""),
+
+md(r"""### Tus retos
+
+**R1.** Cambia el rango del ángulo inicial de ±5 a **±15 grados** (en el paso 4) y vuelve a medir la media y la desviación del
+tiempo de caída. ¿Más o menos? ¿Por qué?
+
+**R2.** Con el error típico del paso 6: ¿cuántos episodios harían falta para conocer la media del tiempo de caída con un error típico
+de **0,001 s**?
+
+**R3.** Con los `tiempos` del paso 4, calcula la **probabilidad** de que el palo aguante **más de 1 segundo** sin motor (como
+frecuencia: proporción de episodios).
+
+**R4.** Busca, con `aguante`, la σ a partir de la cual el palo se cae **la mitad** de las veces (prueba entre 1 y 2).
+"""),
+
+md(r"""<details>
+<summary>▶ Solución R1</summary>
+
+```python
+g = np.random.default_rng(0)
+t15 = np.array([tiempo_de_caida(a) for a in g.uniform(-15, 15, size=1000)])
+print(t15.mean(), t15.std())
+```
+
+Medido: unos **0,56 s** de media (antes, 0,81) y la misma desviación, unos **0,24 s**. Cae antes porque, de media, empieza más
+torcido; y casi un tercio de los episodios (los que empiezan a más de 5 grados) caen **antes** de 0,58 s, el mínimo de antes.
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+Error típico = σ/√n → √n = 0,24 / 0,001 = 240 → **n ≈ 57.600** episodios. Mejorar 7 veces la precisión (de 0,0075 a 0,001) cuesta
+unas 50 veces más episodios: la raíz cuadrada es una mala noticia para el bolsillo.
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+```python
+print((tiempos > 1).mean())
+```
+
+Medido: **0,174**, un 17 %. (Son los episodios que empezaron a menos de ~1 grado de la vertical: 2 grados de un rango de 10, un 20 %,
+más o menos.)
+</details>
+
+<details>
+<summary>▶ Solución R4</summary>
+
+```python
+for sigma in [1.0, 1.2, 1.4, 1.6, 1.8]:
+    g = np.random.default_rng(0)
+    t = np.array([aguante(sigma, g) for _ in range(100)])
+    print(sigma, (t < 5).mean())
+```
+
+Medido: con σ = 1 se cae el 36 % de las veces, y con σ = 1,2 ya el 80 %: la mitad cae hacia **σ ≈ 1,1**. Fíjate en lo estrecha que es la
+franja entre "casi nunca se cae" (σ = 0,5) y "siempre se cae" (σ = 2).
+</details>
+"""),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- **MuJoCo es determinista**: el mismo estado inicial da exactamente la misma simulación. El azar de un entrenamiento lo pones **tú**.
+- `mujoco.MjData(modelo)` fabrica un **episodio nuevo** (un estado limpio) sin volver a cargar el plano: así se juegan mil episodios.
+- El azar entra por el **estado inicial** (ángulos sorteados) y por la **política que explora** (σ × ruido en `datos.ctrl`).
+- Con un **generador con semilla**, un experimento con azar se repite idéntico; con semillas distintas, se miden las diferencias.
+- Los tiempos de caída tienen una **cola larga**: mirar el histograma, no solo la media.
+
+En la práctica del **NB28b** calcularás la **log-probabilidad** de un episodio entero del palo de MuJoCo y comprobarás, con
+episodios de verdad, el truco del logaritmo que permite aprender.
+"""),
+
+md(r"""## 13 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Hoy has construido la probabilidad desde cero: frecuencias, distribuciones, valor esperado, dispersión, la campana de Gauss, el error típico y las políticas que exploran. En el **NB28b**
+Hoy has construido la probabilidad desde cero: frecuencias, distribuciones, valor esperado, dispersión, la campana de Gauss, el error típico y las políticas que exploran, y lo has medido con la física real de MuJoCo. En el **NB28b**
 deduciremos con lápiz, y comprobaremos, todas las piezas matemáticas que necesita el algoritmo siguiente. Y en el **NB29** juntamos
 todo: el primer algoritmo de aprendizaje por refuerzo **de verdad**, **REINFORCE**. Sin maestro, sin probar ruedecillas al azar: el palo de escoba jugará episodios con su política exploradora,
 mirará qué acciones salieron mejor de lo normal, y moverá sus ruedecillas para hacerlas **más probables**. Y aprenderá a mantener el palo de pie **desde cero**.

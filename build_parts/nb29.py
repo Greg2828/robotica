@@ -14,6 +14,13 @@ supera 490 en la iteración ~53); 5 semillas, todas aprenden (47-95
 iteraciones). Lo aprendido (≈ −16/−20, distinto de −30/−8) y evaluación
 determinista con 1.000 palos. Por qué importa: vale para cualquier política
 (redes); por qué no basta (ruido, coste) → NB30.
+🛠 Práctica en MuJoCo (apartado 14): PRIMER ENTRENAMIENTO EN MuJoCo. jugar_mujoco
+(lista de MjData) con las mismas piezas de REINFORCE; palo MuJoCo, episodios de
+3 s, obs [ángulo, giro] en rad; tasa 0,003, σ 0,3: 70 → ~300 en 50 iteraciones
+(~10 s), pesos positivos (meter el carro debajo); aquí el puro también aprende
+(sin viento, menos ruido); examen 0 caídas en 3 s; vídeos antes/después (6 s:
+el carro deriva al tope → ver el carro, NB32-34). Se guarda en
+practica_mujoco/nb29_palo_mujoco.py.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -528,11 +535,329 @@ parezcan siempre "buenas" y las del final siempre "malas", sea cual sea lo que h
 </details>
 """),
 
-md(r"""## 14 · Posdata
+md(r"""## 14 · 🛠 Práctica en MuJoCo: tu primer entrenamiento en MuJoCo
+
+Hoy REINFORCE ha enseñado al palo de escoba "de juguete" (el de las cuatro líneas de física del NB11) a mantenerse de pie. Ahora
+viene el momento que llevamos esperando todo el curso: **entrenar un robot en MuJoCo**. El mismo algoritmo, **sin cambiar una
+línea** de sus piezas (`retornos_desde_cada_paso`, `direccion_de_mejora`), pero el mundo ya no son nuestras cuatro líneas: es el
+palo de escoba de **física real** que mediste en las prácticas del NB28 y el NB28b (un carrito de 1 kg sobre un raíl, un palo de
+1 m y 0,5 kg, un motor que empuja el carrito con hasta 10 newtons).
+
+Esto es, en pequeño, lo que hacen los laboratorios de robótica: **un simulador de física + un algoritmo de aprendizaje por refuerzo**.
+
+Lo que cambia respecto al palo de juguete (y conviene tenerlo claro antes de empezar):
+
+- La **observación** son el ángulo del palo y su velocidad de giro, en **radianes** y rad/s (como los da MuJoCo, NB03b). Números
+  pequeños (5 grados son 0,087 rad), así que las ruedecillas y la tasa de aprendizaje serán de otro tamaño.
+- La **acción** es la orden del motor, de −1 a 1 (`datos.ctrl`).
+- **El signo**: en MuJoCo, si el palo se inclina hacia +x, hay que mover el carro **hacia +x**, para meterlo debajo (como cuando
+  equilibras una escoba en la mano). Así que ahora las ruedecillas buenas saldrán **positivas**.
+- **Episodios de 3 segundos** (300 pasos de 0,01 s) y cada palo empieza torcido un ángulo al azar entre −5 y 5 grados (NB28). La
+  recompensa es la de siempre: 1 − (ángulo/30°)² mientras no pase de 30 grados. Máximo: unos 300 puntos.
+
+¿Por qué 3 segundos y no más? Porque nuestra política solo **mira el palo**, no el carro. Al final de la práctica verás qué pasa si
+le pides más tiempo (spoiler: el carro se va acercando al final del raíl).
+"""),
+
+md(r"""### Paso 1 · Jugar en MuJoCo, apuntándolo todo
+
+Es la función `jugar` del apartado 5 traducida a MuJoCo. En vez de dos arrays (inclinación y velocidad), hay **50 mundos**: una
+lista con un `MjData` por episodio (todos con el mismo `modelo`, NB28). En cada paso: observar los 50, decidir con la neurona,
+explorar, y dar un `mj_step` a cada mundo. Léela despacio comparándola con `jugar`: el apuntado es idéntico.
+"""),
+
+code(r"""import mujoco
+import taller
+
+modelo, _ = taller.cargar("palo_escoba")
+CAIDA = np.radians(30)
+
+def jugar_mujoco(pesos, sigma, n_episodios, generador, pasos_maximos=300):
+    todos = [mujoco.MjData(modelo) for _ in range(n_episodios)]          # 50 mundos
+    for datos in todos:
+        datos.qpos[1] = np.radians(generador.uniform(-5, 5))              # cada palo, algo torcido
+    vivos = np.ones(n_episodios, dtype=bool)
+
+    observaciones = np.zeros((pasos_maximos, n_episodios, 2))
+    acciones = np.zeros((pasos_maximos, n_episodios))
+    medias = np.zeros((pasos_maximos, n_episodios))
+    recompensas = np.zeros((pasos_maximos, n_episodios))
+    estaba_vivo = np.zeros((pasos_maximos, n_episodios), dtype=bool)
+
+    for t in range(pasos_maximos):
+        observacion = np.array([[datos.qpos[1], datos.qvel[1]] for datos in todos])   # (episodios, 2)
+        media = observacion @ pesos                                       # la neurona
+        accion = media + sigma * generador.standard_normal(n_episodios)   # ¡explorar!
+        observaciones[t], acciones[t], medias[t], estaba_vivo[t] = observacion, accion, media, vivos
+
+        for datos, a in zip(todos, np.clip(accion, -1, 1)):               # MuJoCo hace la física
+            datos.ctrl[0] = a
+            mujoco.mj_step(modelo, datos)
+
+        inclinacion = np.array([datos.qpos[1] for datos in todos])
+        vivos = vivos & (np.abs(inclinacion) <= CAIDA)
+        recompensas[t] = np.where(vivos, 1 - (inclinacion / CAIDA) ** 2, 0.0)
+        if not vivos.any():
+            break
+    return observaciones, acciones, medias, recompensas, estaba_vivo"""),
+
+md(r"""(`zip(todos, ...)` recorre a la vez cada mundo y su acción, NB21. Y `if not vivos.any(): break` corta en cuanto se han caído
+todos: no tiene sentido seguir simulando palos en el suelo.)
+
+Lo que **no** está: las ecuaciones del movimiento. Las cuatro líneas de física del apartado 5 se han convertido en
+`mujoco.mj_step`. El algoritmo no sabe nada de ellas (la física desaparece, NB28b).
+
+Probémosla con la política que no sabe nada (pesos a cero):
+"""),
+
+code(r"""generador = np.random.default_rng(0)
+obs, acc, med, rec, vivo = jugar_mujoco(np.zeros(2), 0.3, 50, generador)
+print(f"Retorno medio: {(rec * vivo).sum(axis=0).mean():.1f} de unos 300 | dura de media {vivo.sum(axis=0).mean():.0f} pasos")"""),
+
+md(r"""Unos **70 puntos**: sin saber nada, el palo dura menos de un segundo (como en el NB28, que caía en 0,58-3 s sin motor).
+"""),
+
+md(r"""### Paso 2 · El bucle de entrenamiento
+
+Es la función `entrenar` del apartado 6, cambiando `jugar` por `jugar_mujoco`. Las piezas `retornos_desde_cada_paso` y
+`direccion_de_mejora` son **las mismas** de antes, sin tocar. Dos ajustes de tamaño, porque aquí los números son otros:
+
+- **σ = 0,3**: la exploración, en unidades de la orden del motor (que va de −1 a 1). En el NB28 viste que hasta σ = 0,5 un buen
+  controlador ni se inmuta.
+- **Tasa = 0,003**: la medí probando (NB17): con 0,01 aprende, pero da bandazos; con 0,003 sube más tranquilo.
+
+50 iteraciones de 50 episodios: **2.500 episodios de MuJoCo**, unos **750.000 pasos de física**. En la Pi tarda unos 10 segundos.
+"""),
+
+code(r"""import time
+
+def entrenar_mujoco(con_linea_base, tasa=0.003, sigma=0.3, iteraciones=50, n_episodios=50, semilla=0):
+    generador = np.random.default_rng(semilla)
+    pesos = np.zeros(2)
+    historial = []
+    for iteracion in range(iteraciones):
+        obs, acc, med, rec, vivo = jugar_mujoco(pesos, sigma, n_episodios, generador)
+        historial.append((rec * vivo).sum(axis=0).mean())
+        G = retornos_desde_cada_paso(rec)
+        if con_linea_base:
+            G = G - G.mean(axis=1, keepdims=True)
+        pesos = pesos + tasa * direccion_de_mejora(obs, acc, med, G, vivo, sigma)
+    return pesos, historial
+
+inicio = time.time()
+pesos_mujoco, historial_mujoco = entrenar_mujoco(con_linea_base=True)
+print(f"Tiempo: {time.time() - inicio:.0f} s")
+print("Pesos aprendidos:", pesos_mujoco.round(2))
+print("Retorno medio cada 5 iteraciones:", [round(x) for x in historial_mujoco[::5]])"""),
+
+md(r"""**¡Aprende!** De unos 70 puntos a casi **300**, el máximo. Y las ruedecillas salen **positivas** (unos 2,2 para el ángulo y
+0,35 para el giro): el robot ha descubierto **solo** que hay que meter el carro debajo del palo, empujando hacia donde se cae.
+Nadie se lo dijo; ni siquiera sabe que existe un carro.
+
+Acabas de hacer tu **primer entrenamiento de aprendizaje por refuerzo en MuJoCo**.
+"""),
+
+md(r"""### Paso 3 · La curva de aprendizaje (y el REINFORCE puro)
+
+Entrenemos también **sin línea base** (otros 10 segundos) y dibujemos las dos curvas, como en el apartado 8:
+"""),
+
+code(r"""pesos_puro_mujoco, historial_puro_mujoco = entrenar_mujoco(con_linea_base=False)
+print("Sin línea base, pesos:", pesos_puro_mujoco.round(2))
+print("Retorno medio cada 5 iteraciones:", [round(x) for x in historial_puro_mujoco[::5]])
+
+plt.figure(figsize=(7, 3.5))
+plt.plot(historial_puro_mujoco, color="tab:red", label="REINFORCE puro")
+plt.plot(historial_mujoco, color="tab:green", label="REINFORCE con línea base")
+plt.axhline(300, color="gray", linestyle="--", linewidth=1)
+plt.xlabel("iteración (50 episodios de MuJoCo cada una)")
+plt.ylabel("retorno medio")
+plt.title("Primer entrenamiento en MuJoCo: palo de escoba")
+plt.legend()
+plt.grid(True, alpha=0.4)
+plt.show()"""),
+
+md(r"""Una sorpresa, y hay que contarla tal cual: **aquí el REINFORCE puro también aprende**. ¿Contradice el apartado 7? No: el
+palo de juguete tenía un **viento** brutal en cada paso (hasta 30 de aceleración, tanto como 3 grados de inclinación), que llenaba de
+ruido los retornos; este palo de MuJoCo no tiene viento, y su única fuente de azar es el ángulo de partida y la exploración. Con
+menos ruido en el mundo, el ruido de la estimación hace menos daño. La línea base sigue ayudando (con las semillas 0 a 3, en la
+iteración 45 iba por 278-298 puntos, frente a 267-291 sin ella), pero la diferencia es pequeña. En la práctica del NB30 **mediremos**
+el ruido de las dos flechas en este palo, como hiciste en el NB28b.
+
+Lección de método: un truco que es imprescindible en un problema puede ser casi indiferente en otro. **Mídelo siempre**.
+"""),
+
+md(r"""### Paso 4 · El examen: sin explorar
+
+Como en el apartado 10: la política aprendida, **sin exploración** (σ = 0), con 100 palos nuevos (otra semilla):
+"""),
+
+code(r"""obs, acc, med, rec, vivo = jugar_mujoco(pesos_mujoco, 0.0, 100, np.random.default_rng(123))
+retornos = (rec * vivo).sum(axis=0)
+print(f"Retorno medio {retornos.mean():.1f} | se caen antes de los 3 s: {(~vivo[-1]).sum()} de 100")"""),
+
+md(r"""**Ninguno** se cae en los 3 segundos, y el retorno roza el máximo (unos 299,7: casi no se inclina).
+"""),
+
+md(r"""### Paso 5 · Antes y después, en vídeo
+
+Para filmar una política con `taller.video` hace falta una función `control(modelo, datos)` que escriba la orden en `datos.ctrl`. La
+fabricamos a partir de unos pesos (sin exploración). Primero, **antes** de aprender (pesos a cero), desde 4 grados:
+"""),
+
+code(r"""def politica_neurona(pesos):
+    def control(modelo, datos):
+        observacion = np.array([datos.qpos[1], datos.qvel[1]])
+        datos.ctrl[0] = np.clip(observacion @ pesos, -1, 1)
+    return control
+
+modelo_video, datos_video = taller.cargar("palo_escoba")
+datos_video.qpos[1] = np.radians(4)
+taller.video(modelo_video, datos_video, segundos=3, control=politica_neurona(np.zeros(2)), nombre="nb29_antes");"""),
+
+md(r"""Se cae en medio segundo. Y **después** de 2.500 episodios de práctica, con el mismo palo torcido 4 grados. Filmamos **6
+segundos**, el doble de lo que duraban sus episodios de entrenamiento:
+"""),
+
+code(r"""modelo_video, datos_video = taller.cargar("palo_escoba")
+datos_video.qpos[1] = np.radians(4)
+taller.video(modelo_video, datos_video, segundos=6, control=politica_neurona(pesos_mujoco), nombre="nb29_despues")
+print(f"Al acabar: carro en x = {datos_video.qpos[0]:.2f} m | palo a {np.degrees(datos_video.qpos[1]):.0f} grados")"""),
+
+md(r"""Mira el vídeo con atención, porque cuenta **dos** cosas:
+
+1. **Lo que aprendió**: el carro se mete enseguida bajo el palo y lo endereza. Durante los primeros segundos, perfecto.
+2. **Lo que no aprendió**: como solo mira el palo, no le importa dónde está el carro, y el carro va **derivando** poco a poco hacia
+   un lado... hasta que, pasados los 3 segundos que duraban sus episodios, se acerca al final del raíl (que está a 1,8 m), choca con
+   el tope y el palo cae (mira la posición y el ángulo del final, en la salida).
+
+No es un fallo del algoritmo: **ha aprendido exactamente lo que le pedimos** (aguantar 3 segundos) con lo que le dejamos ver (el palo).
+Con 100 palos de 6 segundos, medido, se caen **42**. El remedio, que haremos cuando tengamos redes (NB32-NB34): dejarle ver también
+el carro y pedirle episodios más largos.
+"""),
+
+md(r"""### Paso 6 · Guardado en un fichero, para las próximas lecciones
+
+En las prácticas del NB30 al NB34 volverás a jugar en este palo muchas veces. Para no copiar `jugar_mujoco` en cada notebook, está
+guardada (NB26) en el fichero **`practica_mujoco/nb29_palo_mujoco.py`**, con un único cambio: en vez de `pesos`, recibe una
+**función** `politica` (observaciones → medias), para que valga igual para una neurona de NumPy que para una red de PyTorch. Y trae
+dos opciones nuevas: `viento` (ráfagas al azar que empujan el palo, en newtons) y `ver_carro` (observar también el carro). Compruébalo:
+da exactamente lo mismo que la tuya.
+"""),
+
+code(r"""from practica_mujoco.nb29_palo_mujoco import jugar_mujoco as jugar_del_fichero
+
+a = jugar_mujoco(pesos_mujoco, 0.3, 5, np.random.default_rng(7))
+b = jugar_del_fichero(lambda o: o @ pesos_mujoco, 0.3, 5, np.random.default_rng(7))
+print("¿Mismos retornos?", np.allclose((a[3] * a[4]).sum(axis=0), (b[3] * b[4]).sum(axis=0), atol=1e-4))"""),
+
+md(r"""### Tus retos
+
+**R1.** ¿Ha sido suerte? Entrena con línea base con las semillas 1, 2 y 3 y mira el retorno medio de las últimas 5 iteraciones.
+
+**R2.** Prueba la tasa **0,01**. ¿Aprende más rápido? ¿Más tranquilo?
+
+**R3.** Ponle **viento** al palo: entrena con `jugar_del_fichero(lambda o: o @ pesos, ..., viento=5.0)` (ráfagas de hasta 5 newtons
+en cada paso). Pista: copia `entrenar_mujoco` cambiando solo la línea de `jugar_mujoco`. ¿Le cuesta más?
+
+**R4.** **Reto.** Entrena con episodios de **6 segundos** (`pasos_maximos=600`). ¿Consigue no caerse? ¿Por qué no?
+"""),
+
+md(r"""<details>
+<summary>▶ Solución R1</summary>
+
+```python
+for semilla in [1, 2, 3]:
+    pesos, historial = entrenar_mujoco(con_linea_base=True, semilla=semilla)
+    print(semilla, pesos.round(2), round(np.mean(historial[-5:])))
+```
+
+Medido: las tres aprenden, acabando entre unos **276 y 292** (y con pesos distintos: unos 1,9-2,3 para el ángulo y de 0,4 a 2,2
+para el giro). Como en el apartado 9: muchas combinaciones de ruedecillas funcionan.
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+pesos, historial = entrenar_mujoco(con_linea_base=True, tasa=0.01)
+print(pesos.round(2), [round(x) for x in historial[::5]])
+```
+
+Medido (semilla 0): sube **más deprisa** (unos 268 ya en la iteración 5) y acaba en ~291... pero si miras la curva entera
+(`plt.plot(historial)`), hacia la iteración 16 da un **bajón** a unos 180 antes de recuperarse. Con pasos más largos, a veces se pasa de frenada (NB17). Esa fragilidad es uno de los males que
+PPO curará (NB33).
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+```python
+def entrenar_con_viento(viento, tasa=0.003, sigma=0.3, iteraciones=50, semilla=0):
+    generador = np.random.default_rng(semilla)
+    pesos = np.zeros(2)
+    historial = []
+    for iteracion in range(iteraciones):
+        obs, acc, med, rec, vivo = jugar_del_fichero(lambda o: o @ pesos, sigma, 50, generador, viento=viento)
+        historial.append((rec * vivo).sum(axis=0).mean())
+        G = retornos_desde_cada_paso(rec)
+        G = G - G.mean(axis=1, keepdims=True)
+        pesos = pesos + tasa * direccion_de_mejora(obs, acc, med, G, vivo, sigma)
+    return pesos, historial
+
+pesos, historial = entrenar_con_viento(5.0)
+print(pesos.round(2), [round(x) for x in historial[::5]])
+```
+
+Medido: aprende, pero se queda más abajo (unos **237-256** en las últimas iteraciones, con las semillas 0-2, frente a ~290 sin viento) y la curva es más
+irregular (con la semilla 3 llegó a dar un bajón a 68 antes de recuperarse). El viento es **ruido en el mundo**: cada estimación de la
+flecha es peor, y además el palo es más difícil de sostener.
+</details>
+
+<details>
+<summary>▶ Solución R4</summary>
+
+```python
+def entrenar_largo(semilla=0, tasa=0.003, sigma=0.3):
+    generador = np.random.default_rng(semilla)
+    pesos, historial = np.zeros(2), []
+    for iteracion in range(50):
+        obs, acc, med, rec, vivo = jugar_mujoco(pesos, sigma, 50, generador, pasos_maximos=600)
+        historial.append((rec * vivo).sum(axis=0).mean())
+        G = retornos_desde_cada_paso(rec)
+        G = G - G.mean(axis=1, keepdims=True)
+        pesos = pesos + tasa * direccion_de_mejora(obs, acc, med, G, vivo, sigma)
+    return pesos, historial
+
+pesos, historial = entrenar_largo()
+print(pesos.round(2), [round(x) for x in historial[::5]])
+```
+
+Mejora (de 70 a unos 430 puntos), pero **no llega** a los ~600 del máximo, y en el examen sin explorar (100 palos de 6 s)
+se caen **69**: muchos episodios acaban con el carro contra el tope del raíl. Con solo el ángulo y el giro del palo, **no puede saber** dónde está el carro: ninguna combinación de sus dos ruedecillas
+lo resuelve. Hace falta otra observación (la posición y la velocidad del carro: `ver_carro=True` del fichero). Elegir **qué ve** el
+robot es parte del diseño (NB03).
+</details>
+"""),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- **Entrenar en MuJoCo** es el bucle de REINFORCE de siempre con la física cambiada por `mujoco.mj_step`: el algoritmo no se toca.
+- Para jugar muchos episodios a la vez: **una lista de `MjData`** (un mundo por episodio) con el mismo `modelo`.
+- Unidades de MuJoCo: observaciones en radianes y rad/s, acciones en la escala del motor (−1 a 1); los hiperparámetros (σ, tasa)
+  se ajustan a esas escalas.
+- Una política aprendida se **filma** convirtiéndola en una función `control(modelo, datos)` para `taller.video`.
+- El robot aprende **lo que le pides con lo que le dejas ver**: 3 segundos mirando solo el palo → el carro deriva después.
+
+En la práctica del **NB30** usarás este palo de MuJoCo como laboratorio para **medir el ruido**, construir un **crítico** y probar el
+**descuento**.
+"""),
+
+md(r"""## 15 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Hoy tu palo de escoba ha aprendido **solo**, desde cero, con el primer algoritmo de aprendizaje por refuerzo de verdad. Y has visto por qué una idea pequeña (comparar con lo normal) separa un
+Hoy tu palo de escoba ha aprendido **solo**, desde cero, con el primer algoritmo de aprendizaje por refuerzo de verdad, y lo has entrenado también en MuJoCo, con física real. Y has visto por qué una idea pequeña (comparar con lo normal) separa un
 algoritmo que no funciona de uno que sí. En el **NB30** vamos a fondo con esa idea: **por qué** el aprendizaje es tan ruidoso, cómo **medir** ese ruido, cómo **normalizar** las ventajas, qué hace
 de verdad el **descuento**, y el gran salto: un **crítico**, una segunda neurona que aprende **cuánto vale cada situación**, para que cada acción se compare con lo que era "normal" **justo en ese
 momento**. Es el camino hacia los algoritmos actor-crítico y hacia PPO.

@@ -9,6 +9,11 @@ paso (respecto a μ, a σ y a log σ), el truco ∇p = p·∇log p, la regla del
 producto contra la de los logaritmos, la física que desaparece, el gradiente de
 la recompensa esperada como media (Montecarlo), la línea base que no tuerce la
 media, la serie geométrica 1/(1 − γ), y dividir entre n o entre n − 1.
+🛠 Práctica en MuJoCo (apartado 11): política campana de una ruedecilla w sobre el
+palo de escoba de MuJoCo; ln P de un episodio = suma (el producto ~1e-31);
+pendiente de ln P respecto a w sin volver a simular (la física desaparece);
+montaña J(w); pendiente en w=1 a lo bruto (~116) vs truco del logaritmo, sin y
+con línea base (misma flecha, ~3,5× menos ruido; lotes con la flecha al revés).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -702,11 +707,235 @@ print(retornos.var(), retornos.var(ddof=1))
 </details>
 """),
 
-md(r"""## 11 · Posdata
+md(r"""## 11 · 🛠 Práctica en MuJoCo: el truco del logaritmo, con episodios de verdad
+
+Hoy has deducido con lápiz cuatro piezas: la log-probabilidad de un episodio es una **suma**; la **física desaparece** de su
+pendiente; el **truco del logaritmo** estima la pendiente de la recompensa esperada **jugando**; y la **línea base** no tuerce la
+flecha pero quita ruido. Todas las comprobaste con campanas sueltas. Ahora vas a comprobarlas con **episodios enteros del palo de
+escoba de MuJoCo** (la práctica del NB28), donde la física es de verdad y no sabemos escribir su fórmula.
+
+La política será una **campana** (NB28) con una sola ruedecilla, **w**:
+
+```
+   media μ = w × ángulo + 0,5 × velocidad de giro        (en radianes y rad/s, como los da MuJoCo)
+   acción  = μ + σ × ruido normal,  con σ = 0,3           (la orden al motor, que solo admite de −1 a 1)
+```
+
+La pregunta: **¿hacia dónde hay que mover w para que el palo aguante más?** La responderemos de dos formas (a lo bruto y con el
+truco) y comprobaremos que coinciden.
+"""),
+
+md(r"""### Paso 1 · El palo y un episodio que lo apunta todo
+
+Cargamos el palo y escribimos una función que juega **un episodio** de hasta 300 pasos (3 segundos) con la política exploradora.
+Apunta lo que la política necesita para calcular sus probabilidades: el ángulo y el giro que vio en cada paso, y la acción que sorteó.
+La recompensa es la del palo de siempre (1 − (ángulo/30°)² mientras siga de pie), y el episodio acaba si pasa de 30 grados.
+"""),
+
+code(r"""import mujoco
+import taller
+
+modelo, datos = taller.cargar("palo_escoba")
+CAIDA = np.radians(30)
+SIGMA = 0.3
+
+def episodio(w, generador, pasos=300):
+    datos = mujoco.MjData(modelo)                                  # un mundo nuevo
+    datos.qpos[1] = np.radians(generador.uniform(-5, 5))           # empieza algo torcido (NB28)
+    angulos, giros, acciones, retorno = [], [], [], 0.0
+    for t in range(pasos):
+        angulo, giro = datos.qpos[1], datos.qvel[1]
+        accion = (w * angulo + 0.5 * giro) + SIGMA * generador.standard_normal()   # campana: μ + σ·ruido
+        angulos.append(angulo); giros.append(giro); acciones.append(accion)
+        datos.ctrl[0] = np.clip(accion, -1, 1)
+        mujoco.mj_step(modelo, datos)
+        if abs(datos.qpos[1]) > CAIDA:
+            break
+        retorno += 1 - (datos.qpos[1] / CAIDA) ** 2
+    return np.array(angulos), np.array(giros), np.array(acciones), retorno"""),
+
+md(r"""### Paso 2 · La log-probabilidad de un episodio entero (apartados 1 y 2)
+
+Jugamos un episodio con w = 1. La probabilidad de que la política hiciera **justo esas** 300 acciones es un **producto** de 300
+densidades; su logaritmo, una **suma** de 300 log-probabilidades (la función `log_p` del apartado 3):
+"""),
+
+code(r"""generador = np.random.default_rng(0)
+angulos, giros, acciones, retorno = episodio(1.0, generador)
+medias = 1.0 * angulos + 0.5 * giros
+log_ps = log_p(acciones, medias, SIGMA)
+
+print(f"pasos: {len(acciones)} | retorno: {retorno:.1f}")
+print(f"suma de log-probabilidades: {log_ps.sum():.2f}")
+print(f"producto de probabilidades: {np.prod(np.exp(log_ps)):.3e}")"""),
+
+md(r"""El producto ya es un número con **31 ceros** detrás de la coma, y eso con un episodio cortito de 3 segundos; con uno de un
+minuto (6.000 pasos) el ordenador lo redondearía a **0**. La suma, unos **−71**, es un número de lo más normal. Por eso los
+algoritmos trabajan con logaritmos (apartado 2).
+"""),
+
+md(r"""### Paso 3 · La física desaparece (apartado 5)
+
+La pendiente de ln P(episodio) respecto a w, según el apartado 5, solo necesita las piezas de la **política**. Con la regla de la
+cadena (apartado 3: pendiente respecto a μ = (a − μ)/σ², y μ cambia "ángulo" por cada unidad de w):
+
+```
+   pendiente de ln P respecto a w  =  suma sobre los pasos de  (a − μ) / σ²  ×  ángulo
+```
+
+Comprobémoslo con la pendiente numérica: movemos w un poquito y recalculamos las log-probabilidades **de las mismas acciones**, en
+**las mismas situaciones**. Fíjate en que **no volvemos a simular nada**: MuJoCo no aparece en la cuenta.
+"""),
+
+code(r"""ln_P = lambda w: log_p(acciones, w * angulos + 0.5 * giros, SIGMA).sum()
+
+print("numérica:", pendiente(ln_P, 1.0))
+print("fórmula: ", (((acciones - medias) / SIGMA ** 2) * angulos).sum())"""),
+
+md(r"""Iguales. La física del carro, la gravedad, el motor... todo eso lo calcula MuJoCo, y nosotros no sabemos su fórmula. Pero
+**no nos hace falta**: para saber cómo cambia la probabilidad del episodio al tocar w, basta con la campana, que la hemos hecho
+nosotros. Eso es lo que significa **sin modelo** (*model-free*).
+"""),
+
+md(r"""### Paso 4 · La montaña J(w)
+
+¿Cuánto aguanta el palo, de media, según w? Es la **recompensa esperada** J(w) (apartado 4). Estimémosla con 200 episodios para
+varios w (tarda unos segundos):
+"""),
+
+code(r"""def J(w, n, semilla):
+    generador = np.random.default_rng(semilla)
+    return np.array([episodio(w, generador)[3] for _ in range(n)])
+
+ws = [0, 0.5, 1, 1.5, 2, 3]
+alturas = [J(w, 200, semilla=0).mean() for w in ws]
+for w, a in zip(ws, alturas):
+    print(f"w = {w}: retorno medio {a:6.1f}")
+
+plt.figure(figsize=(6, 3.2))
+plt.plot(ws, alturas, "o-")
+plt.xlabel("w (ruedecilla del ángulo)")
+plt.ylabel("J(w), retorno medio")
+plt.grid(True, alpha=0.4)
+plt.show()"""),
+
+md(r"""Una cuesta: con w = 0 (la política no mira el ángulo) el palo aguanta poco (unos 106 puntos de 300); con w = 3, casi el máximo.
+Desde w = 1, la flecha "cuesta arriba" apunta claramente a **subir w**. Pero ¿**cuánto** de empinada es la cuesta en w = 1?
+"""),
+
+md(r"""### Paso 5 · La pendiente, a lo bruto (NB17)
+
+Como en el NB17: mover w un poco a cada lado y medir. Usamos la **misma semilla** en los dos lados (así los dos lotes de 1.000
+episodios tienen los mismos ángulos de partida y el mismo ruido, y la resta tiene mucho menos azar):
+"""),
+
+code(r"""h = 0.25
+a_lo_bruto = (J(1 + h, 1000, semilla=5).mean() - J(1 - h, 1000, semilla=5).mean()) / (2 * h)
+print(f"pendiente de J en w = 1, a lo bruto: {a_lo_bruto:.1f}")"""),
+
+md(r"""Unos **116** puntos de retorno por cada unidad de w. Ha costado **2.000 episodios**, y solo para **una** ruedecilla: con un
+millón de ruedecillas serían dos mil millones.
+"""),
+
+md(r"""### Paso 6 · La pendiente, con el truco del logaritmo (apartados 4 y 6)
+
+Ahora la forma del aprendizaje por refuerzo: jugamos episodios **solo con w = 1**, y en cada uno multiplicamos su retorno R por la
+pendiente de ln P del paso 3. La media es la flecha. Y lo hacemos también restando la **línea base** (la media de los R). Con
+el error típico (NB28) para saber cuánto fiarnos (unos 20 segundos):
+"""),
+
+code(r"""generador = np.random.default_rng(2)
+R, pendientes_ln_P = [], []
+for n in range(2000):
+    angulos, giros, acciones, retorno = episodio(1.0, generador)
+    R.append(retorno)
+    pendientes_ln_P.append((((acciones - (angulos + 0.5 * giros)) / SIGMA ** 2) * angulos).sum())
+R, pendientes_ln_P = np.array(R), np.array(pendientes_ln_P)
+
+sin_base = R * pendientes_ln_P
+con_base = (R - R.mean()) * pendientes_ln_P
+for nombre, e in [("sin línea base", sin_base), ("con línea base", con_base)]:
+    print(f"{nombre}: {e.mean():6.1f} ± {2 * e.std() / np.sqrt(len(e)):5.1f}  (media ± 2 errores típicos)")"""),
+
+md(r"""Las dos casan con los **~116** a lo bruto, dentro de su margen de error: el truco funciona con física de verdad, sin saber
+nada de ella. Pero mira los márgenes: **sin línea base**, ±71 (la estimación, unos 78, apenas se sabe si es 10 o 150); **con línea
+base**, ±20 (unos 113). La misma flecha, con **3,5 veces menos ruido**: el apartado 6, en MuJoCo.
+
+¿Qué significa eso para un robot que aprende con lotes pequeños? Partamos los 2.000 episodios en 40 lotes de 50 y miremos cuántas
+veces la flecha de un lote apunta **al revés** (diría "baja w", cuando la cuesta sube):
+"""),
+
+code(r"""for nombre, e in [("sin línea base", sin_base), ("con línea base", con_base)]:
+    por_lote = e.reshape(40, 50).mean(axis=1)                  # 40 lotes de 50 episodios (NB27)
+    print(f"{nombre}: flecha al revés en {(por_lote < 0).sum()} de 40 lotes")"""),
+
+md(r"""Sin línea base, **14 de 40** lotes empujarían al robot **cuesta abajo** (más de un tercio); con línea base, **1 de 40**. Es exactamente el fracaso y el éxito que vas a ver en el NB29.
+"""),
+
+md(r"""### Tus retos
+
+**R1.** Calcula la pendiente de ln P del episodio del paso 2 respecto a la **otra** ruedecilla, la de la velocidad de giro (el 0,5),
+con la fórmula y con `pendiente`. (Pista: ahora μ cambia "giro" por cada unidad de esa ruedecilla.)
+
+**R2.** En el paso 6 usamos la recompensa del episodio **entero** para todas sus acciones. ¿Qué pieza del apartado 6 dice que
+podríamos usar solo las recompensas **desde cada paso**? ¿Para qué serviría?
+
+**R3.** Repite el paso 5 con w = 2,5 en vez de 1 (mira antes la montaña del paso 4: ¿qué pendiente esperas?).
+"""),
+
+md(r"""<details>
+<summary>▶ Solución R1</summary>
+
+```python
+generador = np.random.default_rng(0)
+angulos, giros, acciones, retorno = episodio(1.0, generador)
+ln_P_giro = lambda k: log_p(acciones, 1.0 * angulos + k * giros, SIGMA).sum()
+print(pendiente(ln_P_giro, 0.5))
+print((((acciones - (angulos + 0.5 * giros)) / SIGMA ** 2) * giros).sum())
+```
+
+Las dos salen iguales: la fórmula es la misma de siempre, (a − μ)/σ² × **la entrada que multiplica a esa ruedecilla** (aquí, el
+giro). Con vectores: (a − μ)/σ² × observación, la flecha del NB29.
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+La última: **"las recompensas de antes no cuentan"**. Una acción no puede influir en las recompensas que ya pasaron, así que, para
+ella, son una línea base: se pueden quitar sin torcer la flecha, y quitarlas quita ruido. En el NB29 cada acción se juzga por su
+**retorno desde ese paso**, G(t).
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+```python
+print((J(2.5 + h, 1000, semilla=5).mean() - J(2.5 - h, 1000, semilla=5).mean()) / (2 * h))
+```
+
+En la montaña, entre w = 2 y w = 3 el retorno apenas sube (de ~287 a ~299): la cuesta casi se ha acabado, así que la pendiente
+sale **pequeña**: medido, unos **8** (contra 116 en w = 1). Cerca de la cima, la flecha se acorta: el ascenso por gradiente frena solo (NB17).
+</details>
+"""),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- Una **política estocástica** sobre MuJoCo: la campana decide la orden del motor, y apuntas lo que vio y lo que sorteó en cada paso.
+- La **log-probabilidad de un episodio** de MuJoCo es una suma de log-probabilidades de la política; la física (MuJoCo) no entra en
+  su pendiente. Por eso se puede aprender **sin conocer las ecuaciones del simulador**.
+- La pendiente de la recompensa esperada se puede medir **a lo bruto** (muchos episodios por ruedecilla) o con el **truco del
+  logaritmo** (un solo lote, todas las ruedecillas a la vez), y en MuJoCo coinciden.
+- La **línea base** deja la flecha igual y le quita ruido (3,5 veces menos aquí).
+
+En la práctica del **NB29** darás el paso que falta: usar esa flecha para **entrenar**. Será tu **primer entrenamiento en MuJoCo**:
+REINFORCE enseñará al palo de escoba a mantenerse de pie, empezando sin saber nada.
+"""),
+
+md(r"""## 12 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-En el **NB29**, todo esto se convierte en un algoritmo: **REINFORCE**. Reconocerás cada pieza: la pendiente (a − μ)/σ² del apartado 3, el "R × pendiente de ln p" del apartado 4, la línea base del apartado 6 y el descuento del apartado 7. Ya no habrá ningún "los matemáticos demostraron": lo has demostrado tú.
+En el **NB29**, todo esto se convierte en un algoritmo: **REINFORCE**. Reconocerás cada pieza: la pendiente (a − μ)/σ² del apartado 3, el "R × pendiente de ln p" del apartado 4, la línea base del apartado 6 y el descuento del apartado 7. Ya no habrá ningún "los matemáticos demostraron": lo has demostrado tú, y lo has comprobado con episodios de MuJoCo.
 """),
 
 ]
