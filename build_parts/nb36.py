@@ -11,6 +11,9 @@ medido desde la vertical (palo/pierna): x = L·sin, y = L·cos; Pitágoras
 cinemática directa de una pierna de 2 tramos (los ángulos se SUMAN a lo largo
 de la cadena); comprobación contra el Hopper real de MuJoCo (xanchor); un
 "paso" con dos senos desfasados dibuja la trayectoria del pie.
+Práctica en MuJoCo: Walker2d como marioneta (grados↔radianes en qpos, topes,
+atan2 desde xanchor para recuperar ángulos y largos, ondas desfasadas por pierna
+en modo marioneta con vídeo, lazo del tobillo de MuJoCo = fórmula).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -680,11 +683,265 @@ Con todo a 0 da (0,26, 0,10): la punta está 26 cm por delante del tobillo y a s
 </details>
 """),
 
-md(r"""## 14 · Posdata
+md(r"""## 14 · 🛠 Práctica en MuJoCo: la marioneta de dos piernas
+
+En el apartado 10 comprobaste **una** postura de Hopper contra MuJoCo. Ahora vas a usar **todo** lo de hoy con
+**Walker2d**, el robot de dos piernas del NB35, como si fuera una **marioneta**: tú mueves los hilos (los ángulos)
+y MuJoCo coloca las piezas.
+
+Lo que vas a practicar:
+
+1. **Grados ↔ radianes**: colocar articulaciones en grados y leer lo que guarda MuJoCo (radianes).
+2. **El camino de vuelta** (`atan2`): sacar los ángulos **a partir de las posiciones** de las piezas.
+3. **Ondas desfasadas**: mover las dos piernas con senos y hacer un vídeo de la marioneta "andando en el aire".
+4. **Cinemática directa**: comprobar que el pie de la marioneta dibuja el lazo de tu fórmula.
+
+Usaremos el `taller.py` de siempre para cargar, colocar y grabar.
+"""),
+
+md(r"""### Paso 1 · Walker2d en grados
+
+`taller.cargar("walker")` nos da el plano y el estado de Walker2d. Recorremos sus articulaciones y, para las que
+tienen topes, pasamos esos topes a **grados** con `np.degrees` (la hermana de `math.degrees` para listas, apartado 4):
+"""),
+
+code(r"""import taller
+
+modelo_w, datos_w = taller.cargar("walker")
+for j in range(modelo_w.njnt):
+    junta = modelo_w.joint(j)
+    if modelo_w.jnt_limited[j]:
+        minimo, maximo = np.degrees(junta.range)
+        print(f"{junta.name:>18}: de {minimo:5.0f}° a {maximo:4.0f}°")
+    else:
+        print(f"{junta.name:>18}: sin topes (es la raíz: el torso suelto por el mundo)")"""),
+
+md(r"""Las tres primeras (`rootx`, `rootz`, `rooty`) son la **raíz**: el torso moviéndose hacia delante, hacia arriba y
+girando (como en Hopper). Después, cadera (`thigh`), rodilla (`leg`) y tobillo (`foot`) de la pierna derecha, y lo
+mismo con `_left` para la izquierda.
+
+Fíjate en una **rareza**: la cadera va de **−150° a 0°**. Con la regla del apartado 10 (positivo = hacia delante),
+eso significa que Walker2d **no puede adelantar el muslo** respecto de su torso: solo echarlo hacia atrás. Para dar
+un paso "hacia delante" tiene que inclinar el torso. ¡Otra razón de su forma rara de andar del NB35!
+"""),
+
+md(r"""### Paso 2 · Colocar en grados, leer en radianes
+
+`taller.poner_angulo` recibe **grados** (más cómodos para nosotros) y los guarda en `qpos` en **radianes** (lo que usa
+el simulador). Doblamos la cadera derecha −20° y la rodilla derecha −60°:
+"""),
+
+code(r"""taller.poner_angulo(modelo_w, datos_w, "thigh_joint", -20)
+taller.poner_angulo(modelo_w, datos_w, "leg_joint", -60)
+
+print("qpos (radianes):", datos_w.qpos.round(4))
+print("lo que esperamos:", round(math.radians(-20), 4), "y", round(math.radians(-60), 4))"""),
+
+md(r"""Las posiciones 3 y 4 de `qpos` son **−0,3491** y **−1,0472**: exactamente −20° y −60° pasados a radianes (−60° es
+−π/3). MuJoCo no sabe nada de grados: por dentro, todo son radianes. Mírala:
+"""),
+
+code(r"""taller.foto(modelo_w, datos_w, titulo="cadera −20°, rodilla −60°");"""),
+
+md(r"""### Paso 3 · El camino de vuelta: de las posiciones a los ángulos
+
+Ahora, al revés. Imagina que **no** conoces los ángulos y solo tienes las **posiciones** de las bisagras (como si
+tuvieras una foto del robot). ¿Puedes recuperar los ángulos? Con `atan2` (apartado 9), sí.
+
+MuJoCo nos dice dónde está cada bisagra con `xanchor` (apartado 10): la cadera, la rodilla y el tobillo.
+"""),
+
+code(r"""cadera_pos = datos_w.joint("thigh_joint").xanchor
+rodilla_pos = datos_w.joint("leg_joint").xanchor
+tobillo_pos = datos_w.joint("foot_joint").xanchor
+print("cadera:", cadera_pos.round(3), "| rodilla:", rodilla_pos.round(3), "| tobillo:", tobillo_pos.round(3))"""),
+
+md(r"""El muslo es la flecha que va de la cadera a la rodilla. Sus dos "sombras" son lo que avanza (`dx`) y lo que baja
+(`dz`, negativo porque baja). Como medimos **desde la vertical hacia abajo** (apartado 7), el ángulo es
+`atan2(dx, -dz)`: el "hacia el lado" va primero y el "hacia abajo" (cambiado de signo, para que bajar cuente como
+positivo) después:
+"""),
+
+code(r"""dx, dz = rodilla_pos[0] - cadera_pos[0], rodilla_pos[2] - cadera_pos[2]
+angulo_muslo = math.atan2(dx, -dz)
+print(f"muslo: {math.degrees(angulo_muslo):.1f}° desde la vertical | largo {math.hypot(dx, dz):.3f} m")"""),
+
+md(r"""**−20,0°**: el ángulo que pusimos. Y de regalo, con Pitágoras (`math.hypot` calcula √(dx² + dz²), apartado 8), el
+**largo** del muslo: 0,45 m, como el de Hopper.
+
+Lo mismo con la pierna (de la rodilla al tobillo). Pero cuidado: `atan2` nos da la dirección de la pierna **respecto
+de la vertical**, que es la **suma** cadera + rodilla (apartado 10). Para tener el ángulo de la **rodilla**, hay que
+**restar** el del muslo:
+"""),
+
+code(r"""dx2, dz2 = tobillo_pos[0] - rodilla_pos[0], tobillo_pos[2] - rodilla_pos[2]
+direccion_pierna = math.atan2(dx2, -dz2)
+print(f"dirección de la pierna: {math.degrees(direccion_pierna):.1f}°")
+print(f"ángulo de la rodilla:   {math.degrees(direccion_pierna - angulo_muslo):.1f}°")"""),
+
+md(r"""−80° de dirección total = −20° (cadera) + **−60°** (rodilla). Has recuperado los dos ángulos solo con posiciones.
+Esto, al revés que la cinemática directa, se usa de verdad: es lo que hacen los sistemas de **captura de
+movimiento** (cámaras que ven unas bolitas pegadas a una persona) para sacar los ángulos de sus articulaciones y
+enseñárselos a un robot.
+"""),
+
+md(r"""### Paso 4 · La marioneta: dos ondas por pierna
+
+Ahora movemos **las dos piernas** con las ondas del apartado 11, pero adaptadas a Walker2d (su cadera solo va hacia
+atrás, así que la onda de la cadera va de −0,7 a 0 rad en vez de ±0,4). Y la pierna izquierda va **media vuelta
+(π) por detrás** de la derecha: cuando una está delante, la otra está detrás, como al andar.
+
+Escribimos una función que, para un instante `t`, coloca los cuatro ángulos. Un ciclo (un paso de cada pierna) dura
+**1 segundo**, así que la fase es 2π·t:
+"""),
+
+code(r"""def postura_marioneta(datos, t, desfase_piernas=math.pi):
+    fase = 2 * math.pi * t
+    for lado, retraso in [("", 0.0), ("_left", desfase_piernas)]:
+        f = fase - retraso
+        datos.joint("thigh" + lado + "_joint").qpos = -0.35 + 0.35 * math.sin(f)        # cadera
+        datos.joint("leg" + lado + "_joint").qpos = -0.5 + 0.5 * math.sin(f - 1.5)      # rodilla"""),
+
+md(r"""(`"thigh" + lado + "_joint"` forma el nombre: `thigh_joint` para la derecha y `thigh_left_joint` para la
+izquierda. Suma de textos, NB20.)
+
+Para que sea una marioneta y no un robot que se cae, en cada pasito **colgamos** el torso: lo devolvemos a su sitio
+(x = 0, altura 1,25 m, recto) y ponemos todas las velocidades a cero. Así la gravedad no tiene tiempo de hacer nada:
+manda solo nuestra función. Lo metemos en una función de control y grabamos 3 segundos:
+"""),
+
+code(r"""def control_marioneta(modelo, datos):
+    datos.qpos[0:3] = [0.0, 1.25, 0.0]       # el torso, colgado de los hilos
+    datos.qvel[:] = 0
+    postura_marioneta(datos, datos.time)
+
+modelo_w, datos_w = taller.cargar("walker")
+taller.video(modelo_w, datos_w, segundos=3, control=control_marioneta, nombre="nb36_marioneta");"""),
+
+md(r"""Walker2d "anda en el aire": las piernas se turnan, una adelante y otra atrás, y cada pie hace su lazo. No hay
+física de por medio (no hay fuerzas, ni suelo que empuje): es **cinemática pura**, ángulos convertidos en posiciones.
+"""),
+
+md(r"""### Paso 5 · El lazo del pie: tu fórmula contra MuJoCo
+
+Por último, la comprobación del apartado 11, pero ahora con **100 posturas** en vez de una. Recorremos un ciclo
+entero: colocamos la marioneta en cada instante, le pedimos a MuJoCo que recalcule (`mj_forward`) y apuntamos dónde
+queda el tobillo derecho. A la vez, calculamos el tobillo con **tu** fórmula de cinemática directa:
+"""),
+
+code(r"""tiempos = np.linspace(0, 1, 100)
+tobillo_mujoco = []
+for t in tiempos:
+    postura_marioneta(datos_w, t)
+    mujoco.mj_forward(modelo_w, datos_w)
+    tobillo_mujoco.append(datos_w.joint("foot_joint").xanchor.copy())
+tobillo_mujoco = np.array(tobillo_mujoco)
+
+cad = -0.35 + 0.35 * np.sin(2 * np.pi * tiempos)
+rod = -0.5 + 0.5 * np.sin(2 * np.pi * tiempos - 1.5)
+formula_x = MUSLO * np.sin(cad) + PIERNA * np.sin(cad + rod)
+formula_z = ALTURA_CADERA - MUSLO * np.cos(cad) - PIERNA * np.cos(cad + rod)"""),
+
+md(r"""(`.copy()` guarda una copia de los tres números; sin ella, guardaríamos 100 veces la **misma** lista que MuJoCo
+va cambiando, NB21.) Y las dibujamos juntas:"""),
+
+code(r"""plt.figure(figsize=(6, 3.5))
+plt.plot(tobillo_mujoco[:, 0], tobillo_mujoco[:, 2], lw=6, alpha=0.4, label="MuJoCo")
+plt.plot(formula_x, formula_z, "k--", label="tu fórmula")
+plt.gca().set_aspect("equal")
+plt.xlabel("hacia delante (m)")
+plt.ylabel("altura del tobillo (m)")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
+print("mayor diferencia:", np.max(np.abs(tobillo_mujoco[:, 0] - formula_x)), "m")"""),
+
+md(r"""Las dos curvas son **la misma**: la diferencia más grande es del orden de 10⁻¹⁶ m, el ruido de los decimales del
+ordenador (NB06). El lazo va de unos 11 a 63 cm de altura y siempre por detrás de la cadera (x negativa), porque la
+cadera de Walker2d solo va hacia atrás.
+
+### Tus retos
+
+**Reto 1.** Pon a Walker2d con el **tobillo** derecho a +30° (y lo demás a 0) y saca el ángulo del pie con `atan2`.
+Pista: el pie es la flecha que va del tobillo (`foot_joint`) al centro del pie, `datos_w.geom("foot_geom").xpos`.
+Con todo a 0, esa flecha es **horizontal** (el pie está tumbado), así que conviene medirla **desde la horizontal**,
+como el brazo del apartado 6.
+
+**Reto 2.** En `postura_marioneta`, cambia el desfase entre piernas a **0** (`desfase_piernas=0`) y graba otro vídeo.
+¿Qué hace la marioneta ahora? ¿A qué robot del NB35 se parece?
+
+**Reto 3.** Intenta poner la cadera de Walker2d a **+20°** con `taller.poner_angulo`. ¿Qué pasa? ¿Y en qué queda
+`qpos`?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+modelo_w, datos_w = taller.cargar("walker")
+taller.poner_angulo(modelo_w, datos_w, "foot_joint", 30)
+tob = datos_w.joint("foot_joint").xanchor
+pie = datos_w.geom("foot_geom").xpos
+dx, dz = pie[0] - tob[0], pie[2] - tob[2]
+print(round(math.degrees(math.atan2(dz, dx)), 1), "grados |", round(math.hypot(dx, dz), 3), "m")
+```
+
+Sale **30,0 grados** y **0,1 m**. Con todo a 0, el centro del pie está 10 cm **por delante** del tobillo y a su misma
+altura (la flecha (0,1, 0), ángulo 0 desde la horizontal). Con el tobillo a +30°, la flecha es (0,087, 0,05): la
+**punta sube** y el ángulo es exactamente lo que giraste el tobillo. El largo sigue siendo 0,1 m (girar no cambia
+los largos). Fíjate en que aquí he usado `atan2(dz, dx)` (desde la horizontal) y en el Paso 3 `atan2(dx, -dz)`
+(desde la vertical hacia abajo): lo importante no es memorizar una fórmula, sino decidir **desde dónde mides** y ser
+coherente, como en el apartado 7.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+def control_saltos(modelo, datos):
+    datos.qpos[0:3] = [0.0, 1.25, 0.0]
+    datos.qvel[:] = 0
+    postura_marioneta(datos, datos.time, desfase_piernas=0)
+
+modelo_w, datos_w = taller.cargar("walker")
+taller.video(modelo_w, datos_w, segundos=3, control=control_saltos, nombre="nb36_saltos");
+```
+
+Con desfase 0, las dos piernas hacen **lo mismo a la vez**: se ven como una sola. Es el movimiento de **Hopper**, o
+el de un canguro: saltar con los pies juntos. El desfase entre piernas (π = media vuelta) es lo que distingue
+**andar** de **saltar**. En los animales de cuatro patas pasa igual: el paso, el trote y el galope son el mismo
+"motor" de ondas con desfases distintos entre patas.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+`poner_angulo` avisa: *"Ojo: thigh_joint solo va de -150 a 0 grados; 20 se sale de sus topes"*. Pero **la coloca
+igualmente**: en `qpos` queda 0,349 rad. Colocar a mano no respeta los topes: los topes son **fuerzas** que MuJoCo
+calcula **al simular** (como el suelo). Si después llamas a `mujoco.mj_step`, el tope empujará la articulación hacia
+dentro de su rango, con un buen tirón. Moraleja de ingeniero: al poner posturas a mano (por ejemplo, al reiniciar un
+episodio), **respeta los topes**, o el primer pasito del simulador será un latigazo.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- `qpos` guarda los ángulos en **radianes**; para hablar en grados, `np.degrees` / `math.radians` (o
+  `taller.poner_angulo`, que traduce por ti).
+- `modelo.jnt_range` y `modelo.jnt_limited`: los **topes** de cada articulación (y que Walker2d no puede adelantar el muslo).
+- `datos.joint(...).xanchor` y `datos.geom(...).xpos`: **dónde están** las bisagras y las piezas en el mundo; con
+  `atan2` y `hypot` vuelves de las posiciones a los ángulos y los largos.
+- **Modo marioneta**: escribir `qpos` y poner `qvel` a cero en cada pasito para mover un robot sin física (útil para
+  comprobar posturas y movimientos antes de simular de verdad).
+- `mj_forward` hace la **cinemática directa** de todas las piezas; tu fórmula hace lo mismo, hasta el último decimal.
+
+En la práctica del NB37 pasarás de colocar a **empujar**: un motor que hace par contra la gravedad, y la ecuación de
+la escoba puesta a prueba con un brazo de MuJoCo.
+"""),
+
+md(r"""## 15 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Hoy has aprendido a **describir** la postura del robot. En el **NB37** pasamos a lo que la **cambia**: las fuerzas. Qué es exactamente una fuerza, qué hace la masa, qué es el **par** que producen los motores (por qué el multiplicador de Hopper importa tanto), y de dónde salía aquella fórmula del palo de escoba del NB11, "aceleración = 10 × inclinación". Con el seno de hoy, la vas a poder deducir tú.
+Hoy has aprendido a **describir** la postura del robot (y, en la práctica, a mover a Walker2d como una marioneta). En el **NB37** pasamos a lo que la **cambia**: las fuerzas. Qué es exactamente una fuerza, qué hace la masa, qué es el **par** que producen los motores (por qué el multiplicador de Hopper importa tanto), y de dónde salía aquella fórmula del palo de escoba del NB11, "aceleración = 10 × inclinación". Con el seno de hoy, la vas a poder deducir tú.
 """),
 
 ]

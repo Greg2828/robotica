@@ -11,6 +11,10 @@ velocidad al llegar al suelo, comprobada con nuestra simulación y con MuJoCo;
 disipación; potencia = trabajo/tiempo = F·v = par·ω (signo: dar o absorber);
 por qué los motores gastan aunque estén quietos (calor ∝ par²) y el castigo
 de control; coste de transporte.
+Práctica en MuJoCo: contador de energía (<flag energy>, datos.energy): conservación
+y balance con amortiguador; trabajo de un motor = par × ángulo = energía ganada +
+disipada; potencia por motor (actuator_force × actuator_velocity) y coste de
+transporte del Hopper campeón del NB35.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -503,11 +507,284 @@ print(round(coste_de_transporte(50_000, 25, 100), 2))
 </details>
 """),
 
-md(r"""## 11 · Posdata
+md(r"""## 11 · 🛠 Práctica en MuJoCo: el contador de energía
+
+En el apartado 5 calculaste **tú** la energía del palo con `qpos` y `qvel`. MuJoCo puede llevar la cuenta él solo: tiene
+un **contador de energía** que, si lo enciendes, calcula en cada pasito la potencial y la cinética de **todo** el
+modelo. En esta práctica vas a usarlo para:
+
+1. Comprobar la **conservación** con el contador de MuJoCo.
+2. Hacer un **balance**: lo que pierde la energía mecánica es justo lo que se come un amortiguador.
+3. Medir el **trabajo** de un motor (par × ángulo) y ver adónde va.
+4. Medir la **potencia** y el **coste de transporte** del Hopper campeón del NB35.
+"""),
+
+md(r"""### Paso 1 · Encender el contador
+
+El contador está **apagado** por defecto (cuesta un poco de cálculo). Se enciende en el plano, dentro de `<option>`,
+con `<flag energy="enable"/>`. Después, `datos.energy` tiene dos números: **[potencial, cinética]**, en julios. Es el
+palo del apartado 5, con un hueco para ponerle un **amortiguador** en la bisagra (`damping`: un freno que hace un par
+c·ω en contra del giro, más fuerte cuanto más deprisa gira; lo estudiarás a fondo en el NB39b):
+"""),
+
+code(r"""import taller
+
+def palo(amortiguador=0):
+    return f'''
+<mujoco>
+  <option timestep="0.001">
+    <flag energy="enable"/>
+  </option>
+  <worldbody>
+    <body>
+      <joint name="base" type="hinge" axis="0 1 0" damping="{amortiguador}"/>
+      <geom type="cylinder" fromto="0 0 0  0 0 1.5" size="0.005" mass="1"/>
+    </body>
+  </worldbody>
+</mujoco>'''
+
+modelo_p, datos_p = taller.cargar(palo())
+datos_p.qpos[0] = theta0
+mujoco.mj_forward(modelo_p, datos_p)          # recalcula todo, también la energía
+print("MuJoCo [potencial, cinética]:", datos_p.energy.round(4))
+print("Nosotros (apartado 5):       ", np.round(energia(theta0, 0.0)[::-1], 4))"""),
+
+md(r"""(`[::-1]` da la vuelta a la pareja, porque nuestra función devolvía primero la cinética.) **7,3483 J** de potencial y
+0 de cinética: MuJoCo mide la altura desde el mismo sitio que nosotros (z = 0, la bisagra) y hace la misma cuenta,
+m·g·h del CdM.
+"""),
+
+md(r"""### Paso 2 · Conservación y disipación
+
+Dejamos caer el palo hasta el suelo **sin** amortiguador y **con** uno de c = 0,5. Con amortiguador, además, llevamos
+la cuenta de lo que se come: su fuerza es −c·ω y la potencia que absorbe es (fuerza × velocidad) **c·ω²** (apartado 7),
+así que en cada pasito se come c·ω² × pasito julios:
+"""),
+
+code(r"""for c in [0, 0.5]:
+    modelo_p, datos_p = taller.cargar(palo(amortiguador=c))
+    datos_p.qpos[0] = theta0
+    mujoco.mj_forward(modelo_p, datos_p)
+    inicial = datos_p.energy.sum()
+    disipada = 0.0
+    while datos_p.qpos[0] < math.pi / 2:
+        disipada += c * datos_p.qvel[0] ** 2 * modelo_p.opt.timestep
+        mujoco.mj_step(modelo_p, datos_p)
+    final = datos_p.energy.sum()
+    print(f"c = {c}: al principio {inicial:.3f} J | al final {final:.3f} J | disipada {disipada:.3f} J"
+          f" | final + disipada = {final + disipada:.3f} J | tarda {datos_p.time:.2f} s")"""),
+
+md(r"""- **Sin amortiguador**: de 7,348 a **7,332 J**. Se "pierde" un 0,2 %, que no es física: es el error de los pasitos
+  de 1 ms (el mismo 7,34 del apartado 5).
+- **Con amortiguador**: la energía mecánica baja a **5,71 J**: faltan 1,64. Y nuestra cuenta de lo que se ha comido el
+  amortiguador da **1,62 J**. Final + disipada = **7,336**: el balance **cuadra** (con el mismo error de pasitos). La
+  energía no ha desaparecido: se ha convertido en calor en la bisagra. Y el palo frenado tarda más en caer (1,46 s
+  en vez de 1,34).
+"""),
+
+md(r"""### Paso 3 · El trabajo de un motor
+
+Ahora al revés: un motor que **mete** energía. Un brazo de 2 kg y 0,6 m que cuelga (como el de la práctica del NB37),
+con un motor que hace un par constante de **3 N·m** y un amortiguador en el hombro. Medimos la potencia del motor en
+cada pasito con lo que nos da MuJoCo: `actuator_force` (el par que hace) × `actuator_velocity` (lo deprisa que gira su
+articulación). Sumada en el tiempo, es su **trabajo** (apartado 7: potencia = trabajo ÷ tiempo, así que trabajo =
+suma de potencia × pasito):
+"""),
+
+code(r"""BRAZO = '''
+<mujoco>
+  <option timestep="0.001">
+    <flag energy="enable"/>
+  </option>
+  <worldbody>
+    <body pos="0 0 1">
+      <joint name="hombro" type="hinge" axis="0 -1 0" damping="0.5"/>
+      <geom type="capsule" fromto="0 0 0  0 0 -0.6" size="0.03" mass="2"/>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor joint="hombro" ctrlrange="-3 3"/>
+  </actuator>
+</mujoco>'''
+
+modelo_b, datos_b = taller.cargar(BRAZO)
+inicial = datos_b.energy.sum()
+trabajo_motor, disipada = 0.0, 0.0
+datos_b.ctrl[0] = 3.0
+for i in range(15000):                                    # 15 segundos
+    trabajo_motor += datos_b.actuator_force[0] * datos_b.actuator_velocity[0] * modelo_b.opt.timestep
+    disipada += 0.5 * datos_b.qvel[0] ** 2 * modelo_b.opt.timestep
+    mujoco.mj_step(modelo_b, datos_b)
+
+ganada = datos_b.energy.sum() - inicial
+print(f"el brazo acaba en {math.degrees(datos_b.qpos[0]):.1f}°")
+print(f"trabajo del motor: {trabajo_motor:.3f} J  (par × ángulo = {3.0 * datos_b.qpos[0]:.3f} J)")
+print(f"energía ganada por el brazo: {ganada:.3f} J   +   disipada en el amortiguador: {disipada:.3f} J   =   {ganada + disipada:.3f} J")"""),
+
+md(r"""El brazo acaba quieto a **30,6°** (el límite de la práctica del NB37). El motor ha hecho un trabajo de **1,60 J**, que
+es justo **par × ángulo** (apartado 1: en giros, trabajo = par × ángulo en radianes; 3 × 0,534). ¿Adónde ha ido?
+Unos 0,82 J se han quedado en el brazo como energía de **altura** (su CdM ha subido), y el resto, casi otro tanto,
+se lo ha comido el **amortiguador** mientras el brazo se columpiaba antes de pararse. Sumado: lo mismo que dio el
+motor. Ni un julio se crea ni se pierde: solo cambia de forma.
+"""),
+
+md(r"""### Paso 4 · ¿Cuánto gasta el Hopper campeón?
+
+Y ahora, un robot de verdad. Cargamos el Hopper campeón del NB35 (sus dos piezas: el agente y las estadísticas de
+`VecNormalize`) y lo hacemos saltar en un MuJoCo "desnudo", cargado con el taller. Para eso hacemos nosotros lo que
+hace Gymnasium por dentro (NB35): la observación son `qpos` sin la x y `qvel` (recortada a ±10), y cada decisión se
+repite durante **4 pasitos**:
+"""),
+
+code(r"""from stable_baselines3 import PPO
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import VecNormalize
+
+agente = PPO.load("modelos/Hopper-v5_defecto")
+normalizador = VecNormalize.load("modelos/Hopper-v5_defecto_norm.pkl", make_vec_env("Hopper-v5", n_envs=1))
+normalizador.training = False
+
+def decidir(datos):
+    observacion = np.concatenate([datos.qpos[1:], np.clip(datos.qvel, -10, 10)])
+    return agente.predict(normalizador.normalize_obs(observacion), deterministic=True)[0]"""),
+
+md(r"""Ahora, 1.000 decisiones (8 segundos, un episodio entero). En cada pasito apuntamos la potencia de **cada** motor
+(par × velocidad de giro, apartado 7):"""),
+
+code(r"""modelo_h, datos_h = taller.cargar("hopper")
+potencias = []
+for decision in range(1000):
+    datos_h.ctrl[:] = np.clip(decidir(datos_h), -1, 1)
+    for k in range(4):
+        mujoco.mj_step(modelo_h, datos_h)
+        potencias.append(datos_h.actuator_force * datos_h.actuator_velocity)
+potencias = np.array(potencias)                      # una fila por pasito, una columna por motor
+paso_h = modelo_h.opt.timestep
+print(f"recorre {datos_h.qpos[0]:.1f} m en {datos_h.time:.1f} s | altura final del torso {datos_h.qpos[1]:.2f} m")"""),
+
+md(r"""Ahora separamos la potencia **positiva** (el motor da energía: empuja) de la **negativa** (el motor frena: absorbe),
+motor a motor. `np.clip(potencias, 0, None)` deja solo lo positivo (lo negativo lo pone a 0) y al revés:"""),
+
+code(r"""da = np.sum(np.clip(potencias, 0, None), axis=0) * paso_h
+absorbe = np.sum(np.clip(potencias, None, 0), axis=0) * paso_h
+for nombre, d_, a_ in zip(["cadera", "rodilla", "tobillo"], da, absorbe):
+    print(f"{nombre:>8}: da {d_:7.1f} J | absorbe {a_:7.1f} J")
+print(f"   total: da {da.sum():7.1f} J | absorbe {absorbe.sum():7.1f} J | potencia media dada: {da.sum() / datos_h.time:.0f} W")"""),
+
+md(r"""El **tobillo** hace casi todo el trabajo: da unos 4.450 de los 5.600 J (es el que pega el "empujón" de cada salto,
+como vimos en el NB35), y la **rodilla** es la que más **absorbe** (frena al aterrizar: el muelle de la pierna). De
+media, los motores dan unos **700 W**: un microondas encendido, para un robot de 16 kg.
+
+Con eso, el **coste de transporte** (apartado 8), contando solo la energía que dan los motores (y suponiendo, siendo
+generosos, que la que absorben se pierde, sin gastar batería extra):
+"""),
+
+code(r"""masa_hopper = modelo_h.body_mass.sum()
+print(f"coste de transporte de Hopper: {coste_de_transporte(da.sum(), masa_hopper, datos_h.qpos[0]):.2f}")"""),
+
+md(r"""Alrededor de **1,7**: diez veces peor que una persona (0,2) y algo mejor que ASIMO (3,2). Y eso que es una cuenta
+**optimista**: un motor real gasta más de lo que da (el calor ∝ par² del apartado 8, que aquí no contamos). Hopper
+salta deprisa, pero no es nada eficiente: su recompensa del NB35 apenas castigaba el gasto.
+
+Y para ver el "dar y absorber" en directo, la potencia del tobillo durante medio segundo:
+"""),
+
+code(r"""t = np.arange(len(potencias)) * paso_h
+tramo = (t > 4) & (t < 4.5)
+plt.figure(figsize=(8, 3))
+plt.plot(t[tramo], potencias[tramo, 2], label="tobillo")
+plt.plot(t[tramo], potencias[tramo, 1], label="rodilla", alpha=0.7)
+plt.axhline(0, color="gray", lw=1)
+plt.xlabel("tiempo (s)")
+plt.ylabel("potencia (W)")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()"""),
+
+md(r"""(`(t > 4) & (t < 4.5)` es una "máscara" de NumPy que elige los instantes entre 4 y 4,5 s, NB27.) Cada salto es un
+pico enorme de potencia **positiva** del tobillo (miles de vatios durante unas centésimas: el empujón) y, alrededor,
+tramos **negativos** de la rodilla (el aterrizaje, frenando). Así trabajan también tus piernas al correr.
+
+### Tus retos
+
+**Reto 1.** En el Paso 2, prueba un amortiguador **muy** fuerte (c = 5). ¿Llega el palo al suelo? ¿Cuánta energía se
+come el amortiguador? (Pon un límite de tiempo al bucle: `and datos_p.time < 20`.)
+
+**Reto 2.** En el Paso 3, apaga la amortiguación (`damping="0"`) y simula solo **2 segundos**. ¿Se sigue cumpliendo
+el balance trabajo del motor = energía ganada?
+
+**Reto 3.** En el Paso 4, calcula el castigo de control que pagó Hopper en el episodio (0,001 × suma de acciones² en
+cada decisión, NB35). Compáralo con la energía que dieron sus motores. ¿Era un buen castigo para ahorrar batería?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+modelo_p, datos_p = taller.cargar(palo(amortiguador=5))
+datos_p.qpos[0] = theta0
+mujoco.mj_forward(modelo_p, datos_p)
+inicial, disipada = datos_p.energy.sum(), 0.0
+while datos_p.qpos[0] < math.pi / 2 and datos_p.time < 20:
+    disipada += 5 * datos_p.qvel[0] ** 2 * modelo_p.opt.timestep
+    mujoco.mj_step(modelo_p, datos_p)
+print(round(datos_p.time, 2), round(datos_p.energy.sum(), 3), round(disipada, 3))
+```
+
+Llega, pero tarda mucho más: unos **3,0 s**, y llega despacio: el amortiguador se come **6,58** de los 7,35 J, y
+solo quedan 0,76 J de cinética al tocar el suelo (1,4 rad/s, en vez de los 4,4 sin freno). Es lo que hace un buen
+"aterrizaje": convertir en calor, poco a poco, la energía de la caída.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+Cambia `damping="0.5"` por `damping="0"` en `BRAZO` y `range(15000)` por `range(2000)`. Sale trabajo del motor
+**3,049 J** y energía ganada **3,054 J** (la diferencia, 5 milésimas, es el error de los pasitos), y disipada = 0. Sin
+amortiguador, el brazo se columpia sin parar entre 0° y unos 65°, y la energía va y viene entre el motor, la altura y
+la velocidad, pero el balance **siempre** cuadra.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Hay que guardar las acciones en el bucle del Paso 4:
+
+```python
+modelo_h, datos_h = taller.cargar("hopper")
+castigo = 0.0
+for decision in range(1000):
+    accion = np.clip(decidir(datos_h), -1, 1)
+    castigo += 0.001 * np.sum(accion ** 2)
+    datos_h.ctrl[:] = accion
+    for k in range(4):
+        mujoco.mj_step(modelo_h, datos_h)
+print(round(castigo, 2))
+```
+
+Sale **0,75 puntos** en todo el episodio (en el NB35, ejercicio E4, ya lo intuimos: unos 0,8). Frente a los
+~3.500 puntos de nota y los más de 5.600 J que dieron sus motores, es un castigo de risa: a Hopper ahorrar energía no
+le importaba nada. Si quisiéramos un saltarín eficiente, habría que poner ese peso mucho más alto (y reentrenar).
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **`<flag energy="enable"/>`** dentro de `<option>` enciende el contador; **`datos.energy`** = [potencial, cinética].
+- El **balance de energía** como herramienta: energía final + disipada = inicial (+ trabajo de los motores).
+- **`datos.actuator_force`** × **`datos.actuator_velocity`** = la **potencia** de cada motor (positiva: da;
+  negativa: frena).
+- Hacer andar a una política de SB3 en un MuJoCo "desnudo": construir la **observación** a mano y repetir cada
+  decisión varios pasitos (lo que hace Gymnasium por dentro).
+- El **coste de transporte** de un robot de verdad, medido.
+
+En la práctica del NB39 vas a construir en MuJoCo el **péndulo invertido lineal**, con una pierna telescópica de
+verdad, darle un empujón y pisar en su **punto de captura**.
+"""),
+
+md(r"""## 12 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-En el **NB39** vuelve el equilibrio, ahora en movimiento: el **péndulo invertido lineal**, el **punto de captura** y el **ZMP**. Allí aparecerá una "**energía orbital**" que se conserva: no es exactamente la energía de hoy, pero es su pariente, y la usarás con el mismo truco que en el apartado 4: si algo no cambia, el principio te dice el final.
+En la práctica has medido julios y vatios de verdad en MuJoCo. En el **NB39** vuelve el equilibrio, ahora en movimiento: el **péndulo invertido lineal**, el **punto de captura** y el **ZMP**. Allí aparecerá una "**energía orbital**" que se conserva: no es exactamente la energía de hoy, pero es su pariente, y la usarás con el mismo truco que en el apartado 4: si algo no cambia, el principio te dice el final.
 """),
 
 ]

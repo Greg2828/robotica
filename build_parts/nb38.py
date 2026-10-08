@@ -11,6 +11,9 @@ MuJoCo: ángulo crítico atan(ancho/alto) = 18,4° (18° vuelve, 19° vuelca).
 Hopper-estatua (articulaciones como muelles rígidos): de pie con el CdM sobre el
 pie, cae de bruces si sale por delante; el límite real (~22 cm) es menor que el
 teórico (26 cm): margen de seguridad. Equilibrio estático vs dinámico.
+Práctica en MuJoCo: CdM del humanoide en 3D a mano vs subtree_com, CdM de una
+pierna (body_subtreemass), levantar una pierna mueve el CdM; estatua 3D con
+mochila: predecir el vuelco con la base rectangular y comprobarlo (vídeo).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -492,11 +495,250 @@ Entonces, ¿por qué en la vida real parece que la vacía se cae antes? Porque p
 </details>
 """),
 
-md(r"""## 11 · Posdata
+md(r"""## 11 · 🛠 Práctica en MuJoCo: el centro de masas en 3D
+
+Hoy has trabajado con Hopper, que vive en un plano: su centro de masas tenía una x y una altura. Los robots de verdad
+viven en **3D**, y su centro de masas tiene **tres** coordenadas: x (delante), y (de lado) y z (altura). La buena
+noticia: la media ponderada se hace **igual**, coordenada a coordenada (apartado 2). En esta práctica:
+
+1. Calculas el CdM del **humanoide** del NB00 pieza a pieza, en 3D, y lo comparas con MuJoCo.
+2. Ves cómo se mueve al **levantar una pierna** (hacia delante o hacia un lado).
+3. Construyes una **estatua con mochila** y predices, con la regla de oro, si vuelca **antes** de simular.
+"""),
+
+md(r"""### Paso 1 · El CdM del humanoide, pieza a pieza
+
+El humanoide tiene 13 piezas (más el mundo, la 0). La receta es la del apartado 3, pero ahora `xipos` tiene 3
+columnas y queremos las tres a la vez. Con NumPy: multiplicamos cada **fila** de posiciones por la masa de su pieza
+(`masas[:, None]` pone las masas "en columna" para que cada una multiplique su fila entera), sumamos todas las filas
+(`axis=0`, NB27) y dividimos entre la masa total:
+"""),
+
+code(r"""import taller
+
+modelo_h, datos_h = taller.cargar("humanoide")
+masas = modelo_h.body_mass
+posiciones = datos_h.xipos                            # una fila (x, y, z) por pieza
+
+cdm_a_mano = np.sum(masas[:, None] * posiciones, axis=0) / np.sum(masas)
+print(f"masa total: {np.sum(masas):.1f} kg")
+print("CdM a mano:", cdm_a_mano.round(4))
+print("CdM MuJoCo:", datos_h.subtree_com[1].round(4))"""),
+
+md(r"""Los mismos tres números: el humanoide de **42,1 kg** tiene su CdM a **0,95 m** de altura, 1,5 cm por delante del
+origen y en **y = 0**, justo en el medio (es simétrico: lo que pesa la derecha lo pesa la izquierda). Como el
+humanoide empieza **en el aire** (NB00: está unos centímetros por encima del suelo), su CdM aún no está apoyado en
+nada, pero ya sabemos dónde está.
+"""),
+
+md(r"""### Paso 2 · El CdM de una pierna entera
+
+`subtree_com` da el CdM de una pieza **y todo lo que cuelga de ella** (apartado 3). Si le preguntamos por el muslo
+derecho, nos da el CdM de **toda la pierna derecha** (muslo + espinilla + pie). Y `body_subtreemass`, su masa:
+"""),
+
+code(r"""muslo_d = modelo_h.body("right_thigh").id
+print(f"pierna derecha: {modelo_h.body_subtreemass[muslo_d]:.2f} kg, CdM en {datos_h.subtree_com[muslo_d].round(3)}")
+print(f"es el {100 * modelo_h.body_subtreemass[muslo_d] / np.sum(masas):.0f} % de la masa del robot")"""),
+
+md(r"""Cada pierna pesa **9,3 kg**, el **22 %** del robot, con su CdM a 54 cm de altura y 9 cm a la derecha (y negativa).
+Mover una pierna es mover casi una cuarta parte del cuerpo: por eso, al dar un paso, el CdM entero se desplaza.
+"""),
+
+md(r"""### Paso 3 · Levantar una pierna
+
+Una función que coloca al humanoide en una postura (dada como **argumentos con nombre**, `**angulos`, NB23: cada
+nombre es una articulación y cada valor, sus grados) y devuelve su CdM:
+"""),
+
+code(r"""def cdm_en_postura(**angulos):
+    modelo, datos = taller.cargar("humanoide")
+    for articulacion, grados in angulos.items():
+        taller.poner_angulo(modelo, datos, articulacion, grados)
+    return datos.subtree_com[1].copy(), modelo, datos
+
+recto, _, _ = cdm_en_postura()
+delante, _, _ = cdm_en_postura(left_hip_y=-90)               # muslo izquierdo hacia delante, en horizontal
+lado, modelo_l, datos_l = cdm_en_postura(left_hip_x=-25)       # pierna izquierda abierta hacia el lado
+
+for nombre, c in [("recto", recto), ("pierna adelante", delante), ("pierna al lado", lado)]:
+    print(f"{nombre:>16}: x = {c[0]:+.3f}  y = {c[1]:+.3f}  z = {c[2]:.3f}   (cambio: {(c - recto).round(3)})")"""),
+
+md(r"""(El `_` es el nombre que se usa para "esto no lo quiero", NB23: aquí, el modelo y los datos de las dos primeras.)
+
+- **Pierna adelante**: el CdM se va **8,6 cm hacia delante** y **sube** 8,7 cm (una pierna de 9 kg levantada).
+- **Pierna al lado**: el CdM se va **3,7 cm hacia la izquierda** (y positiva), hacia la pierna que se mueve.
+
+Y aquí hay una lección de equilibrio en 3D. Para sostenerse sobre el pie **derecho** (que está en y = −0,09), el CdM
+tiene que estar **encima** de ese pie: hay que llevarlo 9 cm hacia la **derecha**. ¡Pero abrir la pierna izquierda lo
+lleva hacia la **izquierda**! Por eso, cuando tú te pones a la pata coja, sin pensarlo, **inclinas el cuerpo** hacia el
+pie de apoyo antes de levantar el otro. Mírala con la pierna abierta:
+"""),
+
+code(r"""taller.foto(modelo_l, datos_l, titulo="pierna izquierda abierta 25°");"""),
+
+md(r"""### Paso 4 · La estatua con mochila
+
+Ahora, un experimento de verdad, con física. Una **estatua** rígida (de una sola pieza, con una articulación libre,
+`freejoint`, apartado 6), con dos pies de 20 × 10 cm, dos piernas, un torso de 20 kg y una **mochila** de 10 kg que
+podemos colocar donde queramos (`mx`, `my`), sujeta al torso con una varilla azul (que no pesa: `mass="0"`). Es una sola pieza con varias formas: MuJoCo junta las masas de todas.
+"""),
+
+code(r"""def estatua(mx, my, masa_mochila=10):
+    return f'''
+<mujoco>
+  <option timestep="0.002"/>
+  <visual><headlight ambient=".5 .5 .5"/></visual>
+  <worldbody>
+    <light pos="0 -2 4"/>
+    <geom type="plane" size="5 5 .1" rgba=".85 .9 .85 1"/>
+    <body name="estatua">
+      <freejoint/>
+      <geom type="box" pos="0.04 -0.1 0.02" size="0.1 0.05 0.02" mass="1" rgba=".3 .3 .3 1"/>
+      <geom type="box" pos="0.04  0.1 0.02" size="0.1 0.05 0.02" mass="1" rgba=".3 .3 .3 1"/>
+      <geom type="capsule" fromto="0 -0.1 0.04  0 -0.1 0.9" size="0.04" mass="5" rgba=".85 .55 .25 1"/>
+      <geom type="capsule" fromto="0  0.1 0.04  0  0.1 0.9" size="0.04" mass="5" rgba=".85 .55 .25 1"/>
+      <geom type="box" pos="0 0 1.2" size="0.1 0.15 0.3" mass="20" rgba=".85 .55 .25 1"/>
+      <geom type="sphere" pos="{mx} {my} 1.2" size="0.1" mass="{masa_mochila}" rgba=".2 .5 .9 1"/>
+      <geom type="capsule" fromto="0 0 1.45  {mx} {my} 1.2" size="0.015" mass="0" rgba=".2 .5 .9 1" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+</mujoco>'''"""),
+
+md(r"""Lee bien los **pies** (en una caja, `size` es la **mitad** de cada lado: `0.1 0.05 0.02` es una caja de 20 × 10 × 4 cm): cada pie
+va de x = −0,06 a x = 0,14 (más hacia delante, como el de Hopper) y ocupa 10 cm de ancho, uno en y = ±0,1. Así que
+la **base de apoyo** (apartado 4: la goma elástica alrededor de los dos pies) es un **rectángulo**:
+
+```
+   x (delante) de −0,06 a +0,14        y (de lado) de −0,15 a +0,15
+```
+
+La regla de oro (apartado 5), en 3D: la estatua no vuelca mientras la vertical de su CdM caiga **dentro** de ese
+rectángulo. Escribimos la **predicción** como función:
+"""),
+
+code(r"""def dentro_de_la_base(cdm):
+    return -0.06 < cdm[0] < 0.14 and -0.15 < cdm[1] < 0.15"""),
+
+md(r"""Y la **prueba**: colocamos la mochila, apuntamos el CdM (MuJoCo lo calcula al cargar), simulamos 3 segundos y
+miramos si la estatua ha volcado. Para saber cuánto se ha inclinado, miramos hacia dónde apunta su eje "hacia
+arriba": la tercera columna de su matriz de giro (`xmat`, NB14). Si su altura (z) baja de 1 (vertical), está
+inclinada; `acos` (el camino de vuelta del coseno) da el ángulo:
+"""),
+
+code(r"""def prueba(mx, my):
+    modelo, datos = taller.cargar(estatua(mx, my))
+    cdm = datos.subtree_com[1].copy()
+    for i in range(1500):                                       # 3 segundos
+        mujoco.mj_step(modelo, datos)
+    arriba = datos.xmat[1].reshape(3, 3)[:, 2]                  # hacia dónde apunta su eje "arriba"
+    inclinacion = math.degrees(math.acos(min(1.0, arriba[2])))
+    return cdm, inclinacion
+
+print("  mochila (x, y)  |   CdM (x, y)     | predicción | resultado")
+for mx, my in [(0, 0), (0.5, 0), (0.6, 0), (-0.2, 0), (-0.3, 0), (0, 0.5), (0, 0.65)]:
+    cdm, inclinacion = prueba(mx, my)
+    prediccion = "de pie" if dentro_de_la_base(cdm) else "VUELCA"
+    resultado = "de pie" if inclinacion < 10 else f"VUELCA ({inclinacion:.0f}°)"
+    print(f"  ({mx:+.2f}, {my:+.2f})   | ({cdm[0]:+.3f}, {cdm[1]:+.3f}) |   {prediccion:>6}   | {resultado}")"""),
+
+md(r"""La predicción **acierta las siete**, sin simular. Fíjate en las cifras:
+
+- Hacia **delante**, la mochila puede irse hasta **0,5 m** sin que la estatua vuelque (el CdM llega a 0,121, dentro
+  de los 0,14 de la punta). Con 0,6, el CdM pasa de 0,14 y vuelca.
+- Hacia **atrás**, en cambio, con la mochila a solo **0,3 m** ya vuelca: el talón está a 6 cm del centro. Un pie que
+  sobresale hacia delante protege de caerse hacia delante, y poco más.
+- De **lado**, la base es ancha (dos pies separados): aguanta la mochila a 0,5 m, y vuelca a 0,65.
+
+Veamos la de la mochila a 0,6 m hacia delante (la cámara mira de lado, así que la verás volcar de bruces):
+"""),
+
+code(r"""modelo_e, datos_e = taller.cargar(estatua(0.6, 0))
+taller.video(modelo_e, datos_e, segundos=2.5, nombre="nb38_estatua", seguir=False, distancia=4);"""),
+
+md(r"""### Tus retos
+
+**Reto 1.** Calcula **a mano** (sin MuJoCo) dónde hay que poner la mochila, hacia delante, para que el CdM quede
+**justo** en la punta de los pies (x = 0,14). Pista: el CdM es (suma de masa × x) / masa total, y de todas las piezas
+solo los pies (1 kg cada uno, en x = 0,04) y la mochila están fuera de x = 0. Compruébalo con `prueba` un poco antes
+y un poco después.
+
+**Reto 2.** Con una mochila de **20 kg**, ¿hasta dónde puede ir hacia delante? Predícelo y compruébalo (cambia
+`estatua` para que `prueba` le pase `masa_mochila`).
+
+**Reto 3.** En el Paso 3, ¿qué postura del humanoide mueve su CdM **hacia atrás**? Prueba con el muslo izquierdo
+hacia atrás (`left_hip_y` positivo, máximo 20°) y con la rodilla izquierda doblada (`left_knee=-90`).
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+Masa total: 1 + 1 + 5 + 5 + 20 + 10 = 42 kg. CdM_x = (1 × 0,04 + 1 × 0,04 + 10 × mx) / 42. Queremos 0,14:
+
+```python
+mx = (0.14 * 42 - 0.08) / 10
+print(round(mx, 3))
+for x in [0.56, 0.58, 0.60]:
+    cdm, inclinacion = prueba(x, 0)
+    print(x, cdm.round(3), "vuelca" if inclinacion > 10 else "de pie")
+```
+
+Sale **mx = 0,58 m**. Y la simulación lo confirma al centímetro: con 0,56 aguanta (CdM 0,135); con **0,58** el CdM
+está en 0,140, justo en el borde, y ya vuelca. En el borde exacto, cualquier pelín decide.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+Ahora la masa total es 52 kg: CdM_x = (0,08 + 20 × mx) / 52 = 0,14 → mx = (0,14 × 52 − 0,08) / 20 = **0,36 m**. El
+doble de mochila no da la mitad de distancia (0,29), sino algo más, porque también sube la masa total.
+
+```python
+def prueba20(mx, my):
+    modelo, datos = taller.cargar(estatua(mx, my, masa_mochila=20))
+    cdm = datos.subtree_com[1].copy()
+    for i in range(1500):
+        mujoco.mj_step(modelo, datos)
+    return cdm, math.degrees(math.acos(min(1.0, datos.xmat[1].reshape(3, 3)[2, 2])))
+
+for x in [0.32, 0.38]:
+    print(x, prueba20(x, 0))
+```
+
+Con 0,32 aguanta; con 0,38 vuelca.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+for postura in [dict(left_hip_y=20), dict(left_knee=-90), dict(left_hip_y=20, left_knee=-90)]:
+    c, _, _ = cdm_en_postura(**postura)
+    print(postura, "→ x cambia", round(c[0] - recto[0], 3), "m")
+```
+
+Con el muslo atrás 20°, el CdM retrocede **3,0 cm**; con la rodilla doblada 90° (el pie hacia atrás), **2,7 cm**; con
+las dos cosas, **4,6 cm**. Llevar hacia atrás la espinilla y el pie, que están lejos de la cadera, mueve mucho el
+CdM. Es lo que hace un futbolista al armar la pierna para chutar: su CdM se va hacia atrás, y por eso se inclina hacia delante con el cuerpo.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- `xipos` (el CdM de cada pieza) y `body_mass` en **3D**: la media ponderada con `masas[:, None]` y `axis=0`.
+- `subtree_com` de **cualquier** pieza (no solo de la raíz) y `body_subtreemass`: el CdM y la masa de una pierna
+  entera.
+- Una pieza puede tener **varias formas** (`geom`): MuJoCo junta sus masas y calcula un solo CdM.
+- La **orientación** de una pieza suelta con `xmat` (la tercera columna es su eje "arriba") y `acos` para el ángulo.
+- **Predecir antes de simular**: con la regla de oro y una cuenta de medias ponderadas sabes si algo vuelca.
+
+En la práctica del NB38b medirás **energías** con MuJoCo: la que se conserva, la que se pierde y la que gastan los
+motores de un robot de verdad.
+"""),
+
+md(r"""## 12 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-En el **NB38b**, una lección intermedia: la **energía**, el **trabajo** y la **potencia** (cuánto gasta un robot, y una forma de responder preguntas de física sin simular). Y en el **NB39** dejamos el equilibrio quieto y pasamos al de verdad, el que usan los robots que andan: el **equilibrio dinámico**. Veremos el modelo más famoso de la locomoción bípeda (el **péndulo invertido lineal**), calcularemos **dónde hay que poner el pie para no caerse** (el punto de captura) y conoceremos el **ZMP**, el concepto con el que andaban los robots de Honda (ASIMO) y que todo ingeniero de bípedos tiene que conocer.
+En la práctica has visto la regla de oro también en 3D. En el **NB38b**, una lección intermedia: la **energía**, el **trabajo** y la **potencia** (cuánto gasta un robot, y una forma de responder preguntas de física sin simular). Y en el **NB39** dejamos el equilibrio quieto y pasamos al de verdad, el que usan los robots que andan: el **equilibrio dinámico**. Veremos el modelo más famoso de la locomoción bípeda (el **péndulo invertido lineal**), calcularemos **dónde hay que poner el pie para no caerse** (el punto de captura) y conoceremos el **ZMP**, el concepto con el que andaban los robots de Honda (ASIMO) y que todo ingeniero de bípedos tiene que conocer.
 """),
 
 ]

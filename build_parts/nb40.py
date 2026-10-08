@@ -10,6 +10,10 @@ continuo). Mandar a un ángulo: control P (muelle) → oscila sin fin; D
 Hopper de pie con PD en sus motores reales (Kp 0, 50 → cae; 300 → de pie).
 La estatua del NB38 era un PD. RL + PD: la política da ángulos objetivo, el PD
 los persigue (robots reales).
+Práctica en MuJoCo: sintonizar un PD en una pierna MJCF (sobreoscilación y tiempo de
+asentamiento para varios Kd, ζ con la I de MuJoCo), compensación con qfrc_bias,
+<position kp kv> idéntico al PD propio, vídeo de tres ajustes; retos: rapidez y
+forcerange (saturación).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -504,11 +508,241 @@ Llega (5 N·m bastan para sostener los ~3,5 N·m de la gravedad), pero **más de
 </details>
 """),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: sintoniza tu PD
+
+En los apartados 4-8 simulaste la pierna con tu propia cadena de oro, y en el 9 pusiste un PD en Hopper. Ahora vas a
+hacer el trabajo de **ajustar** (*tuning*) un PD como lo hace un ingeniero: en un simulador, midiendo dos números que
+resumen una respuesta:
+
+- **Sobreoscilación**: cuánto se pasa del valor final, en %.
+- **Tiempo de asentamiento**: cuánto tarda en quedarse dentro de una franja estrecha (±2 % del objetivo) alrededor
+  del valor final, para no salir más.
+
+Y descubrirás tres regalos de MuJoCo: el par de la gravedad ya calculado (`qfrc_bias`), el motor de **posición** que
+lleva un PD dentro, y su límite de par.
+"""),
+
+md(r"""### Paso 1 · La pierna de MuJoCo y tu PD
+
+La misma pierna del apartado 4 (2 kg, 0,5 m, colgando de la cadera), ahora como plano MJCF, con un `<motor>` de par
+(ctrl = N·m). El texto del motor es un argumento, porque luego lo cambiaremos por otro tipo de motor:
+"""),
+
+code(r"""import taller
+
+def pierna_mjcf(motor='<motor joint="cadera" ctrlrange="-50 50"/>'):
+    return f'''
+<mujoco>
+  <option timestep="0.001"/>
+  <worldbody>
+    <light pos="0 -2 3"/>
+    <body pos="0 0 1">
+      <joint name="cadera" type="hinge" axis="0 -1 0"/>
+      <geom type="capsule" fromto="0 0 0  0 0 -0.5" size="0.03" mass="2"/>
+    </body>
+  </worldbody>
+  <actuator>
+    {motor}
+  </actuator>
+</mujoco>'''"""),
+
+md(r"""Una función que simula 3 s con **tu** PD (escrito en `datos.ctrl` en cada pasito) y mide la respuesta. La
+sobreoscilación se mide respecto del valor **final** (recuerda el error estacionario del apartado 7: sin compensar la
+gravedad, el final no es 0,8):
+"""),
+
+code(r"""def respuesta_pd(Kp, Kd, compensar_gravedad=False, segundos=3):
+    modelo, datos = taller.cargar(pierna_mjcf())
+    angulos = []
+    for i in range(round(segundos / modelo.opt.timestep)):
+        par = Kp * (OBJETIVO - datos.qpos[0]) - Kd * datos.qvel[0]
+        if compensar_gravedad:
+            par = par + datos.qfrc_bias[0]                  # el par que hace falta para sostener la pierna (Paso 2)
+        datos.ctrl[0] = par
+        mujoco.mj_step(modelo, datos)
+        angulos.append(datos.qpos[0])
+    angulos = np.array(angulos)
+    final = angulos[-1]
+    sobreoscilacion = max(0.0, 100 * (angulos.max() - final) / final)
+    fuera = np.where(np.abs(angulos - final) > 0.02 * OBJETIVO)[0]      # los instantes fuera de la franja
+    asentamiento = (fuera[-1] + 1) * modelo.opt.timestep if len(fuera) > 0 else 0.0
+    return angulos, final, sobreoscilacion, asentamiento"""),
+
+md(r"""(`np.where(condición)[0]` da las **posiciones** donde la condición es `True`, NB27; la última vez que estuvo fuera de
+la franja marca el tiempo de asentamiento.)
+
+¿Qué ζ esperamos? La inercia de giro de **esta** pierna (una cápsula, con algo de grosor) la sacamos de MuJoCo, con
+Steiner como en el NB37, y con ella el Kd crítico del NB39b, 2·√(Kp·I):
+"""),
+
+code(r"""modelo_p, datos_p = taller.cargar(pierna_mjcf())
+I_mj = modelo_p.body_inertia[1][1] + 2.0 * 0.25 ** 2
+Kd_critico = 2 * math.sqrt(50 * I_mj)
+print(f"I = {I_mj:.4f} kg·m²  →  con Kp = 50, Kd crítico = {Kd_critico:.2f}")
+
+plt.figure(figsize=(7, 3.5))
+for Kd in [1, 3, Kd_critico, 10]:
+    angulos, final, sobre, asent = respuesta_pd(50, Kd)
+    plt.plot(np.arange(len(angulos)) * 0.001, angulos, label=f"Kd = {Kd:.1f}")
+    print(f"Kd = {Kd:4.1f} (ζ = {Kd / Kd_critico:.2f}): final {final:.3f} rad | se pasa {sobre:4.1f} % | se asienta en {asent:.2f} s")
+plt.axhline(OBJETIVO, color="gray", ls="--", lw=1)
+plt.xlabel("tiempo (s)")
+plt.ylabel("ángulo (rad)")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()"""),
+
+md(r"""Lee la tabla como un ingeniero:
+
+- **Kd = 1** (ζ ≈ 0,17): se pasa un **60 %** y tarda **1,3 s** en calmarse.
+- **Kd = 3** (ζ ≈ 0,5): se pasa un 17 % y se asienta en 0,45 s.
+- **Kd crítico** (ζ = 1): no se pasa nada y se asienta **antes que nadie**: 0,30 s.
+- **Kd = 10** (ζ ≈ 1,7): no se pasa, pero se arrastra: 0,66 s, más del doble que el crítico.
+
+Y los cuatro se quedan en **0,734 rad**, no en 0,8: el error estacionario por la gravedad (apartado 7), igual que
+en tu simulación a mano. Por cierto: el crítico es 5,9 y no los 5,8 del apartado 6 porque la cápsula de MuJoCo tiene
+grosor (pasaba lo mismo en la práctica del NB37).
+"""),
+
+md(r"""### Paso 2 · El regalo de MuJoCo: `qfrc_bias`
+
+En el apartado 7 compensaste la gravedad calculando tú m·g·(L/2)·sin θ. MuJoCo ya lo calcula en cada pasito, para
+**todas** las articulaciones de **cualquier** robot, en `datos.qfrc_bias` (las fuerzas "de sesgo": gravedad y algunos
+efectos del movimiento). Comprobémoslo en 0,8 rad:
+"""),
+
+code(r"""datos_p.qpos[0] = OBJETIVO
+mujoco.mj_forward(modelo_p, datos_p)
+print(f"qfrc_bias: {datos_p.qfrc_bias[0]:.4f} N·m   |   m·g·(L/2)·sin θ: {2.0 * g * 0.25 * math.sin(OBJETIVO):.4f} N·m")
+
+angulos, final, sobre, asent = respuesta_pd(50, 3, compensar_gravedad=True)
+print(f"PD + qfrc_bias: final {final:.4f} rad | se pasa {sobre:.1f} % | se asienta en {asent:.2f} s")"""),
+
+md(r"""El mismo número, **3,5186 N·m**. Y sumándolo al PD, la pierna acaba en **0,8000**: adiós al error estacionario. Para la
+pierna era fácil hacerlo a mano; para un humanoide con 17 articulaciones encadenadas, no. Por eso esta línea
+(`par = PD + qfrc_bias`) aparece en muchísimos controladores de robots simulados.
+
+(Se pasa un 15 % y se asienta en 0,47 s: el mismo "carácter" que sin compensar, porque Kp y Kd no han cambiado;
+lo único que cambia es **dónde** se para.)
+"""),
+
+md(r"""### Paso 3 · El motor de posición: un PD de serie
+
+En el apartado 10 te anuncié los motores de **posición** de MuJoCo. Es un motor al que le das el **ángulo objetivo**
+en `ctrl`, y él hace por dentro `par = kp·(ctrl − ángulo) − kv·velocidad`. ¿Es **exactamente** tu PD? Comparemos un
+`<position kp="50" kv="3">` con tu PD de Kp = 50 y Kd = 3:
+"""),
+
+code(r"""modelo_pos, datos_pos = taller.cargar(pierna_mjcf('<position joint="cadera" kp="50" kv="3"/>'))
+datos_pos.ctrl[0] = OBJETIVO                     # ¡ahora ctrl es el ángulo objetivo, no el par!
+angulos_pos = []
+for i in range(3000):
+    mujoco.mj_step(modelo_pos, datos_pos)
+    angulos_pos.append(datos_pos.qpos[0])
+
+angulos_tuyo, _, _, _ = respuesta_pd(50, 3)
+print("mayor diferencia entre tu PD y el de MuJoCo:", np.max(np.abs(np.array(angulos_pos) - angulos_tuyo)), "rad")"""),
+
+md(r"""Una diferencia de 10⁻¹⁶: **idénticos**, hasta el último decimal. El motor de posición es tu PD, ya programado. Es el
+que lleva Zancudo (NB42) y el de casi todos los entornos modernos de robots (apartado 10).
+
+### Paso 4 · Míralo: tres ajustes a la vez
+
+Tres piernas iguales, una al lado de otra, con motores de posición de Kp = 50 y Kd = 1 (roja), crítico (verde) y 10
+(azul). Las tres reciben el mismo objetivo, 0,8 rad:
+"""),
+
+code(r"""def tres_piernas(kvs):
+    cuerpos, motores = "", ""
+    for i, kv in enumerate(kvs):
+        x = 1.0 * (i - 1)
+        cuerpos += f'''
+    <body pos="{x} 0 1">
+      <joint name="cadera{i}" type="hinge" axis="0 -1 0"/>
+      <geom type="capsule" fromto="0 0 0  0 0 -0.5" size="0.03" mass="2" rgba="{COLORES_P[i]}"/>
+    </body>'''
+        motores += f'<position joint="cadera{i}" kp="50" kv="{kv}"/>'
+    return f'''
+<mujoco>
+  <option timestep="0.001"/>
+  <visual><headlight ambient=".5 .5 .5"/></visual>
+  <worldbody>
+    <light pos="0 -2 3"/>
+    <geom type="plane" size="3 3 .1" rgba=".85 .9 .85 1" contype="0" conaffinity="0"/>
+    {cuerpos}
+  </worldbody>
+  <actuator>{motores}</actuator>
+</mujoco>'''
+
+COLORES_P = [".9 .3 .2 1", ".2 .8 .3 1", ".2 .5 .9 1"]
+modelo_3, datos_3 = taller.cargar(tres_piernas([1, Kd_critico, 10]))
+datos_3.ctrl[:] = OBJETIVO
+taller.video(modelo_3, datos_3, segundos=2, nombre="nb40_tres_pd", seguir=False, distancia=3.5);"""),
+
+md(r"""La roja rebota arriba y abajo; la verde sube limpia y se para; la azul sube despacio, como en miel.
+
+### Tus retos
+
+**Reto 1.** Te piden que la pierna llegue a 0,8 rad en **menos de 0,2 s** sin pasarse más de un 2 %. Elige Kp y Kd (pista:
+Kp más alto para ir más deprisa, y Kd cerca del crítico para no pasarse) y compruébalo con `respuesta_pd(...,
+compensar_gravedad=True)`.
+
+**Reto 2.** A los motores de posición se les puede poner un **par máximo**: `forcerange="-2.5 2.5"` (el límite del
+apartado 8). Pon `'<position joint="cadera" kp="200" kv="6" forcerange="-2.5 2.5"/>'` y mira hasta dónde llega la
+pierna. ¿Qué dice `datos.actuator_force`?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+for Kp in [200, 400]:
+    Kd = 2 * math.sqrt(Kp * I_mj)                  # crítico
+    _, final, sobre, asent = respuesta_pd(Kp, Kd, compensar_gravedad=True)
+    print(f"Kp = {Kp}, Kd = {Kd:.1f}: final {final:.3f} | se pasa {sobre:.1f} % | se asienta en {asent:.2f} s")
+```
+
+Con Kp = 200 y su Kd crítico (11,8) se asienta en **0,185 s** sin pasarse nada: ¡cumple! Con Kp = 400 (Kd ≈ 16,7),
+en 0,145 s. Compáralo con los 0,30 s de Kp = 50: cuatro veces más rígido, el doble de rápido (ω = √(Kp/I), NB39b).
+El precio: un muelle muy rígido pide pares enormes al principio (con 0,8 rad de error, 200 × 0,8 = 160 N·m: un motor
+de verdad no los daría) y, con retrasos en los sensores, oscilaría (NB41). Ajustar
+es siempre un compromiso.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+modelo_s, datos_s = taller.cargar(pierna_mjcf('<position joint="cadera" kp="200" kv="6" forcerange="-2.5 2.5"/>'))
+datos_s.ctrl[0] = OBJETIVO
+maximo = 0.0
+for i in range(3000):
+    mujoco.mj_step(modelo_s, datos_s)
+    maximo = max(maximo, datos_s.qpos[0])
+print(f"llega como mucho a {maximo:.3f} rad | par del motor ahora: {datos_s.actuator_force[0]:.2f} N·m")
+```
+
+La pierna llega como mucho a **0,82 rad** un instante y no puede sostenerse ahí: se columpia, como en el apartado 8,
+y `actuator_force` se queda clavado en ±2,5 N·m el **94 %** del tiempo: **saturado**. MuJoCo te da el mismo límite físico
+con un atributo.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Medir una respuesta como un ingeniero: **sobreoscilación** y **tiempo de asentamiento**.
+- **`datos.qfrc_bias`**: el par que necesita cada articulación para sostenerse contra la gravedad (compensación de
+  gravedad en una línea).
+- **`<position kp kv>`**: un motor con un **PD dentro**; `ctrl` pasa a ser el **ángulo objetivo**. Es idéntico a tu PD.
+- **`forcerange`**: el par máximo del motor (saturación).
+
+En la práctica del NB41 le pondrás **sentidos** al Hopper campeón: sensores de MuJoCo de verdad, y verás qué miden
+mientras salta.
+"""),
+
+md(r"""## 14 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-El PD de hoy usaba `datos.qpos` y `datos.qvel`: los ángulos y velocidades **exactos** que da el simulador. Un robot real no tiene esa suerte: tiene que **medirlos** con sensores, y los sensores **mienten un poco** (tienen ruido, retrasos y errores). En el **NB41** veremos los sensores de un robot (codificadores, la IMU con su acelerómetro y su giróscopo, los sensores de fuerza de los pies), qué miden de verdad, cómo es su ruido y cómo se combinan para estimar lo que no se puede medir directamente.
+El PD de hoy (también el de la práctica) usaba `datos.qpos` y `datos.qvel`: los ángulos y velocidades **exactos** que da el simulador. Un robot real no tiene esa suerte: tiene que **medirlos** con sensores, y los sensores **mienten un poco** (tienen ruido, retrasos y errores). En el **NB41** veremos los sensores de un robot (codificadores, la IMU con su acelerómetro y su giróscopo, los sensores de fuerza de los pies), qué miden de verdad, cómo es su ruido y cómo se combinan para estimar lo que no se puede medir directamente.
 """),
 
 ]

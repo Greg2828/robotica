@@ -11,6 +11,10 @@ captura ξ = x + v/ω: pisar ahí para; ±2 cm ya no. Estrategia de tobillo
 p = x − (z0/g)·ẍ; quieto → la vertical del CdM (NB38 es un caso particular);
 ASIMO. Andar = caer y poner el pie: pisar b antes del punto de captura da una
 marcha regular, más rápida cuanto mayor b. Límites del modelo y relación con RL.
+Práctica en MuJoCo: LIPM dentro de MuJoCo (bola con slides x/z, pie mocap, pierna =
+tendón spatial con motor; empuje m·g·ℓ/z + corrección de altura), empujón con
+xfrc_applied, pisar en el punto de captura (±2 cm cae; vídeo), andar con la regla
+de la b (pasos de 0,304 m) y ZMP con qacc = pie.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -523,11 +527,241 @@ Con **b = 0** pisa justo en el punto de captura: el primer paso lo frena por com
 </details>
 """),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: un péndulo invertido lineal de verdad
+
+Todo este notebook ha sido papel, lápiz y nuestra cadena de oro. Ahora vas a construir el **péndulo invertido lineal
+dentro de MuJoCo**, con una **pierna telescópica** (que se alarga y se acorta empujando a lo largo de sí misma,
+apartado 3), darle un **empujón** con una fuerza externa, y pisar en su **punto de captura**. Practicarás:
+
+1. Una pierna sin masa hecha con un **tendón** de MuJoCo y un motor que empuja a lo largo de él.
+2. Empujones con **`xfrc_applied`**: una fuerza externa, como un dedo que empuja.
+3. Mover el pie en mitad de la simulación con un **cuerpo mocap** (un cuerpo que colocas tú, sin física).
+4. Capturar, fallar por 2 cm, andar con la regla de la b y comprobar el **ZMP**.
+"""),
+
+md(r"""### Paso 1 · El plano: una bola, un pie y una pierna que empuja
+
+Tres piezas:
+
+- El **CdM**: una bola de **10 kg** a 0,8 m de altura, que puede deslizarse hacia delante (`slide` en x) y arriba-abajo
+  (`slide` en z). No gira: es un punto, como en el modelo.
+- El **pie**: un cuerpo **mocap** (`mocap="true"`). Es un cuerpo que la física **no** mueve: lo colocas tú, cuando
+  quieras, escribiendo en `datos.mocap_pos`. Perfecto para "poner el pie" en un sitio de golpe.
+- La **pierna**: un **tendón** (`<tendon><spatial>`), un "hilo" que va del pie (`site` pie) a la cadera (`site` en la
+  bola). No pesa nada. Y un `<motor>` sobre el tendón: lo que escribas en `ctrl` es una fuerza **a lo largo de la
+  pierna** (positiva = la alarga, empuja la bola lejos del pie). ¡Exactamente la pierna del apartado 3!
+"""),
+
+code(r"""import mujoco
+import taller
+
+LIPM = '''
+<mujoco>
+  <option timestep="0.001"/>
+  <visual><headlight ambient=".5 .5 .5"/></visual>
+  <worldbody>
+    <light pos="0 -2 4"/>
+    <geom type="plane" size="20 2 .1" rgba=".85 .9 .85 1"/>
+    <body name="pie" mocap="true" pos="0 0 0">
+      <site name="pie" size="0.04" rgba=".9 .2 .2 1"/>
+    </body>
+    <body name="cdm" pos="0 0 0.8">
+      <joint name="x" type="slide" axis="1 0 0"/>
+      <joint name="z" type="slide" axis="0 0 1"/>
+      <geom type="sphere" size="0.08" mass="10" rgba=".2 .5 .9 1" contype="0" conaffinity="0"/>
+      <site name="cadera"/>
+    </body>
+  </worldbody>
+  <tendon>
+    <spatial name="pierna" width="0.015" rgba=".85 .55 .25 1">
+      <site site="pie"/>
+      <site site="cadera"/>
+    </spatial>
+  </tendon>
+  <actuator>
+    <motor name="empuje" tendon="pierna" ctrllimited="false"/>
+  </actuator>
+</mujoco>'''
+
+modelo_l, datos_l = taller.cargar(LIPM)
+print("largo de la pierna:", datos_l.ten_length[0], "m | masa:", modelo_l.body_mass[2], "kg")"""),
+
+md(r"""(`ten_length` es el largo actual del tendón. En `qpos`, el `slide` z cuenta desde la posición inicial: z = 0 significa
+"a 0,8 m".)
+"""),
+
+md(r"""### Paso 2 · La fuerza de la pierna
+
+¿Cuánto tiene que empujar la pierna? Para que el CdM se quede a altura **constante**, la parte **vertical** de su
+empuje tiene que sostener el peso, m·g. Por los triángulos semejantes del apartado 3, si la pierna mide ℓ y la altura
+es z, la parte vertical es empuje × z/ℓ. Así que empuje = m·g·ℓ/z.
+
+Con eso, en teoría, basta. Pero una altura "exactamente constante" es un equilibrio delicado: si por los errores de
+los pasitos baja un milímetro, la pierna empuja un pelín menos, baja más... Así que añadimos una **corrección**: si la
+altura se aparta de 0,8 m, empuja un poco más o un poco menos (y frena si se mueve arriba o abajo). Es un muelle con
+amortiguador, que estudiarás a fondo en el NB39b y el NB40. Solo actúa en vertical: lo que pasa **hacia delante** sigue
+siendo el péndulo invertido lineal puro.
+"""),
+
+code(r"""masa_l = modelo_l.body_mass[2]
+
+def pierna(modelo, datos):
+    z = 0.8 + datos.qpos[1]                                     # altura de verdad del CdM
+    vertical = masa_l * (g + 100 * (0.8 - z) - 20 * datos.qvel[1])   # sostener el peso (+ pequeña corrección)
+    datos.ctrl[0] = vertical * datos.ten_length[0] / z               # empuje a lo largo de la pierna"""),
+
+md(r"""El examen: el primer experimento del apartado 4, con el CdM 30 cm por detrás del pie y 1,05 m/s hacia delante. Lo
+simulamos 1 s en MuJoCo y con nuestra función `simular`:"""),
+
+code(r"""modelo_l, datos_l = taller.cargar(LIPM)
+datos_l.qpos[0], datos_l.qvel[0] = -0.3, 1.05
+for i in range(1000):
+    pierna(modelo_l, datos_l)
+    mujoco.mj_step(modelo_l, datos_l)
+
+t, xs, vs = simular(-0.3, 1.05, 0.0, 1.0)
+print(f"MuJoCo:    x = {datos_l.qpos[0]:+.4f} m, v = {datos_l.qvel[0]:+.4f} m/s, altura = {0.8 + datos_l.qpos[1]:.4f} m")
+print(f"a mano:    x = {xs[-1]:+.4f} m, v = {vs[-1]:+.4f} m/s")"""),
+
+md(r"""Casi idénticos: el CdM se queda a unos 2 cm del pie, casi parado (la naranja del apartado 4), y la altura no se ha
+movido de 0,8 m. Has construido el modelo de Kajita en un simulador de física: una bola, un hilo y un motor.
+"""),
+
+md(r"""### Paso 3 · El empujón y el punto de captura
+
+`datos.xfrc_applied` es una tabla con una fila por pieza y 6 números: 3 de **fuerza** y 3 de par, que MuJoCo aplica a
+esa pieza en cada pasito mientras no los borres. Empujamos la bola (la pieza 2: la 0 es el mundo y la 1, el pie) con
+**50 N** hacia delante durante **0,1 s**. Por Newton (NB37), eso le da 50 × 0,1 / 10 = **0,5 m/s**: el empujón del
+apartado 6.
+
+Después del empujón, calculamos el punto de captura con la fórmula (x + v/ω) y **ponemos el pie** ahí (o un poco antes
+o después), moviendo el mocap. Y miramos qué pasa durante 1 segundo:
+"""),
+
+code(r"""def empujon_y_paso(error_pie=0.0, segundos=1.0):
+    modelo, datos = taller.cargar(LIPM)
+    for i in range(100):                                       # 0,1 s de empujón
+        datos.xfrc_applied[2, 0] = 50
+        pierna(modelo, datos)
+        mujoco.mj_step(modelo, datos)
+    datos.xfrc_applied[2, 0] = 0                               # ¡hay que borrarlo!
+    captura = datos.qpos[0] + datos.qvel[0] / omega
+    datos.mocap_pos[0, 0] = captura + error_pie                # pisamos
+    for i in range(round(segundos / modelo.opt.timestep)):
+        pierna(modelo, datos)
+        mujoco.mj_step(modelo, datos)
+    return captura, datos.qpos[0], datos.qvel[0]
+
+for error in [-0.02, 0.0, 0.02]:
+    captura, x_final, v_final = empujon_y_paso(error)
+    print(f"pie en {captura + error:.3f} m (captura {captura:.3f}):  al cabo de 1 s, x = {x_final:+.3f}, v = {v_final:+.3f} m/s")"""),
+
+md(r"""Tras el empujón, la bola va a 0,51 m/s y ya ha avanzado 2,6 cm, así que el punto de captura está en **0,171 m**.
+
+- Pisando **en** él: al cabo de un segundo, la bola está a 0,163 (encima del pie, a menos de 1 cm) y **parada**
+  (0,001 m/s). **Capturada**.
+- **2 cm antes**: pasa por encima y se cae hacia delante (ya va a +1,16 m/s y acelerando).
+- **2 cm después**: no llega, y se cae hacia atrás (−1,16 m/s).
+
+Exactamente la gráfica del apartado 6, pero ahora en un simulador de física, con un empujón de verdad. Míralo, pisando
+en el punto de captura (la cámara está quieta: verás la bola avanzar, el pie rojo saltar al punto de captura y la
+bola frenarse encima):
+"""),
+
+code(r"""modelo_l, datos_l = taller.cargar(LIPM)
+
+def empujar_y_capturar(modelo, datos):
+    if datos.time < 0.1:
+        datos.xfrc_applied[2, 0] = 50
+    elif datos.xfrc_applied[2, 0] != 0:                   # justo al acabar el empujón: pisar
+        datos.xfrc_applied[2, 0] = 0
+        datos.mocap_pos[0, 0] = datos.qpos[0] + datos.qvel[0] / omega
+    pierna(modelo, datos)
+
+taller.video(modelo_l, datos_l, segundos=1.5, control=empujar_y_capturar, nombre="nb39_captura", seguir=False, distancia=2.5);"""),
+
+md(r"""### Paso 4 · Andar en MuJoCo, y el ZMP
+
+La regla del apartado 9: cada 0,4 s, poner el pie **b** antes del punto de captura. Arrancamos con 0,5 m/s, b = 0,1 m,
+y en cada paso apuntamos dónde pisa. Y aprovechamos para comprobar el **ZMP** (apartado 8): con la aceleración que
+calcula MuJoCo (`datos.qacc`), x − (z0/g)·aceleración debería caer **justo en el pie**, porque en este modelo el suelo
+solo empuja en el pie:
+"""),
+
+code(r"""modelo_l, datos_l = taller.cargar(LIPM)
+datos_l.qvel[0] = 0.5
+b = 0.1
+pisadas, error_zmp = [0.0], []
+for n_paso in range(10):
+    for i in range(400):                                       # 0,4 s con este pie
+        pierna(modelo_l, datos_l)
+        mujoco.mj_step(modelo_l, datos_l)
+        zmp = datos_l.qpos[0] - (z0 / g) * datos_l.qacc[0]
+        error_zmp.append(abs(zmp - datos_l.mocap_pos[0, 0]))
+    nuevo_pie = datos_l.qpos[0] + datos_l.qvel[0] / omega - b
+    datos_l.mocap_pos[0, 0] = nuevo_pie
+    pisadas.append(nuevo_pie)
+
+print("largo de cada paso:", np.round(np.diff(pisadas), 3))
+print(f"el ZMP se aparta del pie, como mucho, {max(error_zmp) * 1000:.1f} mm")
+print(f"altura del CdM al final: {0.8 + datos_l.qpos[1]:.4f} m")"""),
+
+md(r"""Pasos de **0,304 m**, todos iguales tras el primero: los 0,30 m del apartado 9. Y el ZMP calculado con la fórmula
+cae en el pie (a unos pocos milímetros, por la pequeña corrección de altura). La marcha periódica, en MuJoCo.
+
+### Tus retos
+
+**Reto 1.** Haz el empujón el **doble** de fuerte (100 N durante 0,1 s). ¿Dónde está ahora el punto de captura? ¿Te
+bastaría con el tobillo de un pie humano (15 cm, apartado 7)?
+
+**Reto 2.** En el Paso 4, prueba b = 0 y b = 0,15. ¿Qué largo de paso sale? Compáralo con la tabla del apartado 9.
+
+**Reto 3.** Sube el CdM a **1,2 m** (cambia el `pos` de la bola a `0 0 1.2`, y en `pierna` el 0,8 por 1,2) y repite el
+Paso 3 con su nuevo ω. ¿Está el punto de captura más cerca o más lejos? ¿Por qué?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+En `empujon_y_paso`, cambia `50` por `100`. La bola sale a 1,02 m/s y el punto de captura queda en **0,342 m**: el
+doble de lejos (la velocidad se ha doblado y v/ω también). Un pie humano llega a 15 cm: el tobillo **no** basta, hay
+que dar un paso. Si pisas ahí, se captura igual que antes.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+Cambia `b = 0.1` por `b = 0.0` y por `b = 0.15`. Con **b = 0**, el primer paso lo frena del todo y los siguientes
+miden casi 0: se para. Con **b = 0,15**, pasos de **0,457 m** cada 0,4 s (1,14 m/s), como en el apartado 9.
+MuJoCo y tu cadena de oro dicen lo mismo, porque es la misma física.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Con z0 = 1,2, ω = √(9,81 / 1,2) ≈ 2,86 (más pequeño: el robot alto cae más despacio, ejercicio E1). El punto de captura
+x + v/ω queda **más lejos**: con 0,5 m/s, v/ω ≈ 0,175 m en vez de 0,143. El robot alto tiene más tiempo para
+reaccionar, pero tiene que dar el paso más largo. (Ojo: en `empujon_y_paso` usa el nuevo ω, `math.sqrt(g / 1.2)`, y
+cambia también el `z0` de la fórmula del ZMP si repites el Paso 4.)
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **Tendones** (`<tendon><spatial>`): hilos sin masa entre `site`s; `ten_length` es su largo, y un **motor sobre un
+  tendón** empuja a lo largo de él (una pierna telescópica).
+- **Cuerpos mocap**: piezas que colocas tú con `datos.mocap_pos`, sin física (para poner el pie donde quieras).
+- **`datos.xfrc_applied`**: fuerzas externas sobre una pieza (empujones); se quedan puestas hasta que las borras.
+- **`datos.qacc`**: la aceleración que calcula MuJoCo en cada pasito (para comprobar el ZMP).
+- Un modelo "de libro" (Kajita) se puede montar dentro del simulador y comparar con tus cuentas.
+
+En la práctica del NB39b pondrás **muelles y amortiguadores** en articulaciones de MuJoCo y los compararás con la
+solución de su ecuación diferencial; y verás explotar una simulación a propósito.
+"""),
+
+md(r"""## 14 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Antes, en el **NB39b**, una lección intermedia: los **muelles** y los **amortiguadores** a fondo (cómo oscilan, cómo se calman, y por qué una simulación puede explotar), y las **ecuaciones diferenciales**, el lenguaje de toda la física. Hasta ahora hemos tratado los motores como cajas que "hacen un par" cuando se les pide. En el **NB40** abrimos la caja: cómo es un motor eléctrico de verdad, por qué casi todos los robots llevan **reductoras**, qué límites tienen (de par, de velocidad, de calor) y, sobre todo, cómo se le ordena a un motor que lleve una articulación a un ángulo: el **control PD**, el controlador más usado de la robótica, que está también **dentro** de casi todas las políticas de RL de robots reales.
+En la práctica has visto todo esto dentro de MuJoCo. Antes, en el **NB39b**, una lección intermedia: los **muelles** y los **amortiguadores** a fondo (cómo oscilan, cómo se calman, y por qué una simulación puede explotar), y las **ecuaciones diferenciales**, el lenguaje de toda la física. Hasta ahora hemos tratado los motores como cajas que "hacen un par" cuando se les pide. En el **NB40** abrimos la caja: cómo es un motor eléctrico de verdad, por qué casi todos los robots llevan **reductoras**, qué límites tienen (de par, de velocidad, de calor) y, sobre todo, cómo se le ordena a un motor que lleve una articulación a un ángulo: el **control PD**, el controlador más usado de la robótica, que está también **dentro** de casi todas las políticas de RL de robots reales.
 """),
 
 ]

@@ -10,6 +10,10 @@ para giros: α = par / I → α = (3g / 2L)·sin θ: la masa se cancela, la long
 no (escoba vs lápiz). El "10" del NB11 = escoba de 1,47 m; sin θ ≈ θ. Simulación
 seno vs lineal; comprobación contra un péndulo de MuJoCo (0,957 s exactos).
 Par de los motores de Hopper (200 N·m = maleta de 20 kg a 1 m).
+Práctica en MuJoCo: un hombro con <motor> (ctrl = par, ctrlrange recorta,
+actuator_force): sostener el brazo con m·g·(L/2)·sin θ (±10 % → columpio /
+molinillo, vídeo de tres brazos), α = par/I con la gravedad apagada, motor de
+3 N·m que solo sostiene hasta 30,6°; reto: el E6 en MuJoCo.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -596,11 +600,308 @@ print(round(math.asin(2 / numero_de_caida(1.5)), 3))
 </details>
 """),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: un hombro con motor
+
+En el apartado 9 comprobaste que MuJoCo deja caer un palo igual que tus cuentas. Pero ese palo no tenía **motor**.
+Hoy le pones uno: vas a construir un **hombro** (un brazo que cuelga de una bisagra) movido por un motor de **par**,
+y vas a usar las fórmulas de hoy para decirle **cuánto par** hacer. Practicarás:
+
+1. **Peso** = masa × g, leyendo la masa del modelo.
+2. **Par de la gravedad** = m·g·(L/2)·sin θ: sostener el brazo en el ángulo que quieras con el par **justo**.
+3. **α = par / I**: la segunda ley para giros, con la gravedad apagada.
+4. El **par máximo** de un motor y hasta dónde puede sostener el brazo.
+"""),
+
+md(r"""### Paso 1 · El plano del hombro
+
+Un brazo de **2 kg** y **0,6 m** que **cuelga** de una bisagra a 1 m del suelo (sobre un poste gris, solo decorativo).
+El ángulo se mide como en el NB36: colgando = 0, positivo = hacia delante. Y una sección nueva, `<actuator>`, con un
+`<motor>` en la bisagra: lo que escribas en `datos.ctrl` se convierte en un **par** en N·m (con `gear` = 1, que es el
+valor por defecto). `ctrlrange` es el par **máximo**, hacia cada lado.
+
+Lo escribimos como una **función** que fabrica el plano (f-strings, NB20), para poder cambiar la masa, el largo, el
+límite del motor y la amortiguación de la bisagra:
+"""),
+
+code(r"""import taller
+
+def brazo(masa=2.0, largo=0.6, limite=10, amortiguador=0):
+    return f'''
+<mujoco>
+  <option timestep="0.001"/>
+  <worldbody>
+    <light pos="0 -2 3"/>
+    <geom type="box" pos="0 0.06 0.5" size="0.04 0.04 0.5" rgba=".6 .6 .6 1" contype="0" conaffinity="0"/>
+    <body name="brazo" pos="0 0 1">
+      <joint name="hombro" type="hinge" axis="0 -1 0" damping="{amortiguador}"/>
+      <geom type="capsule" fromto="0 0 0  0 0 -{largo}" size="0.03" mass="{masa}" rgba=".2 .5 .9 1"/>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="motor" joint="hombro" ctrlrange="-{limite} {limite}"/>
+  </actuator>
+</mujoco>'''
+
+modelo_b, datos_b = taller.cargar(brazo())
+print("masa del brazo:", modelo_b.body_mass[1], "kg  →  peso:", round(modelo_b.body_mass[1] * g, 2), "N")
+print("par máximo del motor:", modelo_b.actuator_ctrlrange[0], "N·m")"""),
+
+md(r"""(`contype="0" conaffinity="0"` hace que el poste no choque con nada: es solo un dibujo.) El brazo pesa **19,62 N**
+(2 × 9,81), y el motor puede hacer hasta **10 N·m** hacia cada lado.
+"""),
+
+md(r"""### Paso 2 · ¿Cuánto par para tenerlo horizontal?
+
+Con el brazo **horizontal** (θ = 90°), el peso actúa en su centro de masas, a L/2 = 0,3 m del hombro, y sin 90° = 1.
+El par de la gravedad (apartado 5) es:
+"""),
+
+code(r"""def par_gravedad(masa, largo, grados):
+    return masa * g * (largo / 2) * math.sin(math.radians(grados))
+
+par_90 = par_gravedad(2.0, 0.6, 90)
+print(round(par_90, 3), "N·m")"""),
+
+md(r"""**5,886 N·m**. Si el motor hace exactamente eso hacia arriba, los dos pares se compensan (suman cero, apartado 3) y
+el brazo no acelera: se queda quieto. Probémoslo, y de paso probemos con un 10 % menos y un 10 % más. Una función que
+coloca el brazo, pone el motor y simula 2 segundos, apuntando el ángulo **más bajo** y **más alto** por el que pasa:
+"""),
+
+code(r"""def probar_par(par, grados_inicio, segundos=2, **ajustes):
+    modelo, datos = taller.cargar(brazo(**ajustes))
+    datos.qpos[0] = math.radians(grados_inicio)
+    datos.ctrl[0] = par
+    angulos = []
+    for i in range(round(segundos / modelo.opt.timestep)):
+        mujoco.mj_step(modelo, datos)
+        angulos.append(math.degrees(datos.qpos[0]))
+    return min(angulos), max(angulos)
+
+for factor in [0.9, 1.0, 1.1]:
+    bajo, alto = probar_par(factor * par_90, 90)
+    print(f"par = {factor:.1f} × {par_90:.3f}:  el brazo pasa por ángulos entre {bajo:7.1f}° y {alto:7.1f}°")"""),
+
+md(r"""(`**ajustes` recoge los argumentos con nombre que le pasemos, por ejemplo `limite=3`, y se los da a `brazo`; NB23.)
+
+- Con el par **justo**, el brazo se queda clavado en **90,0°** los dos segundos.
+- Con un **10 % menos**, la gravedad gana: el brazo baja hasta unos **45°** y vuelve a subir (se columpia).
+- Con un **10 % más**, gana el motor: el brazo sube... y como, al pasar de la horizontal, la gravedad hace cada vez
+  **menos** par (el seno baja), el motor ya no encuentra oposición suficiente y el brazo da **vueltas** como un
+  molinillo (casi 1.500° en 2 s: más de cuatro vueltas).
+
+Un 10 % de error en el par cambia completamente el resultado. Míralo: tres brazos iguales, rojo con el 90 %, verde
+con el 100 % y azul con el 110 %:
+"""),
+
+code(r"""COLORES = [".9 .3 .2 1", ".2 .8 .3 1", ".2 .5 .9 1"]
+
+def tres_brazos():
+    cuerpos, motores = "", ""
+    for i in range(3):
+        x = 1.2 * (i - 1)                     # uno al lado del otro: x = −1,2, 0 y 1,2
+        cuerpos += f'''
+    <geom type="box" pos="{x} 0.06 0.5" size="0.04 0.04 0.5" rgba=".6 .6 .6 1"/>
+    <body pos="{x} 0 1">
+      <joint name="hombro{i}" type="hinge" axis="0 -1 0"/>
+      <geom type="capsule" fromto="0 0 0  0 0 -0.6" size="0.03" mass="2" rgba="{COLORES[i]}"/>
+    </body>'''
+        motores += f'<motor joint="hombro{i}" ctrlrange="-10 10"/>'
+    return f'''
+<mujoco>
+  <option timestep="0.001"/>
+  <visual><headlight ambient=".5 .5 .5"/></visual>
+  <default><geom contype="0" conaffinity="0"/></default>
+  <worldbody>
+    <light pos="0 -2 3"/>
+    <geom type="plane" size="3 3 .1" rgba=".85 .9 .85 1"/>
+    {cuerpos}
+  </worldbody>
+  <actuator>{motores}</actuator>
+</mujoco>'''"""),
+
+md(r"""(Con `<default>` hacemos que **ninguna** forma choque con nada, para que los brazos y los postes no se molesten.)
+Los tres empiezan horizontales, y el control pone a cada motor su par en cada pasito:"""),
+
+code(r"""modelo_3, datos_3 = taller.cargar(tres_brazos())
+datos_3.qpos[:] = math.radians(90)
+
+def tres_pares(modelo, datos):
+    datos.ctrl[:] = [0.9 * par_90, par_90, 1.1 * par_90]
+
+taller.video(modelo_3, datos_3, segundos=3, control=tres_pares, nombre="nb37_tres_brazos", seguir=False, distancia=4);"""),
+
+md(r"""### Paso 3 · Sostenerlo en cualquier ángulo: el seno
+
+En otros ángulos, el par de la gravedad es m·g·(L/2)·**sin θ** (apartado 5). Calculamos el par para 30° y 60° y
+comprobamos que, con él, el brazo se queda quieto:
+"""),
+
+code(r"""for grados in [30, 60]:
+    par = par_gravedad(2.0, 0.6, grados)
+    bajo, alto = probar_par(par, grados)
+    print(f"{grados}°: par {par:.3f} N·m  →  el brazo se queda entre {bajo:.2f}° y {alto:.2f}°")"""),
+
+md(r"""**2,943 N·m** para 30° (justo la mitad que a 90°, porque sin 30° = 0,5) y **5,097** para 60°. Con cada uno, el
+brazo no se mueve ni una centésima de grado. Acabas de hacer **compensación de gravedad**: calcular con la física el
+par que hace falta para sostener una postura. Es la base del control de muchos robots reales (lo verás en el NB40).
+"""),
+
+md(r"""### Paso 4 · α = par / I, con la gravedad apagada
+
+Ahora la segunda ley para giros (apartado 7). Para verla sola, **apagamos la gravedad** (NB02: es un número del
+modelo) y el motor hace un par constante de **2 N·m**. Sin gravedad, el par del motor es el único, y la aceleración de
+giro debería ser α = 2 / I, con I = m·L²/3 (apartado 6). Empezando quieto, el ángulo tras un tiempo t es ½·α·t² (la
+caída libre de la pelota del NB04b, pero girando):
+"""),
+
+code(r"""modelo_b, datos_b = taller.cargar(brazo())
+modelo_b.opt.gravity[:] = 0                 # sin gravedad
+datos_b.ctrl[0] = 2.0                        # 2 N·m
+
+while datos_b.time < 0.9999:                 # 1 segundo
+    mujoco.mj_step(modelo_b, datos_b)
+
+I_palo = 2.0 * 0.6 ** 2 / 3                                            # palo sin grosor (apartado 6)
+I_mujoco = modelo_b.body_inertia[1][1] + 2.0 * 0.3 ** 2                # la de MuJoCo, con Steiner (apartado 9)
+print(f"I del palo fino: {I_palo:.4f} | I de MuJoCo: {I_mujoco:.4f} kg·m²")
+print(f"ángulo tras 1 s:  MuJoCo {datos_b.qpos[0]:.3f} rad")
+print(f"½·α·t² con la I del palo fino: {0.5 * (2.0 / I_palo):.3f} rad | con la I de MuJoCo: {0.5 * (2.0 / I_mujoco):.3f} rad")"""),
+
+md(r"""MuJoCo dice **4,023** rad (más de media vuelta en un segundo, sin nada que lo frene). Con nuestra I de palo fino,
+m·L²/3 = 0,24, sale 4,167: un 3,5 % de más. ¿Quién se equivoca? Nadie: nuestro brazo **no** es un palo fino, es una
+**cápsula** de 3 cm de radio, con dos medias bolas en las puntas, y eso añade algo de inercia. Con la inercia que
+calcula MuJoCo para la cápsula (`body_inertia` + Steiner, como en el apartado 9: **0,2488**), la fórmula da **4,019**,
+a cuatro milésimas de la simulación. Lección importante: cuando una cuenta y una simulación no casan, antes de
+desconfiar de la física, comprueba que **describen el mismo objeto**.
+"""),
+
+md(r"""### Paso 5 · Un motor con poco par
+
+Por último, los motores de verdad tienen un **par máximo** (apartado 10). Ponemos un motor de solo **3 N·m** y le
+pedimos 10 (a tope). ¿Hasta dónde puede levantar el brazo? El brazo se queda donde el par de la gravedad iguala a los
+3 N·m: m·g·(L/2)·sin θ = 3, es decir, sin θ = 3 / 5,886:
+"""),
+
+code(r"""print(f"ángulo máximo que puede sostener: {math.degrees(math.asin(3 / par_90)):.1f}°")"""),
+
+md(r"""(`math.asin` es el camino de vuelta del seno: le das el seno y te da el ángulo, como en la solución del E6.)
+Comprobémoslo. Le ponemos a la bisagra un poco de **amortiguación** (rozamiento que frena el giro) para que no se
+columpie eternamente, y le pedimos 10 N·m durante 15 segundos:
+"""),
+
+code(r"""modelo_b, datos_b = taller.cargar(brazo(limite=3, amortiguador=0.5))
+datos_b.ctrl[0] = 10                          # le pedimos 10 N·m...
+for i in range(15000):
+    mujoco.mj_step(modelo_b, datos_b)
+print("pedido:", datos_b.ctrl[0], "N·m | lo que hace de verdad el motor:", datos_b.actuator_force[0], "N·m")
+print(f"ángulo final: {math.degrees(datos_b.qpos[0]):.1f}°")"""),
+
+md(r"""El motor solo hace **3 N·m** aunque le pidamos 10 (MuJoCo **recorta** la orden al `ctrlrange`, en silencio:
+`actuator_force` te dice lo que hace de verdad), y el brazo acaba en **30,6°**, justo lo que dice la cuenta. Por mucho
+que le pidas, un motor de 3 N·m no levanta ese brazo más de 30,6°: es el mismo **límite físico** del apartado 10.
+
+### Tus retos
+
+**Reto 1.** Haz el brazo el **doble de largo** (1,2 m) con la misma masa. ¿Cuánto par hace falta para tenerlo
+horizontal? Compruébalo con `probar_par(..., largo=1.2)`.
+
+**Reto 2.** Con la gravedad apagada y 2 N·m, ¿cuánto gira en 1 s el brazo de 1,2 m? Antes de simular, predícelo:
+¿el doble, la mitad, la cuarta parte...?
+
+**Reto 3.** Lleva el ejercicio E6 a MuJoCo: el palo de escoba **invertido** del apartado 9 (1,5 m, 1 kg, hacia
+arriba) con un motor de par máximo **1,5 N·m** que empuja a tope hacia la vertical (`ctrl = -1.5`). Desde 0,15 rad,
+¿lo levanta? ¿Y desde 0,25 rad? Calcula antes el punto de no retorno.
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+El par de la gravedad es m·g·(L/2): con el doble de largo, el centro de masas está el doble de lejos y hace falta
+**el doble de par**: 2 × 9,81 × 0,6 = **11,77 N·m**. ¡Más de lo que da el motor (10)! Hay que subir el límite:
+
+```python
+par = par_gravedad(2.0, 1.2, 90)
+print(round(par, 3), probar_par(par, 90, largo=1.2, limite=20))
+```
+
+Con `limite=20`, el brazo se queda clavado en 90°. Con el límite de 10 (prueba a quitar `limite=20`), el motor no
+llega y el brazo se cae hasta unos 34° antes de volver a subir. Por eso los robots llevan los
+motores más fuertes cerca del cuerpo (caderas, hombros) y los brazos son lo más ligeros posible: cada kilo lejos del
+hombro cuesta par.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+I = m·L²/3 crece con el **cuadrado** del largo: el doble de largo, **cuatro veces** más inercia. Con el mismo par, α
+es cuatro veces menor, y en 1 s gira **la cuarta parte**: 4,167 / 4 ≈ **1,04 rad**.
+
+```python
+modelo_b, datos_b = taller.cargar(brazo(largo=1.2))
+modelo_b.opt.gravity[:] = 0
+datos_b.ctrl[0] = 2.0
+while datos_b.time < 0.9999:
+    mujoco.mj_step(modelo_b, datos_b)
+print(round(datos_b.qpos[0], 3))
+```
+
+Sale **1,025** (con la inercia del palo fino serían 1,042; la diferencia es otra vez el grosor de la cápsula,
+ahora menos importante porque el brazo es más largo). La patinadora del apartado 6, en un brazo de robot.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Punto de no retorno: 1 × 9,81 × 0,75 × sin θ = 1,5 → sin θ = 0,204 → θ ≈ **0,205 rad**. Por debajo, el motor gana;
+por encima, la gravedad.
+
+```python
+PALO_CON_MOTOR = '''
+<mujoco>
+  <option timestep="0.001"/>
+  <worldbody>
+    <body>
+      <joint name="base" type="hinge" axis="0 1 0"/>
+      <geom type="cylinder" fromto="0 0 0  0 0 1.5" size="0.005" mass="1"/>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor joint="base" ctrlrange="-1.5 1.5"/>
+  </actuator>
+</mujoco>'''
+
+for inicio in [0.15, 0.25]:
+    modelo_p, datos_p = taller.cargar(PALO_CON_MOTOR)
+    datos_p.qpos[0] = inicio
+    datos_p.ctrl[0] = -1.5
+    while 0 < datos_p.qpos[0] < math.pi / 2 and datos_p.time < 5:
+        mujoco.mj_step(modelo_p, datos_p)
+    print(f"desde {inicio} rad: a los {datos_p.time:.2f} s, ángulo {datos_p.qpos[0]:.3f} rad")
+```
+
+Desde **0,15 rad**, el palo llega a la vertical (ángulo 0) en **0,64 s**: el motor gana (y si siguiera empujando, lo
+pasaría al otro lado; para frenarlo hace falta el PD del NB40). Desde **0,25 rad**, el palo cae al suelo (π/2 ≈ 1,57
+rad) en **1,36 s**: más despacio que sin motor, pero cae. Justo a cada lado de los 0,205 rad.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- La sección **`<actuator>`** y el **`<motor>`**: `datos.ctrl` es el par que pides (por el `gear`, que vale 1 si no lo
+  pones); `ctrlrange` es el par máximo, y MuJoCo **recorta** la orden sin avisar.
+- **`datos.actuator_force`**: el par que hace el motor **de verdad**.
+- **Compensación de gravedad**: con m·g·(L/2)·sin θ calculas el par que sostiene cualquier postura.
+- Cambiar el mundo para aislar un efecto: `modelo.opt.gravity[:] = 0` para ver solo α = par / I.
+- `damping` en una bisagra: rozamiento que frena el giro (para que las cosas se paren).
+- Fabricar planos con **f-strings** y bucles (`tres_brazos`), y `contype="0" conaffinity="0"` para formas que no chocan.
+
+En la práctica del NB38 calcularás el **centro de masas** del humanoide de 3D pieza a pieza y lo verás moverse
+cuando el robot levanta los brazos o se inclina.
+"""),
+
+md(r"""## 14 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Hoy has visto que la gravedad "actúa en el centro de masas". En el **NB38** estudiaremos ese punto a fondo: cómo se calcula para un cuerpo con muchas piezas (como Hopper o el humanoide), qué es exactamente la **base de apoyo**, y la regla de oro del equilibrio quieto: **un robot no se cae mientras su centro de masas esté encima de sus pies**. Lo mediremos en MuJoCo.
+Hoy has visto (y en la práctica lo has sentido con un motor de MuJoCo) que la gravedad "actúa en el centro de masas". En el **NB38** estudiaremos ese punto a fondo: cómo se calcula para un cuerpo con muchas piezas (como Hopper o el humanoide), qué es exactamente la **base de apoyo**, y la regla de oro del equilibrio quieto: **un robot no se cae mientras su centro de masas esté encima de sus pies**. Lo mediremos en MuJoCo.
 """),
 
 ]

@@ -12,6 +12,9 @@ amortiguador, ζ = c / (2·√(k·m)), sub/crítico/sobre, envolvente e^(−ζ·
 el PD del NB40 visto con ζ; estabilidad de Euler: x' = −λ·x → factor
 (1 − pasito·λ) → pasito·λ < 2; el muelle con Euler explícito (siempre gana
 energía) y semiimplícito (estable si pasito·ω < 2).
+Práctica en MuJoCo: slide con stiffness/damping vs A·cos(ω·t) (periodo medido por
+cruces), energía elástica en datos.energy, tabla de ζ y rebote, explosión con
+pasito·ω > 2 (aviso de MuJoCo) y amortiguación implícita que no explota.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -565,11 +568,211 @@ De 1 cm a unos **74 cm** en un segundo: crecimiento exponencial. Con el signo me
 </details>
 """),
 
-md(r"""## 10 · Posdata
+md(r"""## 10 · 🛠 Práctica en MuJoCo: muelles de MuJoCo contra tus ecuaciones
+
+En el NB38 usaste `jnt_stiffness` y `dof_damping` para convertir a Hopper en estatua, "por arte de magia". Hoy sabes
+qué hay detrás: **k** y **c**. En esta práctica vas a poner un muelle y un amortiguador en una articulación de MuJoCo
+y comprobar, una a una, las fórmulas de la lección:
+
+1. x(t) = A·cos(ω·t) con ω = √(k/m), y el **periodo** 2π/ω.
+2. La **energía** del muelle, ½·k·x², con el contador de MuJoCo.
+3. ζ y **cuánto se pasa** (la tabla del apartado 5).
+4. La regla de estabilidad **pasito · ω < 2**... y una simulación que explota a propósito.
+"""),
+
+md(r"""### Paso 1 · Un muelle en un plano MJCF
+
+Una caja de **1 kg** que se desliza (`slide`) a lo largo del eje x, sin gravedad (para que solo actúe el muelle). En la
+articulación, dos atributos: **`stiffness`** (la k, en N/m) y **`damping`** (la c, en N por m/s). El muelle está
+relajado en x = 0. Una función que fabrica el plano con la k, la c y el pasito que queramos (y con el contador de
+energía encendido):
+"""),
+
+code(r"""import mujoco
+import taller
+
+def muelle(k=100, c=0, paso=0.001):
+    return f'''
+<mujoco>
+  <option timestep="{paso}" gravity="0 0 0">
+    <flag energy="enable"/>
+  </option>
+  <worldbody>
+    <body pos="0 0 0.5">
+      <joint name="x" type="slide" axis="1 0 0" stiffness="{k}" damping="{c}"/>
+      <geom type="box" size="0.05 0.05 0.05" mass="1"/>
+    </body>
+  </worldbody>
+</mujoco>'''"""),
+
+md(r"""Estiramos 10 cm (A = 0,1) y soltamos. Apuntamos 2 segundos de posiciones:"""),
+
+code(r"""modelo_m, datos_m = taller.cargar(muelle())
+datos_m.qpos[0] = 0.1
+mujoco.mj_forward(modelo_m, datos_m)
+print("energía al soltar [potencial, cinética]:", datos_m.energy)
+
+tiempos_m, posiciones_m = [], []
+for i in range(2000):
+    mujoco.mj_step(modelo_m, datos_m)
+    tiempos_m.append(datos_m.time)
+    posiciones_m.append(datos_m.qpos[0])
+tiempos_m, posiciones_m = np.array(tiempos_m), np.array(posiciones_m)"""),
+
+md(r"""La energía potencial al soltar es **0,5 J**: ½ × 100 × 0,1², la energía elástica del apartado 4. ¡MuJoCo cuenta la
+energía de los muelles como energía de posición!
+
+### Paso 2 · ¿Es un coseno? ¿Con qué periodo?
+
+La fórmula dice x(t) = 0,1·cos(10·t), porque ω = √(100/1) = 10. Comparamos, y medimos el periodo buscando los
+instantes en que x **cruza el cero subiendo** (de negativo a positivo): entre dos cruces seguidos pasa un periodo.
+"""),
+
+code(r"""print("mayor diferencia con 0,1·cos(10·t):", np.max(np.abs(posiciones_m - 0.1 * np.cos(10 * tiempos_m))).round(5), "m")
+
+sube = (posiciones_m[:-1] < 0) & (posiciones_m[1:] >= 0)        # True donde cruza el cero subiendo
+cruces = tiempos_m[1:][sube]
+print("cruza el cero subiendo en:", cruces, "s")
+print("periodo medido:", np.diff(cruces), "| fórmula 2π/ω:", round(2 * math.pi / 10, 3))"""),
+
+md(r"""(Las comparaciones de arrays dan arrays de `True`/`False`, y `&` es el "y" de NumPy, NB27.)
+
+MuJoCo sigue al coseno con un error de medio milímetro como mucho (el de los pasitos), y el periodo medido es
+**0,628-0,629 s**: 2π/10. MuJoCo resuelve la ecuación diferencial del muelle igual que la resolviste tú con lápiz.
+"""),
+
+md(r"""### Paso 3 · ζ: cuánto se pasa
+
+La tabla del apartado 5, ahora en MuJoCo: para cada ζ, ponemos c = ζ·2·√(k·m) = ζ·20 y medimos el rebote más hondo
+hacia el otro lado, en % de los 10 cm iniciales:
+"""),
+
+code(r"""for zeta in [0.1, 0.3, 0.5, 0.7, 1.0]:
+    modelo_m, datos_m = taller.cargar(muelle(c=zeta * 20))
+    datos_m.qpos[0] = 0.1
+    mas_hondo = 0.0
+    for i in range(3000):
+        mujoco.mj_step(modelo_m, datos_m)
+        mas_hondo = min(mas_hondo, datos_m.qpos[0])
+    print(f"ζ = {zeta}: c = {zeta * 20:4.1f}  →  se pasa un {100 * -mas_hondo / 0.1:4.1f} %")"""),
+
+md(r"""**73 %, 37 %, 16 %, 4,7 % y 0 %**: los mismos números que tu simulación del apartado 5. El ζ = 0,7 "clásico" se pasa
+menos de un 5 %, y el crítico no se pasa nada.
+"""),
+
+md(r"""### Paso 4 · La simulación que explota
+
+Ahora la regla del apartado 7: MuJoCo usa Euler **semiimplícito**, así que un muelle debería ser estable si
+**pasito × ω < 2** y explotar si no. Con ω = 10, el límite es un pasito de **0,2 s** (¡enorme!). Simulamos 50 s con
+pasitos cada vez mayores y apuntamos lo más lejos que llega la caja (empezó a 0,1 m):
+"""),
+
+code(r"""for paso_m in [0.01, 0.1, 0.19, 0.21]:
+    modelo_m, datos_m = taller.cargar(muelle(paso=paso_m))
+    datos_m.qpos[0] = 0.1
+    lo_mas_lejos = 0.0
+    for i in range(round(50 / paso_m)):
+        mujoco.mj_step(modelo_m, datos_m)
+        lo_mas_lejos = max(lo_mas_lejos, abs(datos_m.qpos[0]))
+    print(f"pasito·ω = {paso_m * 10:.1f}:  lo más lejos que llega: {lo_mas_lejos:.4g} m")"""),
+
+md(r"""- Con pasito·ω = 0,1 y 1: nunca pasa de 0,1 m. **Estable.**
+- Con **1,9**: estable (no crece), pero llega a **0,32 m**: más del triple de lo que se estiró. Estable, pero **mala**.
+- Con **2,1**: ¡**más de cien millones de metros**! MuJoCo, además, se da cuenta: escribe un aviso, *"Nan, Inf or huge
+  value in QACC... The simulation is unstable"* ("valor enorme en la aceleración: la simulación es inestable"), y
+  **reinicia** el estado para no seguir con números absurdos.
+
+Si alguna vez ves ese aviso, ya sabes qué buscar: algo **rígido** (k grande, masa pequeña) para el pasito que usas.
+
+### Tus retos
+
+**Reto 1.** Con k = 400 y masa 1, ¿qué periodo predices? ¿Y cuál es el pasito máximo antes de explotar? Compruébalo
+(cambia k en `muelle` y mide los cruces del Paso 2).
+
+**Reto 2.** Con ζ = 0,1, comprueba la **envolvente** del apartado 5: al cabo de 1 s (la constante de tiempo, 1/(ζ·ω)),
+¿a qué porcentaje de la amplitud han bajado los picos?
+
+**Reto 3 (sorpresa).** El apartado 7 decía que un amortiguador con λ = c/m también explota si pasito·λ > 2. Prueba en
+MuJoCo un amortiguador **sin** muelle (k = 0), c = 300, pasito 0,01 (pasito·λ = 3), soltando la caja a 1 m/s. ¿Explota?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+ω = √400 = 20 rad/s → periodo 2π/20 ≈ **0,314 s** (la mitad: muelle 4 veces más duro, el doble de rápido). Pasito
+máximo: 2 / 20 = **0,1 s**.
+
+```python
+modelo_m, datos_m = taller.cargar(muelle(k=400))
+datos_m.qpos[0] = 0.1
+t_, x_ = [], []
+for i in range(2000):
+    mujoco.mj_step(modelo_m, datos_m)
+    t_.append(datos_m.time); x_.append(datos_m.qpos[0])
+t_, x_ = np.array(t_), np.array(x_)
+print(np.diff(t_[1:][(x_[:-1] < 0) & (x_[1:] >= 0)]))
+```
+
+Sale 0,314 s entre cruces.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+La envolvente dice e^(−ζ·ω·t) = e^(−1) ≈ **37 %** al cabo de 1 s. El pico más cercano a 1 s es en realidad un
+"valle" (el rebote hacia el lado negativo), así que miramos el **tamaño** (`abs`) de x:
+
+```python
+modelo_m, datos_m = taller.cargar(muelle(c=2))
+datos_m.qpos[0] = 0.1
+x_ = []
+for i in range(1300):
+    mujoco.mj_step(modelo_m, datos_m)
+    x_.append(abs(datos_m.qpos[0]))
+cerca = np.argmax(x_[850:1150]) + 850                 # el pico más alto entre 0,85 y 1,15 s
+print(f"a los {(cerca + 1) / 1000:.3f} s: {x_[cerca] / 0.1 * 100:.1f} %  | envolvente: {100 * math.exp(-(cerca + 1) / 1000):.1f} %")
+```
+
+El pico cae a los **0,947 s** y mide el **38,8 %** de la amplitud inicial; la envolvente en ese instante dice **38,8 %**.
+Exacto (y muy cerca del 37 % de 1 s justo).
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+modelo_m, datos_m = taller.cargar(muelle(k=0, c=300, paso=0.01))
+datos_m.qvel[0] = 1.0
+for i in range(100):
+    mujoco.mj_step(modelo_m, datos_m)
+print(datos_m.qpos[0], datos_m.qvel[0])
+```
+
+**No explota**: la caja avanza unos 3 mm y se para. ¿Contradice el apartado 7? No: MuJoCo hace un truco con la
+amortiguación de las **articulaciones** (`damping`): la calcula de forma **implícita** (usando la velocidad del
+**final** del pasito, no la del principio), y así es estable con cualquier pasito. Ese truco no vale para todo: por
+ejemplo, no se aplica al amortiguador de los motores de posición (el `kv` del NB42). Cuándo se aplica y cuándo no lo
+verás en el NB49, con los **integradores** de MuJoCo. La lección: las reglas del apartado 7 son las de Euler "a
+pelo"; los simuladores profesionales añaden trucos, y hay que saber cuáles.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **`stiffness`** y **`damping`** en un `<joint>`: un muelle (k) y un amortiguador (c) en la articulación.
+- La energía de los muelles entra en el **potencial** de `datos.energy`.
+- MuJoCo resuelve la ecuación diferencial del muelle: coseno, periodo 2π/ω y ζ, todo coincide.
+- **Inestabilidad numérica** en directo: con pasito·ω > 2, explota; MuJoCo **avisa** (*simulation is unstable*) y
+  reinicia.
+- La amortiguación de las articulaciones es **implícita** en MuJoCo: no explota.
+
+En la práctica del NB40 **sintonizarás un PD** en una articulación de MuJoCo (que, ahora lo sabes, es un muelle con
+amortiguador) y lo compararás con el motor de posición que trae MuJoCo de serie.
+"""),
+
+md(r"""## 11 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-En el **NB40** abrimos la caja de los **motores** y construimos el controlador **PD**. Ya sabes lo que es por dentro: un muelle y un amortiguador invisibles, con su ω y su ζ.
+En el **NB40** abrimos la caja de los **motores** y construimos el controlador **PD**. Ya sabes lo que es por dentro: un muelle y un amortiguador invisibles, con su ω y su ζ. (Y en la práctica de hoy ya has visto que MuJoCo los trata exactamente así.)
 """),
 
 ]
