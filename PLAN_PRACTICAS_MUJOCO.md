@@ -31,6 +31,7 @@
   carro deslizante `deslizar` + palo con `bisagra`, motor `empuje` gear 10 ctrl ±1, timestep 0,01; qpos=[x carro,
   ángulo palo rad]; ángulo + → hay que empujar el carro hacia +x; sin control cae en 0,58 s desde 5°; el PD
   ctrl = clip(3·θ + 0,8·θ̇ + 0,1·x + 0,2·ẋ) lo sostiene 10 s).
+- **Tras cambiar `modelo.body_mass` (u otras inercias) hay que llamar a `mujoco.mj_setConst(modelo, datos)`**: en MuJoCo 3.14 si no, parte de los cálculos sigue usando la masa vieja.
 - **No modificar `taller.py`** salvo que lo haga el coordinador: si una práctica necesita otra utilidad, se
   define en el propio notebook.
 - Las cifras que cite el texto deben salir de ejecutarlo de verdad. Máx. 2-3 vídeos cortos por NB. Coste de
@@ -92,3 +93,4 @@
 - [x] NB01 · desmonta el humanoide
 - [x] NB02 · suelta una pelota (MuJoCo reproduce la tabla a mano)
 - [x] NB03 · dale una mente al humanoide · NB03b · los números del humanoide · NB04 · ponle nota (recompensa real) · NB04b · ¿acierta tu fórmula? · NB05b · MuJoCo desde la terminal
+- [x] Parte 1 NB05-NB11b · print del modelo · variables · tu bucle · detectar la caída · grabar y dibujar · caida(gravedad) · palo de escoba en MJCF (4 ruedecillas por el raíl) · leer un script real
