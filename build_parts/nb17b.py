@@ -10,6 +10,12 @@ signo de −x), producto (el rectángulo), exponencial (e^x es su propia
 pendiente), logaritmo (1/x; la de ln f es f'/f), la rampa (0 o 1); tabla;
 segunda derivada (aceleración, cima o valle, el método de Newton);
 derivadas parciales con reglas.
+Práctica en MuJoCo: la energía (flag energy → datos.energy, mj_energyPos/Vel).
+Pelota en caída libre (RK4): altura, qvel = −9,81·t y qacc = −9,81 coinciden
+con las reglas; energía total 9,81 constante; pendientes de U y K = ∓48,118·t
+(cadena) y del total 0. Péndulo 1 kg/1 m desde 60°: sin damping 9,81 fija;
+con damping 0,1 baja a 7,88 en 5 s en escalones, pendiente = −b·ω² (vídeo).
+Retos: sin RK4 se pierde 0,24 J/s; lanzada a 5 m/s (16,06); damping 0,3.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -423,7 +429,293 @@ print(pendiente(lambda t: f(t, 2.0), 1.0), pendiente(lambda t: f(1.0, t), 2.0)) 
 </details>
 """),
 
-md(r"""## 11 · Posdata
+md(r"""## 11 · 🛠 Práctica en MuJoCo: la energía de una pelota y de un péndulo
+
+Hoy has aprendido reglas que dan pendientes **exactas** sobre el papel. La pregunta de un ingeniero es: ¿y el simulador está de acuerdo? Vamos a comprobarlo con dos
+experimentos en MuJoCo:
+
+1. Una **pelota que cae**. Con las reglas de las potencias sacarás su velocidad y su aceleración a partir de la fórmula de la altura (NB04b), y MuJoCo te dirá si aciertas.
+2. Su **energía**. Es una idea nueva, muy importante en física, que MuJoCo sabe calcular. Con la regla de la cadena descubrirás que, mientras cae, la energía **no
+   cambia**: su pendiente es 0. Y luego lo verás en un **péndulo**, donde el rozamiento sí se la come, y a qué ritmo.
+"""),
+
+md(r"""### Paso 1 · ¿Qué es la energía?
+
+Antes de tocar código, la idea. La **energía** es como la "batería" de un objeto: cuánto trabajo podría hacer. Un objeto que se mueve tiene dos tipos:
+
+- **Energía de altura** (los físicos la llaman **potencial**): una pelota en lo alto "guarda" energía, que se convierte en velocidad si la sueltas. Vale
+  **m · g · h**: masa por gravedad por altura. Una pelota de 0,5 kg a 2 m de altura: 0,5 · 9,81 · 2 = **9,81** (se mide en **julios**).
+- **Energía de movimiento** (la **cinética**): cuanto más deprisa va, más tiene. Vale **½ · m · v²**: la mitad de la masa por la velocidad al cuadrado. Parada, 0.
+
+Cuando la pelota cae, pierde altura y gana velocidad: una energía se convierte en la otra, como agua que pasa de un vaso a otro. ¿Se pierde algo por el camino? Si
+no hay rozamiento, los físicos dicen que **no**: la suma se **conserva**. Lo vas a comprobar.
+
+### Paso 2 · Una pelota que lleva la cuenta de su energía
+
+Un plano MJCF de una pelota de 0,5 kg que solo puede moverse arriba y abajo (una junta `slide` vertical, como el carro del palo de escoba pero de pie). Dos
+novedades, las dos en `<option>`:
+
+- `<flag energy="enable"/>` le pide a MuJoCo que, en cada paso, calcule la energía y la guarde en **`datos.energy`**: dos números, `[potencial, cinética]`. (Por
+  dentro usa dos funciones suyas, `mj_energyPos` y `mj_energyVel`: una para cada tipo.)
+- `integrator="RK4"` le pide una forma de dar los pasitos **más precisa** que la normal. Con ella, la caída libre sale exacta, sin el pequeño error de la cadena de oro
+  que viste en el NB16. (Qué es eso de "integrador" lo verás a fondo en el NB49; en el Reto 1 verás qué pasa sin él.)
+"""),
+
+code(r"""import mujoco
+import taller
+
+PELOTA = '''
+<mujoco>
+  <option timestep="0.01" integrator="RK4">
+    <flag energy="enable"/>
+  </option>
+  <worldbody>
+    <light pos="0 -2 4"/>
+    <geom type="plane" size="2 2 0.1" rgba=".8 .9 .8 1"/>
+    <body name="pelota" pos="0 0 0">
+      <joint name="altura" type="slide" axis="0 0 1"/>
+      <geom type="sphere" size="0.1" mass="0.5" rgba=".9 .2 .2 1" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+</mujoco>
+'''
+modelo, datos = taller.cargar(PELOTA)
+datos.qpos[0] = 2.0                     # la subimos a 2 metros
+mujoco.mj_forward(modelo, datos)        # que MuJoCo recalcule todo en esa posición
+print("Energía al empezar [potencial, cinética]:", datos.energy)"""),
+
+md(r"""**[9,81, 0]**: justo el 0,5 · 9,81 · 2 que calculaste a mano, y nada de energía de movimiento (está quieta). (`mj_forward` recalcula todo, también la energía,
+sin avanzar el tiempo: lo necesitamos porque hemos movido la pelota "a mano".)
+"""),
+
+md(r"""### Paso 3 · Grabar la caída
+
+Dejamos caer la pelota **0,6 segundos** (60 pasitos) y apuntamos en arrays (NB15) el tiempo, la altura (`qpos`), la velocidad (`qvel`), la **aceleración**
+(`datos.qacc`, que MuJoCo también te da) y las dos energías. Usamos 61 casillas: la casilla 0 es el instante inicial, sin dar ningún paso (por eso el `if n > 0`):
+"""),
+
+code(r"""tiempos = np.zeros(61)
+alturas = np.zeros(61)
+velocidades = np.zeros(61)
+aceleraciones = np.zeros(61)
+potencial = np.zeros(61)
+cinetica = np.zeros(61)
+
+for n in range(61):
+    if n > 0:
+        mujoco.mj_step(modelo, datos)
+    tiempos[n] = datos.time
+    alturas[n] = datos.qpos[0]
+    velocidades[n] = datos.qvel[0]
+    aceleraciones[n] = datos.qacc[0]
+    potencial[n] = datos.energy[0]
+    cinetica[n] = datos.energy[1]
+
+print("Altura a los", round(tiempos[60], 2), "s:", round(alturas[60], 4), "m")"""),
+
+md(r"""### Paso 4 · Las reglas contra MuJoCo
+
+La fórmula de la caída libre (NB04b, y el apartado 7 de hoy) es **h(t) = 2 − ½ · 9,81 · t² = 2 − 4,905 · t²**. Con las reglas:
+
+- **Velocidad = pendiente de la altura.** El 2 es una constante (pendiente 0); t² tiene pendiente 2·t, y el número de delante se queda: −4,905 · 2·t = **−9,81 · t**.
+- **Aceleración = pendiente de la velocidad** (la segunda derivada de la altura). −9,81 · t es una recta: su pendiente es **−9,81**, siempre.
+
+Tres instantes, fórmula contra simulador:
+"""),
+
+code(r"""print(" t   | altura MuJoCo  fórmula | velocidad MuJoCo  regla −9,81·t | aceleración MuJoCo")
+for n in [20, 40, 60]:
+    t = tiempos[n]
+    print(f" {t:.1f} |   {alturas[n]:.4f}     {2 - 4.905 * t ** 2:.4f}  |     {velocidades[n]:.4f}        {-9.81 * t:.4f}      |     {aceleraciones[n]:.4f}")"""),
+
+md(r"""**Coinciden en todas las cifras.** A los 0,6 s la pelota está a 0,2342 m, va a −5,886 m/s (hacia abajo), y su aceleración es −9,81: la gravedad. Lo que dicen
+las reglas de las pendientes es exactamente lo que hace el simulador.
+"""),
+
+md(r"""### Paso 5 · La energía se conserva
+
+Ahora la suma de las dos energías, en cada uno de los 61 instantes. Si se conserva, debería valer siempre 9,81:
+"""),
+
+code(r"""total = potencial + cinetica
+
+plt.figure(figsize=(6, 3.5))
+plt.plot(tiempos, potencial, label="de altura (potencial)")
+plt.plot(tiempos, cinetica, label="de movimiento (cinética)")
+plt.plot(tiempos, total, "k--", label="total")
+plt.xlabel("tiempo (s)")
+plt.ylabel("energía (julios)")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
+print("Energía total: mínima", round(total.min(), 6), "| máxima", round(total.max(), 6))"""),
+
+md(r"""Una energía baja, la otra sube, y la línea discontinua de la suma se queda **plana en 9,81**: el agua pasa de un vaso al otro sin derramarse ni una gota.
+
+### Paso 6 · La pendiente de la energía, con la regla de la cadena
+
+¿Por qué se conserva? Las reglas de hoy lo explican. Llamemos U a la energía de altura y K a la de movimiento:
+
+- **U = m · g · h.** m · g es un número (0,5 · 9,81 = 4,905), así que su pendiente es m · g · (pendiente de h) = 4,905 · (−9,81 · t) = **−48,118 · t**.
+- **K = ½ · m · v².** Es una función dentro de otra: el **cuadrado** (fuera) de la **velocidad** (dentro). Regla de la cadena: ½ · m · **2·v** · (pendiente de v) =
+  m · v · (−9,81). Con v = −9,81 · t: 0,5 · (−9,81 · t) · (−9,81) = **+48,118 · t**.
+
+La pendiente de la suma es la suma de las pendientes (apartado 2): −48,118 · t + 48,118 · t = **0**. La energía total tiene pendiente cero en todo momento: no sube
+ni baja. Lo comprobamos con la pendiente numérica, usando los datos grabados (h = un pasito, 0,01 s, a los dos lados):
+"""),
+
+code(r"""for n in [20, 40]:
+    t = tiempos[n]
+    pend_U = (potencial[n + 1] - potencial[n - 1]) / 0.02
+    pend_K = (cinetica[n + 1] - cinetica[n - 1]) / 0.02
+    pend_total = (total[n + 1] - total[n - 1]) / 0.02
+    print(f"t = {t:.1f} s | U: medida {pend_U:+.4f}, regla {-48.118 * t:+.4f} | K: medida {pend_K:+.4f}, regla {48.118 * t:+.4f} | total: {pend_total:+.6f}")"""),
+
+md(r"""A los 0,2 s, la energía de altura se va a −9,6236 julios por segundo y la de movimiento llega a +9,6236: lo que pierde una lo gana la otra, al ritmo exacto que
+predice la regla de la cadena. Y la pendiente del total sale **+0,000000**: cero, hasta la sexta cifra decimal.
+"""),
+
+md(r"""### Paso 7 · El péndulo y el rozamiento
+
+Ahora un **péndulo**: una bola de 1 kg colgada de una varilla de 1 m (sin peso) que gira en una bisagra a 1,5 m de altura. La soltamos a **60 grados**. El
+`damping` de la bisagra es el rozamiento (NB15b): de momento, 0.
+"""),
+
+code(r"""PENDULO = '''
+<mujoco>
+  <option timestep="0.01" integrator="RK4">
+    <flag energy="enable"/>
+  </option>
+  <worldbody>
+    <light pos="0 -2 4"/>
+    <geom type="plane" size="2 2 0.1" rgba=".8 .9 .8 1"/>
+    <body name="bola" pos="0 0 1.5">
+      <joint name="giro" type="hinge" axis="0 1 0" damping="0"/>
+      <geom type="capsule" fromto="0 0 0 0 0 -1" size="0.02" mass="0" rgba=".4 .4 .4 1"/>
+      <geom type="sphere" pos="0 0 -1" size="0.08" mass="1" rgba="1 .5 .1 1"/>
+    </body>
+  </worldbody>
+</mujoco>
+'''
+
+def energia_del_pendulo(rozamiento):
+    # Suelta el péndulo a 60 grados y devuelve la energía total y la velocidad de giro en 501 instantes (5 s).
+    modelo, datos = taller.cargar(PENDULO)
+    modelo.dof_damping[0] = rozamiento
+    datos.qpos[0] = np.radians(60)
+    mujoco.mj_forward(modelo, datos)
+    energias = np.zeros(501)
+    giros = np.zeros(501)
+    for n in range(501):
+        if n > 0:
+            mujoco.mj_step(modelo, datos)
+        energias[n] = datos.energy[0] + datos.energy[1]
+        giros[n] = datos.qvel[0]
+    return energias, giros
+
+energias, giros = energia_del_pendulo(0)
+print("Sin rozamiento: energía al empezar", round(energias[0], 5), "| mínima", round(energias.min(), 5), "| máxima", round(energias.max(), 5))"""),
+
+md(r"""(`modelo.dof_damping[0]` es el damping de la bisagra, guardado en el modelo: así podemos cambiarlo sin reescribir el plano, como cambiabas la gravedad en el NB06.)
+
+Sin rozamiento, el péndulo va y viene durante 5 segundos y la energía no se mueve de **9,81**. (¿Por qué 9,81? La bola empieza a 1,5 − 0,5 = 1 m de altura, porque
+la varilla inclinada 60 grados "sube" medio metro, y 1 · 9,81 · 1 = 9,81.)
+
+Ahora con un poco de rozamiento, **0,1**:
+"""),
+
+code(r"""energias, giros = energia_del_pendulo(0.1)
+for n in [0, 100, 200, 500]:
+    print(f"a los {n / 100:.0f} s: energía {energias[n]:.4f} julios")
+
+plt.figure(figsize=(6, 3.5))
+plt.plot(np.arange(501) * 0.01, energias)
+plt.xlabel("tiempo (s)")
+plt.ylabel("energía total (julios)")
+plt.grid(alpha=0.3)
+plt.show()"""),
+
+md(r"""Ahora la energía **baja**: 9,81 → 9,33 → 8,90 → ... → 7,88 a los 5 s. El rozamiento se la come (la convierte en calor, que MuJoCo no cuenta). Fíjate en la forma
+de la curva: **escalones**. Baja deprisa en unos momentos y casi nada en otros.
+
+La física (lo verás en el NB38b) dice exactamente a qué ritmo: el rozamiento se come **b · ω²** julios por segundo, donde b es el damping y ω la velocidad de giro.
+Es decir: **la pendiente de la energía es −b · ω²**. Comprobémoslo en tres instantes:
+"""),
+
+code(r"""for n in [50, 123, 200]:
+    medida = (energias[n + 1] - energias[n - 1]) / 0.02
+    print(f"t = {n / 100:.2f} s | giro {giros[n]:+.3f} rad/s | pendiente medida {medida:+.4f} | −b·ω² = {-0.1 * giros[n] ** 2:+.4f}")"""),
+
+md(r"""Coinciden (hasta la tercera cifra; la pequeña diferencia es la pendiente numérica, que usa pasitos de 0,01 s). Y la fórmula explica los escalones: ω² es **grande**
+cuando el péndulo pasa por abajo a toda velocidad (la energía cae deprisa) y **0** en los extremos, donde se para un instante para darse la vuelta (la energía
+casi no cambia). Además, ω² nunca es negativo: **el rozamiento nunca da energía**, solo la quita.
+
+Y para verlo, el péndulo con rozamiento (cada vez llega menos alto):
+"""),
+
+code(r"""modelo, datos = taller.cargar(PENDULO)
+modelo.dof_damping[0] = 0.1
+datos.qpos[0] = np.radians(60)
+taller.video(modelo, datos, segundos=5, nombre="nb17b_pendulo", seguir=False, distancia=3.5);"""),
+
+md(r"""### Tus retos
+
+**Reto 1 · Sin RK4.** En el plano de la pelota, borra `integrator="RK4"` (MuJoCo usará su forma normal de dar pasitos, la del NB16) y repite los Pasos 2 a 5. ¿Se
+conserva la energía? ¿Cuánto vale al final?
+
+**Reto 2 · Lanzada hacia arriba.** Repite la pelota (con RK4) dándole además `datos.qvel[0] = 5.0` antes del `mj_forward`: lanzada hacia arriba a 5 m/s. ¿Cuánta energía
+tiene al empezar? ¿Se conserva? Con las reglas, ¿cuál es ahora la fórmula de la velocidad?
+
+**Reto 3 · Más rozamiento.** Llama a `energia_del_pendulo(0.3)`. ¿Cuánta energía queda a los 5 s? ¿Sigue valiendo la regla −b · ω²?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+modelo, datos = taller.cargar(PELOTA.replace(' integrator="RK4"', ''))
+```
+
+(`.replace` cambia un trozo de texto por otro: lo verás en el NB20. También puedes borrarlo a mano en el plano.) Después, las mismas celdas. La energía total ya **no**
+se conserva: baja poquito a poco, de 9,81 a **9,668** a los 0,6 s (un 1,4 % menos). Y si calculas su pendiente con el Paso 6, sale **−0,2406** julios por segundo,
+siempre la misma. No es un rozamiento (no hay): es el pequeño error de la forma normal de dar pasitos (la "pendiente hacia atrás" del NB16), que en cada pasito
+coloca la pelota un poco más abajo de lo que dice la fórmula (a los 0,6 s, a 0,2048 m en vez de 0,2342). Comprobar la energía es la forma clásica de pillar
+estos errores en un simulador. Con pasitos más pequeños, el error se reduce (NB49).
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+Al empezar: potencial 9,81 y cinética ½ · 0,5 · 5² = **6,25**: total **16,06**, y se queda en 16,06 todo el rato (se conserva). La altura es ahora
+h = 2 + 5·t − 4,905·t², y con las reglas (suma, recta, potencia): **v = 5 − 9,81·t**. A los 0,4 s, 5 − 3,924 = 1,076 m/s, que es lo que da MuJoCo (aún sube, pero
+ya despacio); a los 0,6 s ya baja: −0,886 m/s. La aceleración sigue siendo −9,81: la gravedad no sabe si la lanzaste.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+energias, giros = energia_del_pendulo(0.3)
+print(round(energias[500], 4))
+n = 50
+print((energias[n + 1] - energias[n - 1]) / 0.02, -0.3 * giros[n] ** 2)    # −2,506 y −2,507
+```
+
+Con el triple de rozamiento queda bastante menos energía a los 5 s (**5,98 julios**, frente a 7,88), y la regla −b · ω² sigue cumpliéndose, ahora con b = 0,3.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- `<flag energy="enable"/>` hace que MuJoCo calcule en cada paso la energía en **`datos.energy`** = [potencial, cinética] (con `mj_energyPos` y `mj_energyVel`).
+- **`datos.qacc`** es la aceleración: la segunda derivada de la posición. Con la pelota, −9,81 exactos.
+- `integrator="RK4"` da pasitos más precisos; con el integrador normal, la energía de una caída libre se "escapa" un poquito (Reto 1).
+- **`modelo.dof_damping`** es el rozamiento de cada junta, y se puede cambiar desde Python.
+- Las reglas de las pendientes (potencias, cadena, suma) predicen exactamente lo que hace el simulador: la energía de una caída se conserva (pendiente 0) y el
+  rozamiento se la come a ritmo −b · ω².
+
+En la práctica del NB18 grabarás las **demostraciones** de un "maestro" que equilibra el palo de escoba de MuJoCo, y una neurona aprenderá a imitarlo.
+"""),
+
+md(r"""## 12 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

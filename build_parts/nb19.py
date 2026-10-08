@@ -10,6 +10,15 @@ la cadena con un eslabón más; la pendiente del codo es 0 o 1): tasa 0,003, 5.0
 pasos, semilla 0 → pérdida ≈ 0. Con tasa 0,01 se atasca (~11: óptimo local, codos mal colocados).
 Aproximación universal (idea). La red típica de un humanoide: 348 → 256 → 256 →
 17 = 159.505 pesos.
+Práctica en MuJoCo: el ctrlrange del palo de escoba recorta (pides 3 → 10 N);
+el maestro real = clip(s, ±1) con s = (3; 0,8; 0,1; 0,2)·obs. Red a mano de 2
+neuronas: −1 + ReLU(s + 1) − ReLU(s − 1), idéntica al maestro en ~2.800
+demostraciones, aguanta 10 s desde 0,2-0,4 rad (vídeo). Neurona lineal: pesos
+más cortos (2,55; 0,51...), pérdida 0,009, pero aguanta todo. Red 4 → 8 → 1
+entrenada con la retropropagación a mano (tasa 0,2, 3.000 pasos, semilla 0):
+pérdida 0,00019 (~50× menor) pero se cae desde 0,4 rad (2,15 s, vídeo): imitar
+mejor ≠ conducir mejor fuera de los datos (2,6 % en el límite). Retos: semillas
+1-3 aguantan todo, motor ±0,5 (cae desde 0,3), sin ReLU (orden constante 1).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -511,7 +520,311 @@ imitación exacta, con dos codos.
 </details>
 """),
 
-md(r"""## 11 · Posdata
+md(r"""## 11 · 🛠 Práctica en MuJoCo: una red neuronal al volante del palo de escoba
+
+En la práctica del NB18 una neurona lineal aprendió a imitar al maestro del palo de escoba de MuJoCo. Pero hicimos una pequeña trampa: apuntábamos lo que el maestro
+"pensaba", **sin** el límite de su motor. Hoy toca el maestro de verdad, el que tiene **límite**, exactamente como el del apartado 1. Y harás las dos cosas de la
+lección, en el simulador:
+
+1. Construir **a mano**, con dos codos, una red neuronal que es **exactamente** el maestro, y darle el mando del palo.
+2. Entrenar una red de **8 neuronas** con tu retropropagación del apartado 6, a partir de demostraciones, y ver qué tal conduce.
+"""),
+
+md(r"""### Paso 1 · El motor de MuJoCo también tiene límite
+
+En el plano del palo, el motor tiene `ctrlrange="-1 1"`: por mucho que le pidas, **nunca** empuja más que con una orden de 1 (que, con `gear="10"`, son 10 newtons). Pidámosle
+**3** y miremos la fuerza que llega al carro (`datos.qfrc_actuator`: la fuerza que los motores aplican en cada junta):
+"""),
+
+code(r"""import mujoco
+import taller
+
+modelo, datos = taller.cargar("palo_escoba")
+datos.ctrl[0] = 3
+mujoco.mj_forward(modelo, datos)
+print("Orden pedida:", datos.ctrl[0], "| fuerza en el carro:", datos.qfrc_actuator[0], "newtons")"""),
+
+md(r"""Pides 3 (que serían 30 N) y llegan **10 N**: MuJoCo recorta solo. Así que el maestro del NB18, mirado de verdad, es **recortar(3 × inclinación + 0,8 × velocidad del palo + 0,1 ×
+posición del carro + 0,2 × velocidad del carro, ±1)**: una rampa con dos tramos planos, la misma forma de tres tramos del apartado 1. Llamemos **s** a esa suma con
+pesos (lo que el maestro "piensa" antes del límite):
+"""),
+
+code(r"""def observar(datos):
+    return np.array([datos.qpos[1], datos.qvel[1], datos.qpos[0], datos.qvel[0]])
+
+PESOS_MAESTRO = np.array([3, 0.8, 0.1, 0.2])
+
+def maestro(obs):
+    s = PESOS_MAESTRO @ obs              # el producto escalar del NB13
+    return np.clip(s, -1, 1)             # el límite del motor
+
+ss = np.linspace(-3, 3, 61)
+plt.figure(figsize=(6, 3.5))
+plt.plot(ss, np.clip(ss, -1, 1), color="tab:orange")
+plt.grid(True, alpha=0.4)
+plt.xlabel("s (lo que piensa el maestro)")
+plt.ylabel("orden que llega al motor")
+plt.show()"""),
+
+md(r"""### Paso 2 · La red a mano
+
+En el apartado 5 construiste el maestro con límite con dos codos: 40 − 30 × ReLU(i + 4/3) + 30 × ReLU(i − 4/3). Aquí la misma receta, con los números de este motor:
+
+```
+   orden = −1 + ReLU(s + 1) − ReLU(s − 1)
+```
+
+- Si s es muy negativo (menor que −1), los dos codos están apagados: orden **−1** (el tramo plano de abajo).
+- Entre −1 y 1, el primer codo se enciende: −1 + (s + 1) = **s** (la rampa).
+- Por encima de 1, se enciende también el segundo y cancela la rampa: −1 + (s + 1) − (s − 1) = **1** (el tramo plano de arriba).
+
+Pero s no es un número suelto: es una suma con pesos de las **4** entradas. Así que cada codo es una **neurona** completa, con 4 pesos (los del maestro) y su sesgo (+1 y
+−1). Como red neuronal:
+
+```
+                     ┌─► neurona 1: ReLU(3·i + 0,8·v + 0,1·x + 0,2·u + 1) ─┐  × (+1)
+   observación  ─────┤                                                      ├──► −1 + ... ──► orden
+   (4 números)       └─► neurona 2: ReLU(3·i + 0,8·v + 0,1·x + 0,2·u − 1) ─┘  × (−1)
+       ENTRADA                        CAPA OCULTA (2 neuronas)                    SALIDA
+```
+
+Con matrices (NB14): la capa oculta es una matriz de pesos de 2 × 4 (una fila por neurona) y un vector de 2 sesgos; la salida, un vector de 2 pesos y un sesgo:
+"""),
+
+code(r"""W_mano = np.array([[3, 0.8, 0.1, 0.2],
+                   [3, 0.8, 0.1, 0.2]])
+b_mano = np.array([1.0, -1.0])
+v_mano = np.array([1.0, -1.0])
+c_mano = -1.0
+
+def red_a_mano(obs):
+    ocultas = relu(W_mano @ obs + b_mano)     # la capa oculta: matriz × vector, más sesgos, y el codo
+    return v_mano @ ocultas + c_mano          # la neurona de salida"""),
+
+md(r"""### Paso 3 · ¿Es de verdad el maestro?
+
+Lo comprobamos con muchas situaciones del palo. Grabamos demostraciones como en la práctica del NB18 (episodios que empiezan al azar, maestro con el pulso tembloroso,
+apuntando lo que quería hacer), pero ahora con el palo un poco más inclinado al empezar (hasta 0,4 rad) para que el límite entre en juego, y parando el episodio si
+el palo se cae (más de 0,5 rad):
+"""),
+
+code(r"""def grabar_demostraciones(temblor, episodios=10, semilla=0):
+    azar = np.random.default_rng(semilla)
+    ejemplos = []
+    etiquetas = []
+    for episodio in range(episodios):
+        mujoco.mj_resetData(modelo, datos)
+        datos.qpos[1] = azar.uniform(-0.4, 0.4)
+        datos.qpos[0] = azar.uniform(-1, 1)
+        for paso in range(300):
+            obs = observar(datos)
+            quiere = maestro(obs)
+            ejemplos.append(obs)
+            etiquetas.append(quiere)
+            datos.ctrl[0] = np.clip(quiere + azar.uniform(-temblor, temblor), -1, 1)
+            mujoco.mj_step(modelo, datos)
+            if abs(datos.qpos[1]) > 0.5:
+                break
+    return np.array(ejemplos), np.array(etiquetas)
+
+ejemplos, etiquetas = grabar_demostraciones(temblor=1)
+print("Ejemplos:", ejemplos.shape)
+print("Ejemplos en los que el motor va al límite:", round(np.mean(np.abs(etiquetas) >= 1) * 100, 1), "%")
+
+diferencias = []
+for k in range(len(ejemplos)):
+    diferencias.append(abs(red_a_mano(ejemplos[k]) - etiquetas[k]))
+print("Mayor diferencia entre la red a mano y el maestro:", max(diferencias))"""),
+
+md(r"""(`np.abs(etiquetas) >= 1` da un array de `True`/`False`, y su media es la fracción de `True`, porque cuentan como 1 y 0: el truco del apartado 6.)
+
+Unos 2.800 ejemplos (un episodio se cortó porque el temblor tumbó el palo), y en un **2,6 %** de ellos el motor va al límite. La mayor diferencia es 0 o un ruido de
+decimales minúsculo: **la red a mano es el maestro**, con sus esquinas incluidas.
+"""),
+
+md(r"""### Paso 4 · La red a mano, al volante
+
+Ahora le damos el mando. Fíjate en que ya no hace falta `np.clip`: la red **lleva el límite dentro**, su salida nunca pasa de ±1. Una función que cuenta los segundos
+que aguanta una política (cualquier función que reciba la observación y devuelva la orden) empezando con el palo inclinado:
+"""),
+
+code(r"""def segundos_de_pie(politica, inclinacion):
+    mujoco.mj_resetData(modelo, datos)
+    datos.qpos[1] = inclinacion
+    for paso in range(1000):
+        datos.ctrl[0] = politica(observar(datos))
+        mujoco.mj_step(modelo, datos)
+        if abs(datos.qpos[1]) > 0.5:
+            break
+    return round(datos.time, 2)
+
+INCLINACIONES = [0.2, 0.3, 0.35, 0.4]
+print("Red a mano:", [segundos_de_pie(red_a_mano, i) for i in INCLINACIONES])
+
+def control_red_a_mano(modelo, datos):
+    datos.ctrl[0] = red_a_mano(observar(datos))
+
+mujoco.mj_resetData(modelo, datos)
+datos.qpos[1] = 0.4
+taller.video(modelo, datos, segundos=4, control=control_red_a_mano, nombre="nb19_red_a_mano", distancia=3);"""),
+
+md(r"""Los **10 segundos** desde todas las inclinaciones, también desde 0,4 rad (23 grados), donde el motor pasa los primeros instantes a tope. Una red neuronal de 2 neuronas, con
+pesos puestos por ti, está equilibrando un palo con física de verdad.
+"""),
+
+md(r"""### Paso 5 · La neurona lineal se queda corta... pero conduce
+
+¿Y si un alumno **lineal** (el del NB18) intenta imitar a este maestro con límite? Le pasa lo del apartado 2: no puede doblarse.
+"""),
+
+code(r"""pesos = np.zeros(4)
+sesgo = 0.0
+for paso in range(2000):
+    errores = ejemplos @ pesos + sesgo - etiquetas
+    for k in range(4):
+        pesos[k] = pesos[k] - 0.5 * 2 * np.mean(errores * ejemplos[:, k])
+    sesgo = sesgo - 0.5 * 2 * np.mean(errores)
+
+def lineal(obs):
+    return np.clip(obs @ pesos + sesgo, -1, 1)
+
+print("Pesos de la neurona lineal:", np.round(pesos, 2), "| pérdida:", round(np.mean((ejemplos @ pesos + sesgo - etiquetas) ** 2), 5))
+print("Neurona lineal:", [segundos_de_pie(lineal, i) for i in INCLINACIONES])"""),
+
+md(r"""Sus pesos salen **más pequeños** que los del maestro (**2,55** en vez de 3 para la inclinación, 0,51 en vez de 0,8...): igual que la recta del apartado 2 tenía pendiente
+−18,4 en vez de −30. Para no pasarse en los ejemplos donde el maestro está "plano" en el límite, la recta se queda corta en el centro, y su pérdida no baja de **0,009**.
+
+Y sin embargo, al volante, **aguanta los 10 segundos desde todas las inclinaciones**. Dos razones: MuJoCo recorta su orden igualmente (el límite lo pone el motor, no
+la política), y en este palo unos pesos algo más pequeños también sirven (recuerda el NB18: había muchas combinaciones que funcionaban). Imitar peor no siempre es
+conducir peor.
+"""),
+
+md(r"""### Paso 6 · Una red de 8 neuronas aprende sola
+
+Ahora, lo gordo: la red del apartado 6, con 8 neuronas ocultas y pesos al azar, aprendiendo de las demostraciones con **tu** retropropagación. Solo cambia una cosa:
+cada neurona oculta tiene ahora **4** pesos de entrada (uno por número de la observación), así que `pesos_entrada` es una matriz de 8 × 4, y la pendiente de cada uno
+de esos pesos lleva su entrada, `ejemplos[:, k]`. Lo demás, idéntico. Tarda unos segundos:
+"""),
+
+code(r"""ocultas = 8
+generador = np.random.default_rng(0)
+pesos_entrada = generador.uniform(-1, 1, size=(ocultas, 4))
+sesgos_ocultos = generador.uniform(-1, 1, size=ocultas)
+pesos_salida = generador.uniform(-1, 1, size=ocultas)
+sesgo_salida = 0.0
+
+tasa = 0.2
+historial = []
+for paso in range(3000):
+    # 1. hacia delante
+    zs = []
+    activaciones = []
+    for j in range(ocultas):
+        z = ejemplos @ pesos_entrada[j] + sesgos_ocultos[j]
+        zs.append(z)
+        activaciones.append(relu(z))
+    prediccion = sesgo_salida
+    for j in range(ocultas):
+        prediccion = prediccion + pesos_salida[j] * activaciones[j]
+    errores = prediccion - etiquetas
+    historial.append(np.mean(errores ** 2))
+
+    # 2. hacia atrás (la regla de la cadena)
+    for j in range(ocultas):
+        culpa = 2 * errores * pesos_salida[j] * (zs[j] > 0)
+        for k in range(4):
+            pesos_entrada[j, k] = pesos_entrada[j, k] - tasa * np.mean(culpa * ejemplos[:, k])
+        sesgos_ocultos[j] = sesgos_ocultos[j] - tasa * np.mean(culpa)
+        pesos_salida[j] = pesos_salida[j] - tasa * np.mean(2 * errores * activaciones[j])
+    sesgo_salida = sesgo_salida - tasa * np.mean(2 * errores)
+
+def red_aprendida(obs):
+    return pesos_salida @ relu(pesos_entrada @ obs + sesgos_ocultos) + sesgo_salida
+
+print("Pérdida al empezar:", round(historial[0], 4), "| al terminar:", round(historial[-1], 5))"""),
+
+md(r"""La pérdida baja de 0,32 a **0,00019**: unas **cincuenta veces menor** que la de la neurona lineal. La red sí puede doblarse y ha aprendido las esquinas. ¿Y al volante?
+Probamos las cuatro inclinaciones, y en vídeo, la más difícil, 0,4 rad:
+"""),
+
+code(r"""print("Red aprendida:", [segundos_de_pie(red_aprendida, i) for i in INCLINACIONES])
+
+def control_red_aprendida(modelo, datos):
+    datos.ctrl[0] = np.clip(red_aprendida(observar(datos)), -1, 1)
+
+mujoco.mj_resetData(modelo, datos)
+datos.qpos[1] = 0.4
+taller.video(modelo, datos, segundos=4, control=control_red_aprendida, nombre="nb19_red_aprendida", distancia=3);"""),
+
+md(r"""Aguanta los 10 segundos desde 0,2, 0,3 y 0,35... pero desde **0,4 se cae** a los 2,15 s: en el vídeo, el carro corre pero no consigue meterse debajo del palo.
+Comparando las tres políticas:
+
+| Empezando en... | 0,2 | 0,3 | 0,35 | 0,4 | Pérdida |
+|---|---|---|---|---|---|
+| Red a mano (2 neuronas, el maestro exacto) | 10 s | 10 s | 10 s | 10 s | 0 |
+| Neurona lineal | 10 s | 10 s | 10 s | 10 s | 0,009 |
+| Red aprendida (8 neuronas) | 10 s | 10 s | 10 s | **2,15 s** | 0,0002 |
+
+¡La que **mejor imita** los ejemplos es la que **peor conduce** en el caso difícil! Es justo el aviso del apartado 9 del NB18: una neurona lineal "extiende" su regla de
+forma razonable a situaciones que no vio, pero una red con codos puede hacer **cualquier cosa** fuera de sus ejemplos. Y con el palo a 0,4 rad la red está casi fuera:
+solo un **2,6 %** de los ejemplos tenían el motor al límite, y muy pocos un palo tan inclinado. Allí un pequeño error suyo lleva a una situación aún más rara, y así
+hasta tirar el palo (el **desplazamiento de distribución**). Tú, en cambio, sabías la receta exacta.
+
+La lección de ingeniero: **una pérdida pequeña en los ejemplos no garantiza conducir bien en todas partes**. Por eso las políticas se juzgan siempre **en el
+simulador**, probando situaciones difíciles, y no solo mirando su pérdida.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1 · Otros pesos iniciales.** Repite el Paso 6 con `np.random.default_rng(1)`, `(2)` y `(3)` (y vuelve a ejecutar la celda de la prueba). ¿Aguanta alguna desde 0,4?
+
+**Reto 2 · Un motor más débil.** Cambia la red a mano para un motor cuyo límite fuera **±0,5** en vez de ±1 (pista: los codos deben estar en s = −0,5 y s = 0,5, y el tramo
+plano de abajo en −0,5). ¿Desde qué inclinación ya no puede salvar el palo?
+
+**Reto 3 · Sin la ReLU.** En `red_a_mano`, quita la `relu` (deja solo `W_mano @ obs + b_mano`). ¿Qué orden da la red, sea cual sea la situación? ¿Por qué?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+Con las semillas **1, 2 y 3**, la red aprendida aguanta los 10 s desde **todas** las inclinaciones, también desde 0,4 (con pérdidas finales parecidas: 0,00026, 0,00016
+y 0,0001). La semilla 0 tuvo **mala suerte**: con los mismos
+datos y el mismo entrenamiento, los pesos iniciales deciden dónde acaban los codos, y eso cambia cómo conduce la red en las zonas con pocos ejemplos. Entrenar redes es
+un poco arte (apartado 6): los profesionales entrenan varias veces con distintas semillas y se quedan con la mejor **en el simulador**.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+b_mano = np.array([0.5, -0.5])
+c_mano = -0.5
+print([segundos_de_pie(red_a_mano, i) for i in [0.1, 0.2, 0.3]])
+```
+
+Con medio motor, aguanta desde 0,1 y 0,2 rad, pero desde **0,3 se cae** (a los 1,54 s): el motor no tiene fuerza suficiente para meter el carro debajo del palo a tiempo.
+Ninguna política, por lista que sea, puede pedir más de lo que el motor da. (Vuelve a poner `b_mano = np.array([1.0, -1.0])` y `c_mano = -1.0` después.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Sin la ReLU: −1 + (s + 1) − (s − 1) = **1**, siempre. Las dos neuronas tienen los mismos pesos, y al restarlas se cancelan: la red lineal se queda en una constante, y el
+carro empuja a tope siempre hacia +x (con `segundos_de_pie`, el palo cae en menos de 0,6 s desde cualquiera de las cuatro inclinaciones; desde 0,2, a los 0,36 s). Toda la "inteligencia" de la red a mano está en los codos: sin activación, las capas solo
+multiplican y suman (apartado 3).
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- `ctrlrange` recorta la orden del motor: es una no linealidad de verdad (pides 3, llegan 10 N, no 30). **`datos.qfrc_actuator`** muestra la fuerza que el motor aplica.
+- Una **política neuronal** en MuJoCo es una función observación → orden: `v @ relu(W @ obs + b) + c`. La red a mano de 2 neuronas **es** el maestro con límite y
+  equilibra el palo desde 0,4 rad.
+- Una red de 8 neuronas entrenada con tu retropropagación imita las demostraciones 50 veces mejor que una neurona lineal, pero (con la semilla 0) se cae desde
+  0,4 rad, donde casi no hubo ejemplos, mientras la lineal aguanta: una política se juzga **en el simulador**, no por su pérdida.
+
+En la práctica del NB20 empezarás a **escribir planos MJCF con Python**: robots de tamaño variable fabricados con texto.
+"""),
+
+md(r"""## 12 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

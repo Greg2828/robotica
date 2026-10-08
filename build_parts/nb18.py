@@ -11,6 +11,13 @@ todas las pendientes de golpe. Entrenamiento: tasa 0,2 → (−30,0; −8,0; 0,0
 curva de la pérdida; tasa 0,3 → explota (6e18). El alumno juega: 499,9. Maestro
 con ruido ±10 → (−29,7; −8,0). Límites: el alumno solo ve lo que ve el maestro
 (desplazamiento de distribución). Imitación en humanoides reales.
+Práctica en MuJoCo: maestro PD (3; 0,8; 0,1; 0,2) en el palo de escoba de
+MuJoCo (vídeo); 10 demostraciones × 300 pasos al azar → 3.000 ejemplos (matriz
+3000×4); alumno lineal con la regla de la cadena (1.000 pasos, tasa 0,5). Datos
+limpios: pérdida baja pero pesos (1,51; −0,24; ...) y se cae en 0,81 s (valle
+alargado, desplazamiento de distribución). Con temblor ±1 al ejecutar
+(etiqueta = lo que quería): redescubre (2,994; 0,799; 0,099; 0,2), 10 s (vídeo,
+idea tipo DART). Retos: 3.000 pasos limpios, temblor 0,3, solo 2 episodios.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -555,7 +562,252 @@ idea central del aprendizaje supervisado: **el mismo método aprende cualquier c
 </details>
 """),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: imitar a un maestro de verdad
+
+Hoy la neurona ha imitado al maestro del palo de escoba **de juguete** (el de las fórmulas del NB11). Ahora, lo mismo con el palo de escoba **de MuJoCo**, con física de
+verdad: un carro de 1 kg sobre un raíl, un palo de 0,5 kg y 1 m en una bisagra, y un motor que empuja el carro. Harás las tres cosas de la lección:
+
+1. Poner a un **maestro** a equilibrar el palo y **grabar sus demostraciones** (situación → lo que decidió).
+2. Entrenar a una **neurona alumna** con el descenso por gradiente y la regla de la cadena del apartado 6.
+3. Darle el mando del palo al alumno.
+
+Y te llevarás una sorpresa sobre **qué demostraciones** hay que grabar.
+"""),
+
+md(r"""### Paso 1 · El maestro
+
+El palo de MuJoCo tiene **cuatro** números que mirar (no dos, como el de juguete), porque ahora el carro también cuenta: si se va muy lejos, choca con el final del
+raíl. Una función los junta en un array, la **observación**:
+
+- `qpos[1]`: la inclinación del palo (en radianes; positiva = inclinado hacia +x),
+- `qvel[1]`: lo deprisa que se inclina,
+- `qpos[0]`: dónde está el carro (en metros; 0 = el centro),
+- `qvel[0]`: lo deprisa que va el carro.
+
+El palo es el que conociste en la práctica del NB11. El maestro es una neurona con pesos elegidos a mano, como el del NB11, pero escrita directamente en las
+unidades de MuJoCo (radianes, metros, y la orden del motor, que va de −1 a 1):
+
+```
+   orden = 3 × inclinación + 0,8 × velocidad del palo + 0,1 × posición del carro + 0,2 × velocidad del carro
+```
+
+Los signos son al revés que en el palo de juguete (en el NB11 dábamos la vuelta al ángulo para que encajara con él). Aquí "positivo" significa "hacia +x" en los dos sitios: si el palo se inclina hacia +x, el carro tiene que
+correr hacia +x para meterse debajo (como cuando equilibras una escoba en la mano). El motor solo acepta órdenes entre −1 y 1, así que la recortamos con `np.clip` (NB15):
+"""),
+
+code(r"""import mujoco
+import taller
+
+modelo, datos = taller.cargar("palo_escoba")
+
+def observar(datos):
+    return np.array([datos.qpos[1], datos.qvel[1], datos.qpos[0], datos.qvel[0]])
+
+def maestro_pd(obs):
+    return 3 * obs[0] + 0.8 * obs[1] + 0.1 * obs[2] + 0.2 * obs[3]
+
+def control_maestro(modelo, datos):
+    datos.ctrl[0] = np.clip(maestro_pd(observar(datos)), -1, 1)
+
+datos.qpos[1] = 0.2              # el palo empieza inclinado 0,2 rad (unos 11 grados)
+taller.video(modelo, datos, segundos=4, control=control_maestro, nombre="nb18_maestro", distancia=3);"""),
+
+md(r"""El carro da un tirón hacia el lado al que cae el palo, lo endereza y vuelve poco a poco al centro. Un maestro competente.
+"""),
+
+md(r"""### Paso 2 · Grabar las demostraciones
+
+Como en el apartado 2: ponemos al maestro a jugar y apuntamos cada situación (la observación, 4 números) y lo que decidió (su **etiqueta**). Esta vez, **10
+episodios de 3 segundos** (300 pasitos), y cada uno empieza en una situación distinta al azar: el palo inclinado entre −0,3 y 0,3 rad, y el carro en cualquier sitio
+entre −1 y 1 m. (`np.random.default_rng(semilla)` es el generador de números al azar de NumPy que ya viste en el NB15, y `mj_resetData` deja todo a cero, NB11.)
+
+La función tiene un parámetro raro, `temblor`, que de momento valdrá 0. Sirve para que el maestro **ejecute** su orden con el pulso tembloroso: se le suma un
+número al azar entre −temblor y +temblor antes de mandarla al motor. Pero, ojo, lo que **apuntamos** como etiqueta es siempre la orden **limpia**, la que el maestro
+**quería** dar. (Y apuntamos la orden antes de recortarla a ±1: lo que el maestro "piensa", como en el apartado 2.)
+"""),
+
+code(r"""def grabar_demostraciones(temblor, episodios=10, semilla=0):
+    azar = np.random.default_rng(semilla)
+    ejemplos = []
+    etiquetas = []
+    for episodio in range(episodios):
+        mujoco.mj_resetData(modelo, datos)
+        datos.qpos[1] = azar.uniform(-0.3, 0.3)       # palo inclinado al azar
+        datos.qpos[0] = azar.uniform(-1, 1)           # carro en un sitio al azar
+        for paso in range(300):
+            obs = observar(datos)
+            quiere = maestro_pd(obs)
+            ejemplos.append(obs)                      # la situación...
+            etiquetas.append(quiere)                  # ...y lo que el maestro QUERÍA hacer
+            datos.ctrl[0] = np.clip(quiere + azar.uniform(-temblor, temblor), -1, 1)
+            mujoco.mj_step(modelo, datos)
+    return np.array(ejemplos), np.array(etiquetas)
+
+ejemplos, etiquetas = grabar_demostraciones(temblor=0)
+print("Forma de los ejemplos:", ejemplos.shape, "| forma de las etiquetas:", etiquetas.shape)
+print("Primer ejemplo:", np.round(ejemplos[0], 3), "-> el maestro quería", round(etiquetas[0], 3))"""),
+
+md(r"""**3.000 ejemplos.** `ejemplos` es una **matriz** (NB14) de 3.000 filas y 4 columnas: cada fila, una situación. Es exactamente lo que guarda un laboratorio de
+robótica cuando graba demostraciones, solo que con más columnas.
+"""),
+
+md(r"""### Paso 3 · La neurona alumna
+
+El alumno es una neurona con **4 pesos** (uno por número de la observación) y un sesgo. Su predicción para los 3.000 ejemplos a la vez es `ejemplos @ pesos + sesgo`:
+la matriz por el vector (NB14-15), un producto escalar por fila.
+
+Y el entrenamiento es el del apartado 6, con la fórmula de la regla de la cadena: la pendiente de cada peso es **2 × media(error × su entrada)**, y "su entrada"
+es su **columna** de la matriz, `ejemplos[:, k]` (NB15). Un bucle recorre las 4 columnas:
+"""),
+
+code(r"""def entrenar_alumno(ejemplos, etiquetas, pasos=1000, tasa=0.5):
+    pesos = np.zeros(4)
+    sesgo = 0.0
+    for paso in range(pasos):
+        errores = ejemplos @ pesos + sesgo - etiquetas
+        for k in range(4):
+            pesos[k] = pesos[k] - tasa * 2 * np.mean(errores * ejemplos[:, k])
+        sesgo = sesgo - tasa * 2 * np.mean(errores)
+    return pesos, sesgo
+
+def perdida_alumno(pesos, sesgo, ejemplos, etiquetas):
+    return np.mean((ejemplos @ pesos + sesgo - etiquetas) ** 2)"""),
+
+md(r"""Y una prueba de fuego: darle el mando al alumno durante **10 segundos**, empezando con el palo inclinado 0,2, y contar cuánto aguanta antes de que el palo pase de
+0,5 rad (caído):
+"""),
+
+code(r"""def segundos_de_pie(pesos, sesgo, inclinacion=0.2):
+    mujoco.mj_resetData(modelo, datos)
+    datos.qpos[1] = inclinacion
+    for paso in range(1000):
+        datos.ctrl[0] = np.clip(observar(datos) @ pesos + sesgo, -1, 1)
+        mujoco.mj_step(modelo, datos)
+        if abs(datos.qpos[1]) > 0.5:
+            break
+    return round(datos.time, 2)
+
+print("El maestro aguanta:", segundos_de_pie(np.array([3, 0.8, 0.1, 0.2]), 0), "s")"""),
+
+md(r"""El maestro (sus pesos metidos en la misma función) aguanta los 10 segundos enteros, claro.
+"""),
+
+md(r"""### Paso 4 · Primer intento: demostraciones limpias
+
+Entrenamos al alumno con las demostraciones del Paso 2 (temblor 0): 1.000 pasos, tasa 0,5. Tarda un par de segundos.
+"""),
+
+code(r"""pesos, sesgo = entrenar_alumno(ejemplos, etiquetas)
+print("Pesos aprendidos:", np.round(pesos, 3), "| sesgo:", round(sesgo, 4))
+print("Pérdida:", round(perdida_alumno(pesos, sesgo, ejemplos, etiquetas), 5), "(la de un alumno que no sabe nada:", round(np.mean(etiquetas ** 2), 5), ")")
+print("Aguanta:", segundos_de_pie(pesos, sesgo), "s")"""),
+
+md(r"""¡Sorpresa! La pérdida ha bajado mucho (de 0,0215 a 0,0016: una catorceava parte), pero los pesos, **(1,51; −0,24; −0,02; −0,07)**, no se parecen a los del maestro
+(3; 0,8; 0,1; 0,2), y el palo **se cae en 0,81 segundos**. ¿Qué ha pasado, si el alumno imita bien los ejemplos?
+
+El problema está en los **datos**. El maestro es tan bueno que siempre hace lo mismo: endereza el palo de la misma manera, y en sus demostraciones los cuatro números
+se mueven **siempre en equipo** (cuando el palo cae hacia un lado, la velocidad, el carro... cambian todos a la vez, en las mismas proporciones). Con datos así, hay
+**muchísimas** combinaciones de pesos que dan casi la misma predicción en esos ejemplos: el valle de la pérdida (apartado 4) tiene un fondo **alargado y casi plano**,
+y el descenso por gradiente avanza por él muy despacio. El alumno se queda en una combinación que imita bien **por donde pasó el maestro**... y en cuanto él mismo
+se desvía un poco de ese camino, está en una situación que nunca vio, y hace disparates. Es el **desplazamiento de distribución** del apartado 9, en directo.
+"""),
+
+md(r"""### Paso 5 · Segundo intento: un maestro con el pulso tembloroso
+
+La solución es contraintuitiva: que el maestro conduzca **un poco mal**. Con `temblor=1`, a cada orden se le suma un empujón al azar de hasta ±1, así que el palo se
+tuerce de muchas formas distintas... y el maestro tiene que **corregir** desde situaciones variadas. Como apuntamos lo que **quería** hacer (no el empujón tembloroso),
+las etiquetas siguen siendo las del maestro perfecto, pero ahora cubren **muchas más situaciones**, incluidas las de "me he desviado, ¿cómo vuelvo?".
+"""),
+
+code(r"""ejemplos, etiquetas = grabar_demostraciones(temblor=1)
+pesos, sesgo = entrenar_alumno(ejemplos, etiquetas)
+print("Pesos aprendidos:", np.round(pesos, 3), "| sesgo:", round(sesgo, 4))
+print("Pérdida:", perdida_alumno(pesos, sesgo, ejemplos, etiquetas))
+print("Aguanta:", segundos_de_pie(pesos, sesgo), "s")"""),
+
+md(r"""**(2,994; 0,799; 0,099; 0,2)**: el alumno ha **redescubierto** los pesos del maestro, con el mismo entrenamiento (1.000 pasos, tasa 0,5) y el mismo número de
+ejemplos. Solo han cambiado las demostraciones. La pérdida es diminuta (0,0000002) y el palo aguanta los **10 segundos**.
+
+Este truco existe de verdad: en los laboratorios se **añade ruido a propósito** mientras un experto hace las demostraciones, para que el robot aprenda también a
+recuperarse (uno de los métodos se llama DART). La lección para la vida: **los datos importan tanto como el algoritmo**.
+
+El alumno, al volante:
+"""),
+
+code(r"""def control_alumno(modelo, datos):
+    datos.ctrl[0] = np.clip(observar(datos) @ pesos + sesgo, -1, 1)
+
+mujoco.mj_resetData(modelo, datos)
+datos.qpos[1] = 0.2
+taller.video(modelo, datos, segundos=4, control=control_alumno, nombre="nb18_alumno", distancia=3);"""),
+
+md(r"""Igual que el maestro. **Ha aprendido a equilibrar un palo con física de verdad sin jugar ni un solo episodio por su cuenta**: solo mirando 3.000 decisiones de otro.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1 · Paciencia.** Con las demostraciones **limpias** (`temblor=0`), entrena 3.000 pasos en vez de 1.000 (`entrenar_alumno(ejemplos, etiquetas, pasos=3000)`). ¿Qué
+pesos aprende? ¿Aguanta el palo?
+
+**Reto 2 · Poco temblor.** Graba con `temblor=0.3` y entrena 1.000 pasos. ¿Basta un temblor pequeño para que aguante?
+
+**Reto 3 · Pocos ejemplos.** Graba con `temblor=1` pero solo **2 episodios** (`grabar_demostraciones(temblor=1, episodios=2)`): 600 ejemplos. ¿Qué pasa?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+ejemplos, etiquetas = grabar_demostraciones(temblor=0)
+pesos, sesgo = entrenar_alumno(ejemplos, etiquetas, pasos=3000)
+print(np.round(pesos, 3), segundos_de_pie(pesos, sesgo))
+```
+
+Aprende **(2,40; 0,38; 0,05; 0,09)** y ahora **sí** aguanta los 10 s. El valle alargado no era imposible, solo **lentísimo**: con el triple de pasos, el alumno avanza
+lo suficiente por su fondo casi plano. Pero aún está lejos del maestro (0,38 en vez de 0,8 de velocidad). Con datos variados (Paso 5) llegaba exacto en 1.000 pasos:
+mejores datos ahorran entrenamiento.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+ejemplos, etiquetas = grabar_demostraciones(temblor=0.3)
+pesos, sesgo = entrenar_alumno(ejemplos, etiquetas)
+print(np.round(pesos, 3), segundos_de_pie(pesos, sesgo))
+```
+
+Aprende **(2,29; 0,39; 0,04; 0,09)** y aguanta los **10 s**. Con un poco de temblor ya basta para que el alumno sepa recuperarse, aunque no llega a los pesos exactos
+del maestro en 1.000 pasos: cuanto más variadas las demostraciones, más rápido y más exacto aprende.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+ejemplos, etiquetas = grabar_demostraciones(temblor=1, episodios=2)
+pesos, sesgo = entrenar_alumno(ejemplos, etiquetas)
+print(np.round(pesos, 3), round(sesgo, 3), segundos_de_pie(pesos, sesgo))
+```
+
+Aprende (2,47; 0,77; −0,01; 0,18) con un sesgo de −0,054, y el palo **se cae a los 3,48 s**. Con solo dos episodios no hay ejemplos suficientes para separar bien el
+efecto de la **posición del carro** (su peso sale incluso con el signo cambiado) ni para saber que el sesgo debe ser 0: el carro se va desplazando hasta que todo se
+estropea. **Más datos, mejor alumno** (apartado 8).
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Una **observación** del palo de MuJoCo son 4 números (`qpos` y `qvel` del palo y del carro), juntados en un array con una función `observar`.
+- **Grabar demostraciones** en MuJoCo: un bucle de episodios con `mj_resetData` y situación inicial al azar; en cada paso se apunta la observación y la orden del maestro.
+  Se guardan como una matriz de ejemplos y un vector de etiquetas.
+- Un alumno entrenado con la regla de la cadena puede **controlar el simulador**: la política es `observar(datos) @ pesos + sesgo`.
+- Las demostraciones **perfectas y monótonas** enseñan mal (el alumno se cae en 0,81 s); con **ruido al ejecutar** (apuntando lo que el maestro quería) el alumno
+  redescubre los pesos exactos.
+
+En la práctica del NB19 le pondrás al maestro el **límite** real de su motor (±1), lo construirás con dos codos como una **red neuronal a mano**, y entrenarás una
+red de verdad que equilibre el palo de MuJoCo.
+"""),
+
+md(r"""## 14 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
