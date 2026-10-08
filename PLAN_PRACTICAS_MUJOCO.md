@@ -91,3 +91,4 @@
 - [x] NB00 · enciende tu primer robot
 - [x] NB01 · desmonta el humanoide
 - [x] NB02 · suelta una pelota (MuJoCo reproduce la tabla a mano)
+- [x] NB03 · dale una mente al humanoide · NB03b · los números del humanoide · NB04 · ponle nota (recompensa real) · NB04b · ¿acierta tu fórmula? · NB05b · MuJoCo desde la terminal
