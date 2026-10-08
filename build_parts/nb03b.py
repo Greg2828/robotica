@@ -1,4 +1,4 @@
-"""Construye NB03b · Números a fondo (Parte 0 · lección intermedia, conceptual, 0 código).
+"""Construye NB03b · Números a fondo (Parte 0 · lección intermedia, conceptual; código solo en la Práctica en MuJoCo, ya escrito).
 
 Añadida tras la auditoría de 2026-10-04: el curso usaba porcentajes, decimales
 pequeños, potencias con exponente negativo, raíces y notación científica sin
@@ -8,10 +8,14 @@ qué % es), negativos y signos, potencias (de 10, exponente 0, negativos, reglas
 crecimiento exponencial), raíces (y exponente ½), notación científica y la "e"
 del ordenador, prefijos (kilo...nano), orden de magnitud, redondeo y error
 absoluto/relativo, proporcionalidad y regla de tres.
+
+Práctica en MuJoCo (medido): timestep 0,003 → 333,33 pasos/s, 15 s = 5000 pasos; centro cabeza 1.5899999999999999; torso a 1,4 m, centro de la cabeza 1,59 + radio 0,09 = 1,68 m; masas (13 piezas)
+total 42,12 kg, torso 8,907... = 21,1 %; tolerance 1e-08; rodilla −90° → qpos −1,5708;
++10 % masa → 46,33 (dos veces → 50,96); rango rodilla −2,7925 rad = −160°.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
-from nbbuild import md, build
+from nbbuild import md, code, build
 
 cells = [
 
@@ -21,7 +25,7 @@ md(r"""# NB03b · Números a fondo
 
 > Un robot vive entre números raros: pasos de tiempo de **0,002** segundos, motores un **10 %** más débiles, errores de **0,00001**, robots que pesan **40** kilos y redes con **159.505** números dentro. Si esos números te dan un poco de miedo, es normal: casi nadie te ha explicado con calma cómo funcionan. Hoy lo hacemos.
 
-En esta lección **no hay código** ni robots nuevos: solo **números**, contados despacio. Es la caja de herramientas que vas a usar en todo el curso:
+En esta lección no hay robots nuevos: solo **números**, contados despacio (y al final, en la **Práctica en MuJoCo**, los buscarás dentro del humanoide, con código ya escrito). Es la caja de herramientas que vas a usar en todo el curso:
 
 - Los **decimales**: qué significa cada cifra después de la coma, y cómo multiplicar y dividir con ellos.
 - Los **porcentajes**: el "10 %" de todas partes, y sus trampas.
@@ -481,7 +485,222 @@ Error absoluto: 2 − 1,9 = **0,1 m** (10 cm). Error relativo: 0,1 ÷ 2 = 0,05 �
 </details>
 """),
 
-md(r"""## 14 · Posdata
+md(r"""## 14 · 🛠 Práctica en MuJoCo: los números del humanoide
+
+Todo lo de hoy (decimales, dividir por decimales, porcentajes, notación científica, redondeo,
+regla de tres) tiene un sitio donde se usa sin parar: **los números que guarda MuJoCo**. En esta
+práctica vas a leer con ojos nuevos los del humanoide: su paso de tiempo, cuánto mide, cuánto pesa
+cada pieza y en qué "idioma" guarda los ángulos. Y vas a hacer las cuentas tú, para comprobar las
+del ordenador.
+
+El código ya está escrito: ejecutas, miras, y cambias algún número.
+"""),
+
+md(r"""### Paso 1 · MuJoCo no escribe las unidades
+
+Lo primero que sorprende de MuJoCo es que **ningún número lleva unidad**. Un 0,003 es solo 0,003.
+¿Segundos? ¿Milisegundos? Es un **acuerdo**: MuJoCo mide siempre las distancias en **metros**, las
+masas en **kilogramos**, el tiempo en **segundos** y los ángulos en una unidad nueva que verás en
+el Paso 5 (**radianes**). Si un día escribes un robot en centímetros, MuJoCo no se quejará... y
+simulará un gigante.
+
+Empecemos por el paso de tiempo del humanoide, y por las cuentas de los apartados 2 y 11.
+"""),
+
+code(r"""import mujoco
+import taller
+
+modelo, datos = taller.cargar("humanoide")
+
+print("Paso de tiempo (segundos):        ", modelo.opt.timestep)
+print("Pasos de física en 1 segundo:     ", 1 / modelo.opt.timestep)
+print("Pasos de física en 15 segundos:   ", 15 / modelo.opt.timestep)"""),
+
+md(r"""- **0,003 s** son **3 milisegundos** (apartado 9: tres milésimas de segundo).
+- **1 ÷ 0,003 = 333,33...** pasos por segundo. Dividir por un número pequeño da un número grande
+  (apartado 2). Y fíjate en los treses que no se acaban: 1 ÷ 0,003 es 1.000 ÷ 3, una fracción que,
+  como 1/3, **no termina nunca** (apartado 3). El ordenador la corta en algún sitio.
+- **15 s** (un episodio completo de 1.000 decisiones, NB03) son **5.000** pasitos de física. Regla de
+  tres: si 1 s son 333,33 pasos, 15 s son 333,33 × 15 = 5.000. (Y cuadra con el NB03: 1.000
+  decisiones × 5 pasitos cada una = 5.000.)
+
+"""),
+
+md(r"""### Paso 2 · ¿Cuánto mide el humanoide?
+
+En los **datos** está la posición de cada pieza. Miremos la altura (el tercer número, la "z") del
+**torso** y de la **cabeza**. La cabeza es una bola: su posición es la del **centro** de la bola, así
+que para saber hasta dónde llega hay que sumarle su **radio** (la mitad del ancho).
+"""),
+
+code(r"""altura_torso = datos.body("torso").xpos[2]
+centro_cabeza = datos.geom("head").xpos[2]
+radio_cabeza = modelo.geom("head").size[0]
+
+print("Altura del torso:          ", altura_torso, "m")
+print("Centro de la cabeza:       ", centro_cabeza, "m")
+print("Radio de la cabeza:        ", radio_cabeza, "m")
+print("Altura total del humanoide:", centro_cabeza + radio_cabeza, "m")"""),
+
+md(r"""El torso está a **1,4 m** (140 cm: mover la coma dos puestos a la derecha) y el centro de la
+cabeza a 1,59 m... aunque el ordenador escribe **`1.5899999999999999`**. Es el ordenador **cortando
+cifras** (apartado 3): igual que tú no puedes escribir 1/3 exacto con cifras, él no puede guardar
+ciertos decimales exactos, y se equivoca en la decimosexta cifra, una cantidad ridícula. Redondeado,
+1,59. (Por qué le pasa esto lo entenderás en el NB05b y el NB06.) Sumando el radio de la cabeza (0,09 m = 9 cm), el humanoide mide **1,68 metros**:
+una persona de estatura normal. (Las piernas ya llegan al suelo: los pies están apoyados.)
+"""),
+
+md(r"""### Paso 3 · Cuánto pesa cada pieza
+
+En el NB01 conociste las 13 piezas del humanoide. Su masa, en kilogramos, está en
+**`modelo.body_mass`** (es una propiedad fija del robot, así que vive en el **modelo**, no en los
+datos). La celda escribe cada pieza con su masa **redondeada** a dos decimales (eso es lo que hace
+el `:.2f`: "con 2 cifras después de la coma"), y luego el total.
+"""),
+
+code(r"""for numero in range(1, modelo.nbody):
+    nombre = modelo.body(numero).name
+    print(f"{nombre:16s} {modelo.body_mass[numero]:6.2f} kg")
+
+total = modelo.body_mass.sum()
+print(f"{'TOTAL':16s} {total:6.2f} kg")"""),
+
+md(r"""El humanoide pesa **42,12 kg**. (En el NB01 dijimos "unos 40 kg": era un redondeo.) Y fíjate
+en que las parejas son gemelas: los dos muslos pesan 4,75; las dos pantorrillas, 2,76...
+
+Ahora un **porcentaje** (apartado 4): ¿qué parte del peso total es el torso? **Parte ÷ total**, y
+por 100.
+"""),
+
+code(r"""torso = modelo.body_mass[1]
+print("Masa del torso, sin redondear:", torso)
+print("Porcentaje del total:         ", torso / total * 100, "%")"""),
+
+md(r"""Dos cosas que mirar:
+
+1. La masa del torso **sin redondear** es 8,907462370478262 kg. Nadie necesita tantas cifras: una
+   **millonésima** de kilo es un **miligramo**, menos que una pestaña. Redondeada, **8,91 kg**.
+2. El torso es el **21 %** del robot (21,149... redondeado). Es decir, **una quinta parte** del peso
+   está en la pieza más alta. Recuerda el palo de escoba del NB00: peso arriba = inestable.
+"""),
+
+md(r"""### Paso 4 · Un número diminuto: notación científica
+
+MuJoCo, por dentro, resuelve los choques "afinando" la respuesta poco a poco, y para de afinar
+cuando el error es más pequeño que una **tolerancia** (un margen permitido). Mira cómo la escribe el
+ordenador:
+"""),
+
+code(r"""print("Tolerancia de MuJoCo:", modelo.opt.tolerance)"""),
+
+md(r"""**`1e-08`**: la "e" del apartado 8. Significa 1 × 10⁻⁸ = **0,00000001**, una **cienmillonésima**
+(la coma, 8 puestos a la izquierda). Comparada con la masa del torso (unos 9 kg, del orden de 10⁰),
+está **8 órdenes de magnitud** por debajo: cien millones de veces más pequeña.
+"""),
+
+md(r"""### Paso 5 · Los ángulos, en radianes
+
+Aquí viene la unidad nueva. Vamos a doblar la rodilla derecha **90 grados** (un ángulo recto, como
+la esquina de un folio) con `taller.poner_angulo` (NB01) y a leer qué guarda MuJoCo en `datos.qpos`
+para esa articulación. (El signo menos es porque esta rodilla se dobla hacia los ángulos negativos.)
+"""),
+
+code(r"""taller.poner_angulo(modelo, datos, "right_knee", -90)
+print("Lo que guarda MuJoCo para la rodilla:", datos.joint("right_knee").qpos[0])
+taller.foto(modelo, datos, titulo="Rodilla derecha doblada 90 grados");"""),
+
+md(r"""En la foto, la pantorrilla derecha queda en horizontal, hacia atrás: un ángulo recto. Le has
+pedido **−90** y MuJoCo guarda **−1,5707963...** No es un error: MuJoCo guarda los ángulos
+en **radianes**, otra forma de medir giros (como metros y pies son dos formas de medir distancias).
+Lo único que necesitas hoy es la equivalencia:
+
+```
+   media vuelta  =  180 grados  =  3,14159... radianes     (ese 3,14159... es el famoso número π, "pi")
+```
+
+Grados y radianes son **proporcionales** (apartado 11), así que vale la **regla de tres**:
+
+```
+   180 grados  →  3,14159 radianes
+    90 grados  →     ?               ? = 3,14159 × 90 ÷ 180 = 1,5708 radianes
+```
+
+¡El número de MuJoCo! Un radián son unos 57,3 grados (180 ÷ 3,14159). Por qué existe esta unidad
+tan rara (tiene una razón preciosa) lo verás en el NB36. Desde hoy, cuando veas un ángulo en
+`qpos`, ya sabes leerlo.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1 · Un humanoide un 10 % más pesado.** Añade una celda nueva debajo del Paso 3 con este
+código, que multiplica la masa de **todas** las piezas por 1,1, y ejecútala:
+
+```python
+modelo.body_mass[:] = modelo.body_mass * 1.1
+print(modelo.body_mass.sum())
+```
+
+Antes de ejecutarla, calcula tú cuánto debería salir. Si la ejecutas otra vez, ¿qué pasa?
+
+**Reto 2 · Otro ángulo.** En el Paso 5, cambia `-90` por `-45`. ¿Qué número guardará MuJoCo? Hazlo
+primero con la regla de tres y luego compruébalo.
+
+**Reto 3 · El tope de la rodilla.** La rodilla del humanoide solo se dobla hasta **−2,7925** radianes.
+¿Cuántos grados son? (Pista: regla de tres al revés.) Comprueba tu respuesta con `-170` en el
+Paso 5: `poner_angulo` te avisará si te pasas.
+
+**Reto 4 · Error relativo.** En el NB01 dijimos que el humanoide pesaba "unos 40 kg". Pesa 42,12.
+¿Cuál fue el error absoluto? ¿Y el relativo?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+Subir un 10 % es multiplicar por 1,1: 42,12 × 1,1 = **46,33 kg**, y eso sale. Si la ejecutas **otra
+vez**, vuelve a multiplicar por 1,1 lo que ya estaba multiplicado: 46,33 × 1,1 = **50,96 kg**. ¡Los
+porcentajes encadenados se multiplican (apartado 4)! Dos subidas del 10 % no son un 20 %, sino un
+21 % (1,1 × 1,1 = 1,21). Para volver al humanoide original, vuelve a ejecutar la celda del Paso 1,
+que lo carga de nuevo.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+3,14159 × 45 ÷ 180 = **0,7854** radianes (la mitad de 1,5708, claro: la mitad de ángulo). MuJoCo
+guarda **−0,7853981...**, con el signo menos porque la rodilla se dobla hacia los negativos.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Al revés: 2,7925 × 180 ÷ 3,14159 = **160 grados**. La rodilla se dobla de 2 a **160 grados** (el
+dato del NB01). Con `-170`, `poner_angulo` avisa: *"right_knee solo va de -160 a -2 grados; -170 se
+sale de sus topes"*.
+</details>
+
+<details>
+<summary>▶ Solución Reto 4</summary>
+
+Error absoluto: 42,12 − 40 = **2,12 kg**. Error relativo: 2,12 ÷ 42,12 ≈ 0,05 → **un 5 %**. Para una
+frase como "unos 40 kg", es un redondeo razonable. Para fabricar el robot, no lo sería.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- MuJoCo **no escribe unidades**: metros, kilogramos, segundos y **radianes**, por acuerdo.
+- **`modelo.opt.timestep`** (0,003 s en el humanoide) y cuántos pasos caben en un tiempo
+  (dividir entre él).
+- **`modelo.body_mass`**: la masa de cada pieza; con `.sum()` el total (42,12 kg).
+- **`datos.body("torso").xpos`** y **`datos.geom("head").xpos`**: dónde está cada pieza ahora;
+  **`modelo.geom("head").size`**: su tamaño.
+- Los ángulos de **`datos.qpos`** están en **radianes**: 180° = π ≈ 3,14159 rad.
+- Las propiedades del robot (masas, tamaños, paso) viven en el **modelo**; lo que cambia con el
+  tiempo (posiciones, ángulos), en los **datos**. Y se pueden cambiar con una línea.
+
+En la práctica del NB04 usarás estos números para **puntuar** al humanoide con su recompensa de
+verdad, ingrediente a ingrediente, y destaparás la trampa de la recompensa en MuJoCo.
+"""),
+
+md(r"""## 15 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

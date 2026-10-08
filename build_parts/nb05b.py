@@ -10,6 +10,12 @@ números: bits, contar en binario, bytes, texto como números, KB/MB/GB; por qu�
 sus órdenes básicas (con ! en Jupyter); las tres palabras mágicas explicadas
 (cd, entorno virtual, Jupyter como servidor local); instalar el curso en tu
 propio ordenador.
+
+Práctica en MuJoCo: nproc/free; mj_saveLastXML → practica_nb05b/humanoide.xml (~7,6 KB);
+%%writefile cronometro.py (from_xml_path, 5000 pasos, perf_counter); en la Pi ~220-240 µs/paso,
+~4000-4500 pasos/s, ~12-14× tiempo real (varía con la carga); el kernel no ve el proceso
+(datos.time = 0); 4 a la vez ≈ 1,4-2 s c/u vs 1,1-1,2 solo; 8 a la vez hasta ~4 s;
+desde la carpeta de arriba → ValueError ParseXML (ruta relativa).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -23,7 +29,7 @@ md(r"""# NB05b · Tu ordenador por dentro y la terminal
 
 > En el NB05 te pedí que escribieras tres "palabras mágicas" en una ventana negra para abrir el cuaderno, y te prometí explicarlas "más adelante". Ese momento es hoy. Y de paso vamos a abrir la caja del ordenador: qué piezas tiene, cómo guarda las cosas (todo, absolutamente todo, son números), qué es un archivo, qué es una carpeta... y cómo se le habla escribiendo.
 
-Esta lección es casi toda **teoría**, con solo un par de órdenes para probar. Pero es teoría que usarás durante todo el curso y toda tu vida profesional: cuando un programa vaya lento (NB49), cuando un número decimal salga "raro" (NB06), cuando algo diga "file not found" (NB26), o cuando quieras instalar el curso en tu propio ordenador (sección 7).
+Esta lección es casi toda **teoría**, con un par de órdenes para probar... y al final una **Práctica en MuJoCo** donde sacarás la simulación a la terminal (con código ya escrito). Pero es teoría que usarás durante todo el curso y toda tu vida profesional: cuando un programa vaya lento (NB49), cuando un número decimal salga "raro" (NB06), cuando algo diga "file not found" (NB26), o cuando quieras instalar el curso en tu propio ordenador (sección 7).
 """),
 
 md(r"""## 1 · Las piezas del ordenador: una cocina
@@ -367,7 +373,226 @@ Como mucho **4** a la vez de verdad: una por núcleo. Si lanzas 8, el sistema op
 </details>
 """),
 
-md(r"""## 10 · Posdata
+md(r"""## 10 · 🛠 Práctica en MuJoCo: MuJoCo desde la terminal
+
+Hasta ahora, MuJoCo siempre ha funcionado **dentro del cuaderno**. Pero los profesionales casi nunca
+entrenan robots así: escriben un **programa** (un archivo `.py`), lo lanzan desde la **terminal** y
+lo dejan trabajando, a veces horas, a veces en un ordenador sin pantalla al otro lado del mundo.
+Hoy vas a hacer exactamente eso, usando todo lo de esta lección: las piezas del ordenador, la RAM y
+el disco, los archivos y las rutas, la terminal, los procesos y los núcleos.
+
+El código ya está escrito (aún no sabes Python para escribirlo tú): ejecutas, miras y cambias algún
+número.
+"""),
+
+md(r"""### Paso 1 · Tu cocina
+
+Antes de cocinar, mira la cocina. Dos órdenes de la terminal: `nproc` (*number of processors*) dice
+cuántos **núcleos** (cocineros) tiene el ordenador, y `free -h` cuánta **RAM** (encimera) tiene y cuánta
+está libre (la `-h` significa "en unidades para humanos": `Gi` son gigas).
+"""),
+
+code(r"""!nproc
+!free -h"""),
+
+md(r"""**4 núcleos** y unos **8 GB** de RAM (en la Raspberry Pi 5 del curso; en tu ordenador saldrá otra
+cosa). La columna `available` es la encimera que queda libre. Guárdate el 4: lo usaremos en el Paso 6.
+"""),
+
+md(r"""### Paso 2 · Una carpeta para la práctica
+
+Creamos una carpeta con `mkdir` (sección 5). La `-p` le dice "y si ya existe, no te quejes", para
+que puedas ejecutar esta celda varias veces sin error. Luego `ls` para comprobar que está.
+"""),
+
+code(r"""!mkdir -p practica_nb05b
+!ls"""),
+
+md(r"""Entre los cuadernos y las carpetas `assets` y `robots` aparece `practica_nb05b`: una carpeta nueva
+dentro de `notebooks` (el directorio de trabajo de este cuaderno).
+"""),
+
+md(r"""### Paso 3 · Del modelo en la RAM al archivo en el disco
+
+Cuando cargas el humanoide con `taller.cargar`, el **modelo** vive en la **RAM** (la encimera): si se
+apaga el ordenador, desaparece. MuJoCo tiene una orden para **guardarlo en el disco** como archivo de
+texto: `mujoco.mj_saveLastXML(ruta, modelo)` escribe su plano MJCF (el formato `.xml` del NB01) en la
+ruta que le digas. Le damos una ruta **relativa**: "dentro de la carpeta `practica_nb05b`, un archivo
+llamado `humanoide.xml`".
+"""),
+
+code(r"""import mujoco
+import taller
+
+modelo, datos = taller.cargar("humanoide")
+mujoco.mj_saveLastXML("practica_nb05b/humanoide.xml", modelo)
+print("Guardado")"""),
+
+md(r"""Ahora mira el archivo con `ls -l` (la `-l` significa "en formato largo": con detalles). El número
+grande del medio es su **tamaño en bytes** (sección 2). Y con `head` (cabeza) vemos sus primeras 12
+líneas, como `cat` pero sin enseñarlo entero.
+"""),
+
+code(r"""!ls -l practica_nb05b
+!head -12 practica_nb05b/humanoide.xml"""),
+
+md(r"""Unos **7.600 bytes**: unos **7,6 KB**, el tamaño de un par de páginas de texto. ¡Un robot humanoide
+entero, con sus 13 piezas, 17 motores y sus reglas del mundo, cabe en lo que ocupan dos páginas! Y
+dentro reconoces el plano del NB01: `<option timestep="0.003" .../>`, `<body name="torso" ...>`. Es
+texto normal y corriente: lo podrías abrir con cualquier editor.
+"""),
+
+md(r"""### Paso 4 · Un programa que cronometra a MuJoCo
+
+Ahora escribimos un **programa** en un archivo. La primera línea de la celda, `%%writefile`, es un
+truco de Jupyter (como el `!`): significa "no ejecutes esta celda: **guarda** su texto en este
+archivo". Así creamos `practica_nb05b/cronometro.py`, un programa de Python que:
+
+1. **carga** el humanoide desde el archivo del Paso 3 (`from_xml_path`: "desde la ruta de un `.xml`");
+2. mira la hora en un cronómetro muy preciso (`time.perf_counter`), da **5.000 pasitos** de física
+   (15 segundos de mundo, NB03b) y vuelve a mirar la hora;
+3. escribe cuántos pasos por segundo ha dado, cuántos **microsegundos** (µs, millonésimas de segundo,
+   NB03b) tarda cada pasito, y cuántas veces más rápido que la realidad ha ido.
+"""),
+
+code(r"""%%writefile practica_nb05b/cronometro.py
+import time
+import mujoco
+
+modelo = mujoco.MjModel.from_xml_path("practica_nb05b/humanoide.xml")
+datos = mujoco.MjData(modelo)
+
+pasos = 5000
+inicio = time.perf_counter()
+for _ in range(pasos):
+    mujoco.mj_step(modelo, datos)
+segundos = time.perf_counter() - inicio
+
+print(f"{pasos} pasos en {segundos:.2f} s de reloj -> {pasos / segundos:.0f} pasos/s, "
+      f"{segundos / pasos * 1e6:.0f} µs por paso, {datos.time / segundos:.0f} veces más rápido que la realidad")"""),
+
+md(r"""Comprueba que el archivo existe y léelo con `cat` (sección 5): es exactamente el texto de la celda,
+ahora guardado en el **disco**.
+"""),
+
+code(r"""!cat practica_nb05b/cronometro.py"""),
+
+md(r"""### Paso 5 · Lánzalo desde la terminal
+
+Esta es la orden que usarías en una terminal de verdad: `python` seguido de la ruta del programa. El
+`!` la manda a la terminal. (Funciona porque Jupyter se abrió con el **entorno virtual** activado,
+sección 6: ese `python` es el de la caja de herramientas del curso, que tiene MuJoCo instalado.)
+"""),
+
+code(r"""!python practica_nb05b/cronometro.py"""),
+
+md(r"""En la Raspberry Pi del curso salen unos **220-240 µs por paso**: unos **4.000-4.500 pasos por segundo**,
+y unas **12-14 veces más rápido que la realidad**. (Tus números variarán un poco cada vez y mucho de
+un ordenador a otro: depende de qué más esté haciendo la cocina en ese momento.)
+
+¿Solo 13 veces? En el NB03b (P10) salían 133. Aquel cálculo era para un robot pequeño; el humanoide
+tiene 13 piezas que chocan entre sí y contra el suelo, y su plano pide una forma de calcular muy
+cuidadosa (fíjate en `integrator="RK4"` e `iterations="50"` en el `head` del Paso 3: la verás a fondo
+en el NB49). Aun así: en **un minuto** de ordenador simula **13 minutos** de vida del robot.
+"""),
+
+md(r"""### Paso 6 · Procesos: cocinas separadas
+
+Una prueba muy reveladora. El programa ha dado 5.000 pasos a **su** humanoide. ¿Y el humanoide que
+cargamos en el cuaderno en el Paso 3? Miremos su reloj:
+"""),
+
+code(r"""print("Reloj del humanoide del cuaderno:", datos.time, "segundos")"""),
+
+md(r"""**0.0**: no se ha movido ni un pasito. El programa de la terminal era **otro proceso** (sección 3),
+con **su propia encimera**: cargó su propio humanoide (desde el archivo del disco), lo simuló, escribió
+el resultado y se acabó, y su memoria desapareció con él. El kernel del cuaderno es un proceso
+distinto, con sus propias variables, que nadie ha tocado. Para pasarse cosas, dos procesos usan el
+**disco** (como el `humanoide.xml`) o los mensajes que se escriben.
+
+Y ahora, los **4 cocineros**. Con `&` entre órdenes, la terminal lanza varios programas **a la vez**
+sin esperar a que acabe el anterior; `wait` espera a que terminen todos. Primero 4 a la vez (uno por
+núcleo):
+"""),
+
+code(r"""!python practica_nb05b/cronometro.py & python practica_nb05b/cronometro.py & python practica_nb05b/cronometro.py & python practica_nb05b/cronometro.py & wait"""),
+
+md(r"""Cuatro humanoides simulados **a la vez**, y cada uno va casi tan deprisa como el que iba solo (en la
+Pi, entre 1,4 y 2 segundos cada uno, frente a 1,1-1,2 del solitario: compiten un poco por la
+encimera y por el calor). En total, **cuatro veces más simulación** en casi el mismo tiempo. Esto es
+lo que se hace al entrenar: muchos robots en paralelo.
+
+**¿Y con 8 a la vez?** Es el Reto 1.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1 · Ocho cocineros en cuatro fogones.** Copia la orden del último paso y pon el programa **8**
+veces (con `&` entre cada uno y `wait` al final). Antes de ejecutarla, predice: ¿cuánto tardará cada uno?
+
+**Reto 2 · Más pasos.** En el Paso 4, cambia `pasos = 5000` por `pasos = 20000`, vuelve a ejecutar esa
+celda (para reescribir el archivo) y lanza el Paso 5. ¿Cuánto tarda? ¿Cambian los µs por paso?
+
+**Reto 3 · La ruta relativa.** Lanza el programa desde **la carpeta de arriba** (la de `robotica`):
+
+```
+!cd .. && python notebooks/practica_nb05b/cronometro.py
+```
+
+(El `&&` significa "y, si ha ido bien, después esto".) ¿Qué pasa? ¿Por qué?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+Con 4 núcleos, solo 4 pueden trabajar **de verdad** a la vez (sección 3, P8): el sistema operativo va
+repartiendo los núcleos entre los 8, y cada uno avanza más o menos a **la mitad** de velocidad. En la Pi
+salió que los primeros tardaban 1,8-1,9 s y los últimos hasta 4 s (más del doble que uno solo): el total
+de simulación no aumenta respecto a lanzar 4, solo se reparte. Lanzar más procesos que núcleos no da
+más velocidad.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+Unas **4 veces más** (unos 4-5 segundos en la Pi): 20.000 pasos son 4 veces 5.000, y el tiempo es
+**proporcional** al número de pasos (NB03b). Los µs por paso se quedan más o menos igual (220-240):
+cada pasito cuesta lo mismo, hagas muchos o pocos. Y simula 60 segundos de mundo (20.000 × 0,003).
+Acuérdate de volver a dejar `5000`.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Falla con un error que acaba en:
+
+```
+ValueError: ParseXML: Error opening file 'practica_nb05b/humanoide.xml'
+```
+
+"No puedo abrir el archivo". El programa busca el `.xml` con una ruta **relativa**,
+`practica_nb05b/humanoide.xml`, y las rutas relativas se buscan **desde el directorio de trabajo**
+(sección 4). Desde `notebooks` existe; desde `robotica`, no (estaría en
+`notebooks/practica_nb05b/humanoide.xml`). Es uno de los errores más comunes de la vida real, y ahora
+sabes leerlo. (Con una ruta absoluta, que empieza por `/`, funcionaría desde cualquier sitio.)
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **`mujoco.mj_saveLastXML(ruta, modelo)`** guarda el plano del modelo de la RAM a un archivo `.xml`
+  del disco; **`mujoco.MjModel.from_xml_path(ruta)`** lo carga desde un archivo (y **`MjData`** le
+  crea sus datos). Es lo que `taller.cargar` hace por dentro.
+- Un programa de MuJoCo se puede lanzar **desde la terminal** con `python programa.py`: así trabajan
+  los entrenamientos de verdad.
+- MuJoCo simula el humanoide en la Pi a unos **230 µs por paso**, unas **13 veces más rápido que la
+  realidad**. Medir la velocidad del simulador es lo primero antes de planear un entrenamiento.
+- Cada programa es un **proceso** con su propia memoria; con varios núcleos se simulan varios robots
+  **a la vez**, pero no más que núcleos.
+
+En la práctica del NB06 guardarás la gravedad y la masa en **variables** y las cambiarás, para ver
+cómo responde el humanoide.
+"""),
+
+md(r"""## 11 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

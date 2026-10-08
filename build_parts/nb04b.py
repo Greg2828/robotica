@@ -1,4 +1,4 @@
-"""Construye NB04b · Letras y ecuaciones (Parte 0 · lección intermedia, conceptual, 0 código).
+"""Construye NB04b · Letras y ecuaciones (Parte 0 · lección intermedia, conceptual; código solo en la Práctica en MuJoCo, ya escrito).
 
 Añadida tras la auditoría de 2026-10-04: el curso despejaba fórmulas,
 simplificaba fracciones con letras y daba por buena la altura "exacta" de la
@@ -9,10 +9,14 @@ F = m·a); fracciones con letras: qué se puede cancelar y qué no; funciones co
 máquinas, tablas, recta y parábola; la caída libre deducida (v = g·t,
 velocidad media, d = ½·g·t²) y el 0,75 m del NB02; unidades que viajan con los
 números.
+
+Práctica en MuJoCo (medido, g=10, paso 0,001, radio 0,05): tabla MuJoCo vs 2−5t² dif. ≤ 3 mm
+(0,5 s: 0,7475 vs 0,75); toca el suelo 0,6245 predicho / 0,6250 medido; vídeo pelotas r=0,25 caen 2 y 8 m:
+0,632/1,265 predicho (doble); Luna 0,5 s → 1,797, toca 1,5516/1,5520; desde 5,05 m → 1,0000 s.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
-from nbbuild import md, build
+from nbbuild import md, code, build
 
 cells = [
 
@@ -22,7 +26,7 @@ md(r"""# NB04b · Letras y ecuaciones
 
 > En el NB02 te dije que "la física real" ponía la pelota a **0,75 metros** a los 0,5 segundos, y te pedí que te fiaras. En el NB04 escribimos la recompensa como una receta con letras: `5 + 1,25 × velocidad − 0,1 × esfuerzo`. Más adelante tendremos que **despejar** fórmulas, **simplificar** fracciones con letras y leer ecuaciones como `a = F / m`. Hoy aprendemos el idioma en el que se escriben todas esas cosas: el **álgebra**.
 
-Sin código todavía, y con mucha calma. Al final de la lección:
+Sin escribir código todavía (al final, en la **Práctica en MuJoCo**, pondrás tu fórmula a competir con MuJoCo, con código ya escrito), y con mucha calma. Al final de la lección:
 
 - Sabrás qué significa una letra en una fórmula y cómo **usar** una fórmula.
 - Sabrás **resolver ecuaciones** y **despejar** cualquier letra de una fórmula sencilla.
@@ -456,7 +460,256 @@ La distancia caída en 1 s es d = ½ · 10 · 1² = **5 metros**. Hay que soltar
 </details>
 """),
 
-md(r"""## 11 · Posdata
+md(r"""## 11 · 🛠 Práctica en MuJoCo: ¿acierta tu fórmula?
+
+En el apartado 7 **dedujiste** con letras y razonamiento la fórmula de la caída libre,
+`h = 2 − ½·g·t²`. Una fórmula es una **predicción**: dice qué va a pasar antes de que pase. Y una
+predicción se **comprueba**. Hoy vas a poner tu fórmula a competir con MuJoCo:
+
+1. una **tabla** con las alturas de la fórmula y las de MuJoCo, lado a lado;
+2. su **gráfica**, para ver la parábola;
+3. y lo más bonito: **despejar** el tiempo de la fórmula para **predecir** cuándo toca el suelo la
+   pelota... antes de simularla.
+
+Es lo que hace un profesional con cualquier simulador nuevo: comprobarlo contra una fórmula que sabe
+que es cierta. El código ya está escrito: ejecutas, miras y cambias algún número.
+"""),
+
+md(r"""### Paso 1 · La pelota del NB02, con pasos finos
+
+Es el mismo plano de la práctica del NB02 (un suelo y una pelota de 5 cm de radio), con g = 10 y
+pasos de **una milésima** de segundo. La receta `soltar(altura, g)` carga el mundo, le pone la
+gravedad que digas y coloca la pelota a la altura que digas. Dos **letras** (huecos con nombre,
+apartado 1) que podrás cambiar.
+"""),
+
+code(r"""import mujoco
+import numpy as np
+import matplotlib.pyplot as plt
+import taller
+
+PELOTA = '''
+<mujoco>
+  <option gravity="0 0 -10" timestep="0.001"/>
+  <worldbody>
+    <light pos="0 0 10"/>
+    <geom type="plane" size="5 5 0.1" rgba=".8 .9 .8 1"/>
+    <body name="pelota" pos="0 0 2">
+      <freejoint/>
+      <geom type="sphere" size="0.05" rgba="1 .3 .1 1"/>
+    </body>
+  </worldbody>
+</mujoco>
+'''
+
+def soltar(altura, g):
+    modelo, datos = taller.cargar(PELOTA)
+    modelo.opt.gravity[2] = -g          # la gravedad tira hacia abajo con g
+    datos.qpos[2] = altura              # la pelota empieza a esta altura
+    return modelo, datos
+
+g = 10"""),
+
+md(r"""### Paso 2 · La tabla: fórmula contra MuJoCo
+
+La celda suelta la pelota desde 2 metros y, cada décima de segundo, escribe tres cosas: la altura
+que da **MuJoCo**, la que da **tu fórmula** (sustituyendo t en `2 − ½·g·t²`, apartado 1) y la
+**diferencia** entre las dos, en milímetros.
+"""),
+
+code(r"""modelo, datos = soltar(2, g)
+
+print("tiempo   MuJoCo    fórmula   diferencia")
+for decima in range(1, 7):
+    while datos.time < decima / 10 - 1e-9:       # avanza pasitos hasta la siguiente décima
+        mujoco.mj_step(modelo, datos)
+    t = datos.time
+    formula = 2 - 0.5 * g * t**2
+    print(f"{t:5.1f}   {datos.qpos[2]:6.4f}   {formula:6.4f}   {(formula - datos.qpos[2]) * 1000:5.1f} mm")"""),
+
+md(r"""Fíjate en tres cosas:
+
+1. **Coinciden** casi perfectamente: la mayor diferencia es de **3 milímetros**. MuJoCo no conoce tu
+   fórmula (solo da pasitos, NB02), y aun así llega al mismo sitio. A los 0,5 s, el famoso **0,75**
+   (MuJoCo: 0,7475). Tu deducción del apartado 7 era correcta.
+2. La pequeña diferencia **crece** con el tiempo, y siempre en el mismo sentido: MuJoCo va un pelín
+   **por debajo**. Es el error del apartado 7 ("¿por qué falló la tabla del NB02?"): en cada pasito
+   usa la velocidad del **final** del pasito, y cuenta un poquito de más. Con pasos de una milésima,
+   el error es diminuto; con los de 0,1 s del NB02, era de 25 cm.
+3. **No es proporcional** al tiempo: en la primera décima cae 5 cm (de 2 a 1,95); en la sexta, de
+   0,5 s a 0,6 s, cae **55 cm** (de 0,75 a 0,20). Cada vez más deprisa: es la parábola.
+"""),
+
+md(r"""### Paso 3 · La gráfica: una parábola
+
+Ahora lo mismo en dibujo (apartado 6): tiempo en horizontal, altura en vertical. Los **puntos** son
+MuJoCo (uno cada 20 milésimas) y la **línea**, tu fórmula. Simulamos hasta los 0,6 s, justo antes de
+que toque el suelo.
+"""),
+
+code(r"""modelo, datos = soltar(2, g)
+tiempos, alturas = [], []
+while datos.time < 0.6:
+    mujoco.mj_step(modelo, datos)
+    if round(datos.time * 1000) % 20 == 0:          # apunta un punto cada 20 milésimas
+        tiempos.append(datos.time)
+        alturas.append(datos.qpos[2])
+
+t = np.linspace(0, 0.6, 100)
+plt.figure(figsize=(6, 3.5))
+plt.plot(t, 2 - 0.5 * g * t**2, label="tu fórmula: 2 − ½·g·t²")
+plt.plot(tiempos, alturas, "o", markersize=4, label="MuJoCo")
+plt.xlabel("tiempo (s)")
+plt.ylabel("altura (m)")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()"""),
+
+md(r"""Los puntos caen **encima** de la línea. Y la forma es la mitad de una U puesta del revés: la
+parábola de `x²` del apartado 6, pero **restada** de 2 (por eso baja en vez de subir). Arriba, casi
+plana (al principio va despacio); abajo, cada vez más empinada (cada vez más deprisa).
+"""),
+
+md(r"""### Paso 4 · Despejar para predecir: ¿cuándo toca el suelo?
+
+Ahora la pregunta al revés: no "¿dónde está a los t segundos?", sino "**¿cuántos segundos tarda en
+llegar al suelo?**". Hay que **despejar t** (apartado 4).
+
+Un detalle antes: la pelota toca el suelo cuando su **centro** está a 5 cm (su radio), no a 0. Así
+que, desde 2 m, tiene que caer **d = 2 − 0,05 = 1,95 m**. Partiendo de `d = ½·g·t²`, quitamos lo que
+estorba a la t con la balanza (apartado 3):
+
+```
+   d = ½ · g · t²
+   2·d = g · t²            (multiplico por 2 los dos lados: se va el ½)
+   2·d / g = t²            (divido entre g los dos lados)
+   t = √(2·d / g)          (raíz cuadrada de los dos lados: se va el ²)
+```
+
+Primero **predecimos** con la fórmula; después simulamos hasta que el centro baje de 5 cm y miramos
+el reloj de MuJoCo.
+"""),
+
+code(r"""altura = 2
+d = altura - 0.05                                  # lo que tiene que caer el centro
+prediccion = np.sqrt(2 * d / g)
+print(f"Tu fórmula predice que toca el suelo a los {prediccion:.4f} s")
+
+modelo, datos = soltar(altura, g)
+while datos.qpos[2] > 0.05:                        # simula hasta que el centro baja de 5 cm
+    mujoco.mj_step(modelo, datos)
+print(f"MuJoCo dice que toca el suelo a los        {datos.time:.4f} s")"""),
+
+md(r"""**0,6245 s** predichos, **0,6250 s** medidos: medio milisegundo de diferencia, que es justo el
+tamaño del pasito (MuJoCo solo mira el reloj cada milésima, así que no puede "ver" el instante exacto
+entre dos pasitos). Has **predicho el futuro** con una fórmula despejada por ti. Eso es, literalmente,
+para lo que sirve el álgebra.
+"""),
+
+md(r"""### Paso 5 · Cuatro veces más alto, ¿cuatro veces más tiempo?
+
+Una pregunta trampa: si sueltas una pelota desde **8 metros** (cuatro veces más alto), ¿tarda cuatro
+veces más en llegar? Mira la fórmula despejada antes de contestar: `t = √(2·d / g)`. La altura está
+**dentro de una raíz**. Cuatro veces más altura → la raíz de 4 = **2** veces más tiempo.
+
+El vídeo suelta **dos** pelotas a la vez: la naranja desde 2 m y la azul desde 8 m (cada una en su
+"carril"). Para que se vean bien desde lejos, son más gordas (25 cm de radio), y están colocadas de
+forma que su **parte de abajo** empiece a 2 m y a 8 m del suelo: así cada una tiene que caer
+exactamente 2 y 8 metros, y la fórmula queda limpia: `t = √(2·d / g)` con d = 2 y d = 8. Debajo del
+vídeo, la predicción y el tiempo medido en MuJoCo para cada una.
+"""),
+
+code(r"""DOS_PELOTAS = '''
+<mujoco>
+  <option gravity="0 0 -10" timestep="0.001"/>
+  <worldbody>
+    <light pos="0 -4 12" dir="0 0.3 -1"/>
+    <geom type="plane" size="3 3 0.1" rgba=".8 .9 .8 1"/>
+    <body pos="-0.7 0 2.25"><freejoint/><geom type="sphere" size="0.25" rgba="1 .3 .1 1"/></body>
+    <body pos="0.7 0 8.25"><freejoint/><geom type="sphere" size="0.25" rgba=".2 .5 1 1"/></body>
+  </worldbody>
+</mujoco>
+'''
+modelo, datos = taller.cargar(DOS_PELOTAS)
+taller.video(modelo, datos, segundos=1.6, nombre="nb04b_dos_pelotas", seguir=False, distancia=14);
+
+for d in [2, 8]:
+    print(f"Caer {d} m: tu fórmula predice {np.sqrt(2 * d / g):.3f} s", end="   ")
+    modelo, datos = taller.cargar(DOS_PELOTAS)
+    numero = 2 if d == 2 else 9                    # dónde está la altura de esa pelota en qpos
+    while datos.qpos[numero] > 0.25:               # hasta que su centro baja a 25 cm
+        mujoco.mj_step(modelo, datos)
+    print(f"MuJoCo mide {datos.time:.3f} s")"""),
+
+md(r"""La de 2 m llega a los **0,63 s**; la de 8 m, a los **1,26 s**: el **doble**, no el cuádruple. (Es
+la misma idea del apartado 7, leída al revés: allí, el doble de tiempo daba cuatro veces más
+distancia; aquí, cuatro veces más distancia pide solo el doble de tiempo.) Por eso un salto desde un
+trampolín alto no dura tanto como uno esperaría.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1 · En la Luna.** En la celda del Paso 1, cambia `g = 10` por `g = 1.62` y vuelve a ejecutar
+el Paso 1 y el Paso 2. ¿Qué altura da MuJoCo a los 0,5 s? Compárala con la cuenta del apartado 7.
+
+**Reto 2 · Predice en la Luna.** Con `g = 1.62`, ejecuta el Paso 4. Antes, calcula tú con la fórmula
+despejada cuánto tardará. ¿Acierta MuJoCo?
+
+**Reto 3 · Un segundo exacto.** ¿Desde qué altura hay que soltar la pelota (con g = 10) para que tarde
+**exactamente 1 segundo** en tocar el suelo? Despeja con lápiz y papel (¡no olvides el radio!), pon esa
+altura en el Paso 4 en lugar del `2` y compruébalo.
+
+**Reto 4 (para pensar).** En la tabla del Paso 2, ¿por qué crees que la diferencia entre MuJoCo y la
+fórmula se hace más pequeña si cambias `timestep="0.001"` por `timestep="0.0001"` en el plano?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+MuJoCo da **1,797 m** a los 0,5 s; la fórmula (apartado 7), 2 − ½·1,62·0,25 = **1,7975 ≈ 1,80 m**. Apenas
+ha caído 20 cm: en la Luna todo cae a cámara lenta. (Acuérdate de volver a poner `g = 10` después.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+Fórmula: t = √(2 · 1,95 / 1,62) = √2,407 ≈ **1,5516 s**. MuJoCo: **1,5520 s**. Otra vez, medio milisegundo
+de diferencia. En la Luna, la misma caída que en la Tierra dura 0,62 s, tarda dos veces y media más.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Con t = 1 y g = 10: d = ½ · 10 · 1² = **5 m**. Pero eso es lo que cae el **centro**, que se para a 5 cm del
+suelo: la altura de partida es 5 + 0,05 = **5,05 m**. Con `altura = 5.05`, la fórmula predice **1,0000 s** y
+MuJoCo dice **1,0000 s**. (Es la pregunta P9 de los ejercicios, ahora con el radio de la pelota.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 4</summary>
+
+Porque el error viene de los **pasitos** (Paso 2, punto 2): en cada uno, MuJoCo usa la velocidad del
+final del pasito para todo el pasito. Cuanto más corto es el pasito, menos cambia la velocidad dentro
+de él y menos se equivoca. Con pasos diez veces más pequeños, el error es unas diez veces más pequeño
+(a los 0,5 s, 0,25 mm en vez de 2,5 mm). Es el dilema "exacto contra rápido" del NB02.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Una **fórmula** sirve para **verificar un simulador**: si MuJoCo y `h = 2 − ½·g·t²` coinciden, te
+  fías de los dos. Es una costumbre profesional (lo harás mucho más en serio en el NB27).
+- **`modelo.opt.gravity[2]`** y **`datos.qpos[2]`** se pueden cambiar antes de simular: así se monta
+  un experimento con los números que quieras.
+- Simular **hasta que pase algo** (`while ... mj_step`) y leer el reloj **`datos.time`**: medir
+  cuándo ocurre un suceso.
+- El error de MuJoCo con la caída libre depende del **paso de tiempo**, y con una milésima es de
+  milímetros.
+- Despejar una fórmula te deja **predecir** lo que hará la simulación antes de ejecutarla.
+
+En la práctica del NB05 escribirás tu **primera línea de código** de verdad para MuJoCo: un `print`
+con los datos del humanoide.
+"""),
+
+md(r"""## 12 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

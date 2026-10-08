@@ -1,4 +1,4 @@
-"""Construye NB03 · La mente y el bucle: observación, decisión, acción (conceptual, 0 código).
+"""Construye NB03 · La mente y el bucle: observación, decisión, acción (conceptual; código solo en la Práctica en MuJoCo, ya escrito).
 
 Pieza (3) del mapa. La política como caja que convierte lo que percibe en lo que
 ordena. Observación (y por qué no es el estado completo; por qué hacen falta
@@ -13,10 +13,15 @@ Datos verificados del Humanoid-v5:
   acción = 17 números entre -0,4 y +0,4 (se multiplican por la fuerza de cada motor).
   episodio termina si la altura del torso sale de 1,0–2,0 m, o a las 1000
   decisiones (15 s).
+
+Práctica en MuJoCo (medido, arranque exacto sin ruido): datos.ctrl = acción (17, ±0,4);
+obs = qpos[2:] + qvel = 45. Episodio (5 pasitos/decisión, cae si torso < 1 m):
+muñeco de trapo 40 pasos (0,60 s); azar semilla 0 → 22 (semillas 0-9: 17-38, media ~25);
+tenso +0,4 → 47, −0,4 → 12; reglas ctrl = clip(−5·ángulo) → 92 (1,38 s); k=0,5 → 93, k=20 → 76.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
-from nbbuild import md, build
+from nbbuild import md, code, build
 
 cells = [
 
@@ -29,7 +34,8 @@ md(r"""# NB03 · La mente y el bucle: observación, decisión, acción
 > los motores empujan. Falta la pieza que decide **cuánto empuja cada motor**. Hoy toca la
 > pieza (3) del mapa: **la mente**, a la que llamamos **política**.
 
-Seguimos sin código. Pero esta lección es especial: al terminarla tendrás en la cabeza el
+Seguimos sin escribir código (solo al final, en la **Práctica en MuJoCo**, ejecutarás código ya
+escrito para darle una mente al humanoide). Pero esta lección es especial: al terminarla tendrás en la cabeza el
 **vocabulario completo** con el que hablan los profesionales del aprendizaje por refuerzo
 (*observación, acción, agente, entorno, paso, episodio*). Son seis palabras. Las vamos a
 construir una a una, con ejemplos, hasta que te parezcan obvias.
@@ -687,7 +693,283 @@ cuando aún sabes poco. El azar de la política es su forma de explorar.
 </details>
 """),
 
-md(r"""## 11 · Posdata
+md(r"""## 11 · 🛠 Práctica en MuJoCo: dale una mente al humanoide
+
+En esta lección has aprendido seis palabras: **observación**, **acción**, **política**, **agente**,
+**entorno**, **paso** y **episodio** (bueno, siete). Ahora vas a verlas **funcionando** dentro de
+MuJoCo. Vas a mirar con tus propios ojos los 45 números que percibe el humanoide y los 17 que
+ordena, vas a montar el **bucle** percibir → decidir → actuar, y vas a probar **cuatro mentes
+distintas** (cuatro políticas) para ver cuánto aguanta de pie con cada una.
+
+Como en las prácticas anteriores, el código ya está escrito: ejecutas, miras y cambias algún número.
+No hace falta que entiendas cada símbolo; debajo de cada celda te cuento qué hace con palabras.
+"""),
+
+md(r"""### Paso 1 · La acción: 17 números en `datos.ctrl`
+
+Cargamos el humanoide, como en el NB00. En los **datos** (el estado de ahora mismo, NB02) hay un
+sitio especial para las órdenes de los motores: **`datos.ctrl`** ("ctrl" de *control*). Es la
+**acción** del apartado 3: una lista con un número por motor. Lo que escribas ahí es lo que
+cada motor intentará hacer en los siguientes pasitos de física.
+
+La celda enseña cuántos números hay, qué vale cada uno ahora (todos a cero: nadie ha decidido
+nada todavía) y entre qué valores puede moverse cada uno.
+"""),
+
+code(r"""import mujoco
+import numpy as np
+import taller
+
+modelo, datos = taller.cargar("humanoide")
+
+print("Número de motores:", modelo.nu)
+print("La acción ahora mismo (datos.ctrl):")
+print(datos.ctrl)
+print("Cada número puede ir de", modelo.actuator_ctrlrange[0][0], "a", modelo.actuator_ctrlrange[0][1])"""),
+
+md(r"""Ahí están los **17 números** del apartado 3, todos a **0** (ningún motor hace fuerza), y su
+margen: de **−0,4 a +0,4**. Recuerda la recta numérica: el signo dice hacia qué lado retuerce el
+motor, y la distancia al cero, cuánto.
+
+(La primera línea, `import numpy as np`, trae una herramienta para trabajar con listas de números;
+la conocerás a fondo en el NB15. Hoy solo la usamos por dentro.)
+"""),
+
+md(r"""### Paso 2 · La observación: los 45 números que percibe
+
+En el apartado 2 te conté que la observación del humanoide son **45 números**: 22 de postura y 23
+de velocidades, **sin** la posición x, y en el mundo. Vamos a comprobarlo.
+
+MuJoCo guarda la postura completa en `datos.qpos` (la "q" es la letra que usan los físicos para las
+posiciones) y las velocidades en `datos.qvel`. La celda:
+
+1. cuenta cuántos números hay en cada una;
+2. fabrica la observación igual que la fabrica el programa del humanoide: la postura **quitándole
+   los dos primeros números** (la x y la y: dónde está en el suelo), seguida de las velocidades;
+3. y enseña el primer número de la observación, que es la **altura del torso**.
+"""),
+
+code(r"""print("Números de postura (qpos):    ", len(datos.qpos))
+print("Números de velocidad (qvel):  ", len(datos.qvel))
+
+observacion = np.concatenate([datos.qpos[2:], datos.qvel])   # postura sin x,y + velocidades
+
+print("Números de la observación:    ", len(observacion))
+print("Altura del torso (el primero):", observacion[0], "metros")"""),
+
+md(r"""**24** de postura, menos los 2 de la posición en el suelo, son **22**; más **23** de velocidades:
+**45**. Exactamente lo del apartado 2. Y el primero es la altura del torso, **1,4 metros**: el robot
+acaba de nacer, de pie.
+
+(¿Por qué hay 24 de postura y solo 23 de velocidades, si deberían ir a la par? Por los famosos
+**4 números** de la inclinación del torso: para *estar* inclinado hacen falta 4, pero para decir
+*a qué velocidad gira* bastan 3. Una rareza de las matemáticas de los giros que verás más
+adelante.)
+"""),
+
+md(r"""### Paso 3 · El bucle de un episodio
+
+Ahora montamos el **bucle** del apartado 8, con sus palabras. Esta celda no pone nada en marcha
+todavía: solo **define** (deja preparada) una receta llamada `episodio` que hace esto:
+
+```
+   el robot nace de pie
+   repetir hasta 1.000 veces (cada vuelta es un PASO):
+       la POLÍTICA mira el estado y escribe su ACCIÓN en datos.ctrl   ← percibir y decidir
+       el ENTORNO avanza 5 pasitos de física (15 milésimas)            ← actuar
+       si el torso ha bajado de 1 metro → fin del EPISODIO (se ha caído)
+   contar cuántos pasos ha aguantado
+```
+
+Los 5 pasitos por decisión y el "se cae si el torso baja de 1 metro" son las reglas reales del
+humanoide de Gymnasium (apartado 6). La política es lo único que cambiará entre una prueba y otra:
+se la pasamos a la receta como si fuera una pieza intercambiable.
+"""),
+
+code(r"""def episodio(politica):
+    modelo, datos = taller.cargar("humanoide")          # nace de pie
+    for paso in range(1, 1001):                          # como mucho 1.000 pasos
+        politica(modelo, datos)                          # percibe y decide: escribe datos.ctrl
+        for _ in range(5):                               # el entorno actúa: 5 pasitos de física
+            mujoco.mj_step(modelo, datos)
+        if datos.qpos[2] < 1.0:                          # ¿el torso ha bajado de 1 metro?
+            break                                        # se ha caído: fin del episodio
+    print(f"Aguanta {paso} pasos ({datos.time:.2f} segundos)")"""),
+
+md(r"""### Paso 4 · Mente número 1: no hacer nada (el muñeco de trapo)
+
+La política más sencilla del mundo: ignorar la observación y dejar los 17 motores a **cero**.
+El robot no hace ninguna fuerza; se desmaya, como en el vídeo del NB00.
+"""),
+
+code(r"""def muneco_de_trapo(modelo, datos):
+    datos.ctrl[:] = 0            # los 17 motores a cero
+
+episodio(muneco_de_trapo)"""),
+
+md(r"""**40 pasos**, 0,6 segundos. Apúntalo: es la marca que deben batir las demás mentes.
+"""),
+
+md(r"""### Paso 5 · Mente número 2: al azar
+
+La política del GIF del NB00: en cada paso, 17 números **al azar** entre −0,4 y +0,4. Es pura
+**exploración** sin nada de **aprovechar** (apartado 7). Para que el azar sea repetible usamos una
+**semilla**: un número que fija qué tirada de dados sale (misma semilla, mismos dados).
+"""),
+
+code(r"""dados = np.random.default_rng(0)       # la semilla es el 0
+
+def al_azar(modelo, datos):
+    datos.ctrl[:] = dados.uniform(-0.4, 0.4, size=17)   # 17 números al azar
+
+episodio(al_azar)"""),
+
+md(r"""**22 pasos**: aguanta la mitad que sin hacer nada. Moverse sin saber es **peor** que no moverse:
+las sacudidas al azar lo tiran al suelo antes que la gravedad sola. Con otras semillas sale entre
+17 y 38 pasos (lo he probado con las semillas 0 a 9: unos 25 de media), pero casi siempre por
+debajo de los 40 del muñeco de trapo.
+"""),
+
+md(r"""### Paso 6 · Mente número 3: tenso
+
+Una política "de ingeniero novato": todos los motores **siempre** con la misma orden, **+0,4**, la
+máxima. Sigue sin mirar la observación; es una mente que decide siempre lo mismo pase lo que pase.
+"""),
+
+code(r"""def tenso(modelo, datos):
+    datos.ctrl[:] = 0.4          # los 17 motores a tope, siempre igual
+
+episodio(tenso)"""),
+
+md(r"""**47 pasos**: un poquito más que el muñeco de trapo, pero se cae igual. Apretar todo a la vez
+no es equilibrarse. Ninguna de estas tres mentes **percibe**: ninguna lee la observación antes de
+decidir. Les falta la mitad del bucle.
+"""),
+
+md(r"""### Paso 7 · Mente número 4: reglas escritas a mano (la que sí percibe)
+
+Ahora una política de la **manera 1** del apartado 4, como la de la escoba: reglas escritas a mano
+que **miran** la observación. La regla es una sola, para cada uno de los 17 motores:
+
+```
+   si mi articulación se ha doblado hacia un lado, empujo hacia el lado contrario,
+   y cuanto más doblada esté, más fuerte empujo.
+```
+
+En números: **orden = −5 × ángulo**. El **signo menos** hace que empuje *en contra* del doblez
+(recta numérica: si el ángulo es positivo, la orden sale negativa, y al revés). El 5 dice "cuánto
+de fuerte" reacciona: es una **ruedecilla** (un parámetro, apartado 4). Y como los motores solo
+admiten de −0,4 a +0,4, la orden se recorta a ese margen.
+
+Las dos primeras líneas son "fontanería": buscan dónde está, dentro de `datos.qpos`, el ángulo
+de la articulación que mueve cada motor (cada motor sabe cuál es la suya).
+"""),
+
+code(r"""juntas = modelo.actuator_trnid[:, 0]            # qué articulación mueve cada motor
+sitio = modelo.jnt_qposadr[juntas]               # dónde está su ángulo dentro de qpos
+
+def reglas(modelo, datos):
+    angulos = datos.qpos[sitio]                  # PERCIBE: los 17 ángulos
+    orden = -5 * angulos                         # DECIDE: empujar en contra del doblez
+    datos.ctrl[:] = np.clip(orden, -0.4, 0.4)    # ACTÚA: recortado al margen de los motores
+
+episodio(reglas)"""),
+
+md(r"""**92 pasos** (1,38 segundos): **más del doble** que el muñeco de trapo, con una sola regla y
+una sola ruedecilla. En cuanto la mente **percibe** y reacciona, el robot dura más. ¡Pero sigue
+cayéndose! Mantener las articulaciones rectas no es lo mismo que mantener el equilibrio: el cuerpo
+entero, tieso, acaba volcando como un árbol talado. Para equilibrarse de verdad habría que mirar
+más cosas (la inclinación del torso, las velocidades...) y combinarlas con muchísimo tino. Esa
+receta ya no hay quien la escriba a mano: por eso existe la **manera 3**, la máquina con
+ruedecillas que se ajustan solas.
+
+Veámoslo. Primero el robot tieso de las reglas:
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+taller.video(modelo, datos, segundos=2.5, control=reglas, nombre="nb03_reglas");"""),
+
+md(r"""Fíjate en cómo cae **en bloque**, casi sin doblarse: las reglas mantienen cada articulación
+recta, pero nadie le ha enseñado a mover los pies para no volcar. Ahora, para comparar, la mente
+"tensa", con todos los motores a tope:
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+taller.video(modelo, datos, segundos=2.5, control=tenso, nombre="nb03_tenso");"""),
+
+md(r"""Se dobla por la cintura, levanta los brazos y se va al suelo retorcido: todos los motores
+apretando a la vez, sin mirar, lo doblan sobre sí mismo. Dos mentes, dos formas distintas de fracasar. (Un detalle técnico: en los vídeos, la mente
+decide en **cada** pasito de física, no cada 5; para estas mentes tan simples da casi igual.)
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1.** En el Paso 6, cambia `0.4` por `-0.4` (todos los motores a tope, pero hacia el **otro**
+lado). ¿Aguanta más o menos? ¿Por qué crees que el signo importa tanto?
+
+**Reto 2.** En el Paso 5, cambia la semilla `0` por otro número (1, 2, 3...). ¿Cambia cuánto aguanta?
+¿Hay alguna semilla que bata al muñeco de trapo?
+
+**Reto 3.** En el Paso 7, la ruedecilla vale `5`. Prueba `0.5` y `20`. ¿Más fuerte es siempre mejor?
+
+**Reto 4 (para pensar).** ¿Qué parte del código del Paso 3 es el **agente** y qué parte es el
+**entorno**? ¿Dónde está la **acción**? ¿Y la **observación**?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+¡Aguanta **muchísimo menos**: solo **12 pasos** (0,18 segundos)! El signo cambia el **sentido** de
+cada motor: con +0,4 las articulaciones se doblan hacia un lado que, por casualidad, mantiene las
+piernas más o menos debajo del cuerpo; con −0,4 se doblan hacia el lado contrario y el robot se
+pliega de golpe. Mismo tamaño de orden (0,4), sentido opuesto, resultado completamente distinto:
+por eso la acción necesita números **con signo**.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+Sí cambia: con las semillas de la 0 a la 9 sale **22, 24, 31, 21, 27, 25, 38, 17, 21 y 21** pasos.
+Ninguna llega a los 40 del muñeco de trapo (la que más se acerca, la 6, se queda en 38). El azar
+puro casi nunca gana a no hacer nada, y aun cuando tiene suerte, no aguanta ni un segundo.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Con `0.5` aguanta **93 pasos** (casi igual que con 5) y con `20`, **76** (¡menos!). Más fuerte **no**
+siempre es mejor: reaccionar con demasiada fuerza hace que el robot sobrecorrija. Elegir el valor de
+la ruedecilla tiene su arte... y con 17 motores y muchas ruedecillas a la vez, hacerlo a mano es
+imposible. Eso es justo lo que hará el **entrenamiento**: girar las ruedecillas por nosotros.
+</details>
+
+<details>
+<summary>▶ Solución Reto 4</summary>
+
+El **agente** es la `politica` (la línea `politica(modelo, datos)`): la única parte que decide. El
+**entorno** es todo lo demás: el modelo con su cuerpo y `mj_step`, que aplica la física (¡el cuerpo
+es entorno, apartado 5!). La **acción** es `datos.ctrl`, lo que escribe la política. La
+**observación** es lo que la política lee de `datos` antes de decidir (en la mente de las reglas,
+`datos.qpos[sitio]`, los ángulos). Y cada vuelta del `for` es un **paso**; todo el `for`, un
+**episodio**.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **`datos.ctrl`** es la **acción**: un número por motor (`modelo.nu` = 17), cada uno en su margen
+  (`modelo.actuator_ctrlrange`, de −0,4 a +0,4). Escribir ahí es mandar órdenes a los motores.
+- **`datos.qpos`** (posturas) y **`datos.qvel`** (velocidades) son el **estado**; la **observación**
+  del humanoide se fabrica con ellos (45 números, sin la x y la y).
+- El **bucle de control**: la política escribe `datos.ctrl`, `mj_step` avanza la física, se
+  comprueba si el episodio ha terminado... y otra vez.
+- Una **política** es una pieza intercambiable: cambiándola, el mismo robot en el mismo mundo se
+  comporta de forma completamente distinta.
+- `taller.video(..., control=politica)` graba lo que hace el robot con esa mente.
+
+En la práctica del NB03b leerás los **números de MuJoCo** con ojos nuevos: en qué unidades mide
+(metros, kilos, segundos... y radianes), cuánto pesa cada pieza del humanoide y cuánto mide.
+"""),
+
+md(r"""## 12 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

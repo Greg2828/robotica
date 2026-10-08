@@ -1,4 +1,4 @@
-"""Construye NB04 · Premios y castigos: la recompensa y sus trampas (conceptual, 0 código).
+"""Construye NB04 · Premios y castigos: la recompensa y sus trampas (conceptual; código solo en la Práctica en MuJoCo, ya escrito).
 
 Pieza (4) del mapa. Qué es la recompensa, "dice qué, no cómo", recompensa vs
 retorno (y una pizca de descuento), el problema del mérito, escasa vs densa
@@ -15,10 +15,15 @@ Datos verificados (gymnasium Humanoid-v5, código fuente + 20 episodios medidos)
   máx. 1000 pasos. Esfuerzo máximo posible por paso: 0,1×17×0,4² = 0,272.
   Azar: ~21 pasos, ~98 puntos. Motores a cero ("muñeco de trapo"): ~40 pasos,
   ~198 puntos. Quieto ideal 1000 pasos: 5000. Andar a 1 m/s sin esfuerzo: 6250.
+
+Práctica en MuJoCo (receta propia = Gymnasium sin ruido, 195,49): trapo 40 pasos 195,5
+(+195 +6,14 −0 −5,66); azar semillas 0-9: 78-184, media ~117; sin premio de pie: desplome 0,5
+vs plancha (qvel[0]=2) 59,6; con +5: 195,5 vs 189,6; empate en p≈4,55 (p=4: 156,5 vs 163,6);
+empujón 1: 36,2 / 191,2; tenso +0,4: 47 pasos, 239,9, esfuerzo −12,78 = 0,272/paso.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
-from nbbuild import md, build
+from nbbuild import md, code, build
 
 cells = [
 
@@ -36,7 +41,8 @@ Esta es, probablemente, la lección **más importante para tu futuro trabajo**. 
 de robótica pasan una parte enorme de su tiempo diseñando recompensas, y una parte todavía
 mayor descubriendo que el robot **les ha hecho trampa**.
 
-Seguimos sin código, pero hoy sí habrá **cuentas**: sumas, multiplicaciones y una operación
+Seguimos sin escribir código (al final, en la **Práctica en MuJoCo**, ejecutarás la recompensa ya
+escrita sobre el humanoide), pero hoy sí habrá **cuentas**: sumas, multiplicaciones y una operación
 nueva (elevar al cuadrado), explicada desde cero. Usaremos la recompensa **de verdad** de
 nuestro humanoide de práctica, con sus números reales. Y verás algo muy curioso: en esa
 recompensa hay una trampa escondida que casi nadie ve a la primera.
@@ -704,14 +710,253 @@ ejemplo, la **superficie limpia** en vez de las pelusas aspiradas... y luego bus
 </details>
 """),
 
-md(r"""## 14 · Posdata: se acaba la Parte 0
+md(r"""## 14 · 🛠 Práctica en MuJoCo: ponle nota al humanoide
+
+En el apartado 6 te enseñé la recompensa **de verdad** del humanoide y en el 7 te di sus cuentas
+"medidas". Ahora las vas a medir **tú**. Vas a escribir (bueno, ejecutar: ya está escrita) la
+recompensa ingrediente a ingrediente sobre MuJoCo, vas a puntuar a dos robots del apartado 7, y vas
+a destapar con tus propios ojos el dilema del apartado 8: **qué pasa si quitamos el premio por
+seguir de pie**.
+
+Como siempre en la Parte 0: ejecutas, miras y cambias algún número.
+"""),
+
+md(r"""### Paso 1 · El centro de masas, en números
+
+El ingrediente "avanza" mide la velocidad del **centro de masas** (NB01) hacia delante. MuJoCo sabe
+dónde está el centro de cada pieza (`datos.xipos`) y cuánto pesa (`modelo.body_mass`, NB03b). El
+centro de masas del robot entero es la **media** de los centros de las piezas, pero dando más
+importancia a las que pesan más (cada posición se multiplica por su masa, se suma todo y se divide
+por la masa total). Lo que hace esta pequeña receta es justo eso, solo hacia delante (la "x"):
+"""),
+
+code(r"""import mujoco
+import numpy as np
+import taller
+
+def centro_de_masas_x(modelo, datos):
+    return np.sum(modelo.body_mass * datos.xipos[:, 0]) / np.sum(modelo.body_mass)
+
+modelo, datos = taller.cargar("humanoide")
+print("Centro de masas hacia delante:", centro_de_masas_x(modelo, datos), "m")"""),
+
+md(r"""Unos **0,015 m** (1,5 centímetros): el robot acaba de nacer en el centro del mundo y su peso está casi
+justo encima de los pies, apenas un pelín hacia delante. Y la **velocidad** se mide como en el NB02:
+dónde está después de un paso, menos dónde estaba antes, y dividido por lo que ha durado el paso
+(15 milésimas).
+"""),
+
+md(r"""### Paso 2 · La recompensa, ingrediente a ingrediente
+
+Esta celda **define** la receta `puntuar`: juega un episodio con la política que le des (igual que
+la receta `episodio` de la práctica del NB03) y, en cada paso, apunta los **cuatro ingredientes** del
+apartado 6, con sus números reales:
+
+```
+   de pie:    + 5                si el torso está entre 1 y 2 metros
+   avanzar:   + 1,25 × velocidad del centro de masas hacia delante
+   esfuerzo:  − 0,1 × (suma de las 17 órdenes al cuadrado)
+   golpes:    − 0,0000005 × (suma de las fuerzas de choque al cuadrado), como mucho 10
+```
+
+Al final escribe cuántos pasos ha durado, el **retorno** (todo sumado) y cuánto ha aportado cada
+ingrediente. Tiene dos "mandos" que usaremos luego: `premio_de_pie` (el 5) y `empujon` (una velocidad
+inicial hacia delante, en metros por segundo).
+
+No te preocupes por entender cada línea. Solo una curiosidad: `mj_rnePostConstraint` es una orden
+que le pide a MuJoCo que calcule **las fuerzas de los choques** (no las calcula siempre, para ir más
+rápido). Sin ella, el ingrediente de los golpes saldría siempre cero.
+"""),
+
+code(r"""def puntuar(politica, premio_de_pie=5.0, empujon=0.0):
+    modelo, datos = taller.cargar("humanoide")
+    datos.qvel[0] = empujon                               # velocidad inicial hacia delante
+    pie = avanzar = esfuerzo = golpes = 0.0
+    for paso in range(1, 1001):
+        politica(modelo, datos)
+        x_antes = centro_de_masas_x(modelo, datos)
+        for _ in range(5):
+            mujoco.mj_step(modelo, datos)
+        mujoco.mj_rnePostConstraint(modelo, datos)       # calcula las fuerzas de choque
+        velocidad = (centro_de_masas_x(modelo, datos) - x_antes) / (5 * modelo.opt.timestep)
+        de_pie = 1.0 < datos.qpos[2] < 2.0
+
+        if de_pie:
+            pie += premio_de_pie
+        avanzar += 1.25 * velocidad
+        esfuerzo -= 0.1 * np.sum(datos.ctrl ** 2)
+        golpes -= min(5e-7 * np.sum(datos.cfrc_ext ** 2), 10)
+        if not de_pie:
+            break
+
+    retorno = pie + avanzar + esfuerzo + golpes
+    print(f"{paso} pasos · RETORNO = {retorno:.1f}   "
+          f"(de pie {pie:+.1f}, avanzar {avanzar:+.2f}, esfuerzo {esfuerzo:+.2f}, golpes {golpes:+.2f})")"""),
+
+md(r"""### Paso 3 · Robot B: el muñeco de trapo
+
+Los 17 motores a cero, como en el apartado 7.
+"""),
+
+code(r"""def muneco_de_trapo(modelo, datos):
+    datos.ctrl[:] = 0
+
+puntuar(muneco_de_trapo)"""),
+
+md(r"""**40 pasos y 195,5 puntos.** Mira el desglose:
+
+- **De pie: +195** = 39 pasos × 5. (¿Por qué 39 y no 40? Porque en el paso 40 el torso ya ha bajado
+  de 1 metro: ese paso no cobra el premio, y además termina el episodio.)
+- **Avanzar: +6,14**. Al desplomarse, el centro de masas se ha movido un poco **hacia delante**, y eso
+  ya da puntos. Recuérdalo.
+- **Esfuerzo: 0**. Motores a cero: 0² = 0.
+- **Golpes: −5,66**. El castañazo final contra el suelo.
+
+Es casi exactamente el "~198" del apartado 7. (Allí era la media de 20 intentos medidos con el
+programa oficial de Gymnasium, que hace nacer al robot con un temblor diminuto y distinto cada
+vez; aquí nace siempre igual. He comprobado que el programa oficial, sin el temblor, da
+**195,49**: nuestra receta calcula lo mismo que él.)
+"""),
+
+md(r"""### Paso 4 · Robot A: al azar
+
+Ahora 10 robots al azar, cada uno con su semilla (de 0 a 9), para ver cuánto varía:
+"""),
+
+code(r"""for semilla in range(10):
+    dados = np.random.default_rng(semilla)
+    def al_azar(modelo, datos):
+        datos.ctrl[:] = dados.uniform(-0.4, 0.4, size=17)
+    puntuar(al_azar)"""),
+
+md(r"""Entre **78 y 184 puntos**, unos **117 de media**, y **ninguno** llega a los 195,5 del muñeco de trapo.
+Ya lo sabías del apartado 7 (allí la media de 20 intentos salía ~98: el azar varía bastante de una
+tanda a otra), pero ahora lo has visto en cada desglose: el robot al azar paga algo de **esfuerzo**
+(unos −2) y algo de **golpes**, y sobre todo cobra **menos premios de pie** porque se cae antes.
+"""),
+
+md(r"""### Paso 5 · La trampa: quitar el premio por estar de pie
+
+El experimento mental del apartado 8, hecho de verdad. Ponemos `premio_de_pie=0`: al robot solo le
+importa que su centro de masas vaya **hacia delante**. Comparamos dos robots:
+
+- el **muñeco de trapo**, que se desploma sin más;
+- un robot que se **lanza hacia delante**: el mismo muñeco de trapo, pero con un **empujón** inicial
+  de 2 metros por segundo (como alguien que se tira en plancha a la piscina).
+"""),
+
+code(r"""print("SIN premio por estar de pie:")
+puntuar(muneco_de_trapo, premio_de_pie=0)
+puntuar(muneco_de_trapo, premio_de_pie=0, empujon=2)
+
+print("CON premio por estar de pie (el de verdad):")
+puntuar(muneco_de_trapo)
+puntuar(muneco_de_trapo, empujon=2)"""),
+
+md(r"""Ahí está el dilema del apartado 8, en números de MuJoCo:
+
+| | Desplomarse | Lanzarse en plancha |
+|---|---|---|
+| **Sin** premio de pie | 0,5 puntos | **59,6 puntos** (¡más de 100 veces más!) |
+| **Con** premio de pie (+5) | **195,5 puntos** | 189,6 puntos |
+
+**Sin** el +5, tirarse de cabeza es, con muchísima diferencia, lo que más puntos da: un robot que
+aprendiera con esa recompensa aprendería a... lanzarse al suelo. **Con** el +5, el lanzamiento ya no
+compensa: se cae 13 pasos antes (27 en vez de 40) y pierde 65 puntos de premio de pie, más de lo que
+gana por "avanzar". El +5 hace su trabajo... pero por **poco** (195,5 frente a 189,6). Lo afinarás en
+el Reto 2.
+
+Y ahora la **regla de oro del apartado 10**: mirar al robot, no solo los números. Esos 59,6 puntos
+"de avanzar", ¿qué son en realidad?
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+datos.qvel[0] = 2                                   # el empujón de 2 m/s
+taller.video(modelo, datos, segundos=2, control=muneco_de_trapo, nombre="nb04_plancha");"""),
+
+md(r"""Un robot al que se le doblan las rodillas y acaba tirado en el suelo, hacia delante. La recompensa sin el +5 lo llamaría "avanzar". Con la tabla de
+números sola, nadie lo habría adivinado; con el vídeo, salta a la vista. Por eso los profesionales
+graban vídeos sin parar.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1.** En el Paso 5, cambia el empujón de `2` a `1`. ¿Sigue ganando la plancha sin el premio de
+pie? ¿Y con él?
+
+**Reto 2 · ¿Cuánto premio de pie hace falta?** Con el +5 de verdad, el muñeco de trapo gana a la
+plancha por poco. Prueba `premio_de_pie=4` en las dos últimas líneas del Paso 5. ¿Quién gana ahora?
+(Para pensar: ¿a partir de qué premio gana quedarse? Usa los números del desglose y un poco del
+NB04b... o prueba valores.)
+
+**Reto 3 · El precio del esfuerzo.** Puntúa a la mente "tensa" del NB03 (los 17 motores a +0,4). Añade
+una celda con esto y ejecútala:
+
+```python
+def tenso(modelo, datos):
+    datos.ctrl[:] = 0.4
+
+puntuar(tenso)
+```
+
+¿Cuánto esfuerzo paga **en cada paso**? Compáralo con la cuenta del apartado 6 (todos los motores a
+tope).
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+Con empujón 1: **sin** premio de pie, la plancha saca **36,2** puntos (frente a 0,5 del desplome):
+sigue ganando con mucha diferencia. **Con** premio de pie, saca **191,2** (frente a 195,5): pierde por
+poco. Un empujón más suave avanza menos pero también cae más tarde (32 pasos); el dilema es el mismo.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+Con `premio_de_pie=4`: el desplome saca **156,5** y la plancha **163,6**. ¡**Gana la plancha**! Con un
+premio de pie de 4 en vez de 5, el robot ya aprendería a tirarse.
+
+Las cuentas, con los desgloses: el desplome cobra 39 premios y suma +0,48 del resto (6,14 − 5,66); la
+plancha cobra 26 premios y suma +59,63 (64,30 − 4,67). Empatan cuando 39·p + 0,48 = 26·p + 59,63, es
+decir, 13·p = 59,15 → **p ≈ 4,55**. Por debajo de 4,55 gana tirarse; por encima, quedarse. El 5 de
+verdad está muy cerca del límite. Esto es el **equilibrio justo** del apartado 8: los números de una
+recompensa no son caprichosos, y moverlos un poco cambia lo que aprende el robot.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+La mente tensa aguanta **47 pasos**, saca **239,9** puntos (¡más que el muñeco de trapo, porque
+aguanta más y además se cae hacia delante: +28,48 de "avanzar"!) y paga **−12,78** de esfuerzo en total. En cada paso: 12,78 ÷ 47 = **0,272**, justo la
+cuenta del apartado 6 (0,1 × 17 × 0,4² = 0,272): el máximo esfuerzo posible. Aun así, el castigo por
+esfuerzo es pequeñito comparado con los +5 por paso de seguir de pie (apartado 6, "compara los
+tamaños").
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Una **recompensa** no es magia: son unas pocas líneas que leen números de MuJoCo y los combinan.
+- **`datos.xipos`** (el centro de cada pieza) y **`modelo.body_mass`** dan el **centro de masas**.
+- **`datos.cfrc_ext`**: las fuerzas de los choques, que MuJoCo solo calcula si se lo pides con
+  **`mujoco.mj_rnePostConstraint`**.
+- Escribir un número en **`datos.qvel`** antes de simular es dar un **empujón**: el robot arranca
+  con esa velocidad.
+- Cambiar **un número** de la recompensa (el 5) puede cambiar qué estrategia gana. Y un vídeo dice
+  lo que los números esconden.
+
+En la práctica del NB04b comprobarás en MuJoCo la fórmula de la caída libre que vas a deducir, y la
+usarás para **predecir** cuándo llega una pelota al suelo antes de simularla.
+"""),
+
+md(r"""## 15 · Posdata: se acaba la Parte 0
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
 Con esta lección **termina la Parte 0, "El terreno"**. Párate un segundo a ver lo que ya sabes: qué es
 un robot por dentro, por qué andar es tan difícil para él, cómo funciona un mundo de mentira, qué es la
 mente de un robot y cómo se le guía con premios... y por qué esos premios son tan traicioneros. Todo eso
-sin una sola línea de código. Es una base muy sólida.
+sin escribir tú una sola línea de código (aunque en cada práctica ya has puesto MuJoCo en marcha
+con código ya escrito). Es una base muy sólida.
 
 Antes de tocar el ordenador, una última parada técnica: en el **NB04b** aprenderemos el idioma de las fórmulas (letras, ecuaciones, despejar) y deduciremos por fin el 0,75 m de la pelota del NB02. Después, en el **NB05**, empieza la **Parte 1**: por fin vamos a tocar el ordenador. Pero con muchísima calma:
 primero qué es un ordenador, qué es un programa y dónde se escribe; y después, **una sola línea** de
