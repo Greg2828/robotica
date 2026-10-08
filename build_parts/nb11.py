@@ -11,6 +11,12 @@ Resultados medidos (semillas 0-4): nada ~44.8 (≈50 pasos), azar ~43.2,
 solo inclinación (−30·i) 296.0 (2 de 5 completos; oscila y diverge),
 inclinación+velocidad (−30·i − 8·v) 499.9 (5/5). Búsqueda aleatoria de 20
 candidatos (semilla 42): mejor 499.9 (k≈47.9, d≈6.7); en 10 mundos nuevos 499.9.
+Práctica en MuJoCo (apartado 16): el alumno escribe el MJCF del palo (= robots/palo_escoba.xml,
+comprobado con ==), traductor observar/paso_mujoco/reiniciar_mujoco (signo cambiado, grados,
+empuje/40, viento qfrc_applied ±1 N·m, 2 mj_step por decisión) y las MISMAS políticas: nada 32,4,
+azar 22,9, solo incl. 173,0, incl+vel 331,8 (el carro choca con el final del raíl ±1,8); búsqueda
+de 2 ruedecillas 336; política con carro (2,1/0,56/4/8) 490,5, 10/10 mundos nuevos; búsqueda de 4
+ruedecillas (50 cand.) 491,5 con (4,5/0,9/2,2/12,5), 8/10 mundos nuevos. Vídeos nb11_rail, nb11_con_carro.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -41,7 +47,8 @@ Tendrá **todo** lo que vimos en la Parte 0, ahora en código:
 | Comparar políticas (NB04, NB10) | Retorno medio en los mismos mundos |
 | Aprender probando (NB00) | El ordenador busca **solo** una buena política |
 
-Al final habrás hecho tu **primer aprendizaje por refuerzo**. Pequeñito, pero de verdad.
+Al final habrás hecho tu **primer aprendizaje por refuerzo**. Pequeñito, pero de verdad. Y en la práctica
+final construirás este mismo robot **en MuJoCo**, con física de verdad, y le enfrentarás tus políticas.
 
 Es una lección larga. Tómatela en varios ratos si quieres; cada apartado deja algo terminado.
 """),
@@ -734,13 +741,515 @@ que de verdad queremos. ¡Otro agujero de los del NB04, creado con un solo núme
 </details>
 """),
 
-md(r"""## 16 · Posdata: se acaba la Parte 1
+md(r"""## 16 · 🛠 Práctica en MuJoCo: tu palo de escoba, con física de verdad
+
+Todo el proyecto ha funcionado sobre una **física de juguete** que escribiste tú: `10 × inclinación +
+empuje + viento`. Te avisé en el apartado 2: "no es la física exacta de una escoba, pero se comporta
+como una". ¿Seguro? Hay una forma de saberlo: **construir el mismo robot en MuJoCo**, con física de
+verdad, y enfrentar a él **las mismas políticas** que has escrito hoy, sin cambiarles ni una coma.
+
+Es la práctica más grande de la Parte 1, y la más importante hasta ahora, por tres razones:
+
+1. Vas a **escribir el plano de tu primer robot** (un fichero MJCF), línea a línea.
+2. Vas a conectar **tus** políticas y **tu** búsqueda aleatoria a MuJoCo con un pequeño "traductor".
+3. Vas a descubrir algo que tu juguete **no tenía**, y que obliga a tus políticas a mirar más cosas.
+
+Igual que en el proyecto, cada paso deja algo terminado. Tómatelo con calma.
+"""),
+
+md(r"""### Paso 1 · El plano del palo de escoba, línea a línea
+
+Un robot de MuJoCo se describe con un **plano** en formato MJCF (lo viste en el NB01 y escribiste el de
+una pelota en el NB02). El del palo de escoba tiene tres partes: las **reglas del mundo**, las **piezas**
+(con sus articulaciones) y el **motor**. Antes de verlo entero, esto es lo que dice cada línea:
+
+| Línea | Qué dice |
+|---|---|
+| `<!-- ... -->` | Un **comentario**: como el `#` de Python, es para las personas; MuJoCo lo ignora. |
+| `<option timestep="0.01"/>` | Regla del mundo: pasitos de **0,01 s** (la gravedad, sin decir nada, es la de la Tierra: −9,81). |
+| `<light pos="0 0 4"/>` | Una luz a 4 m de altura, para poder hacer fotos. |
+| `<geom name="suelo" type="plane" .../>` | El suelo: un plano verde claro. |
+| `<geom name="rail" type="capsule" fromto="-2 0 0.5 2 0 0.5" .../>` | El **raíl**: una barra gris de x = −2 a x = +2, a 0,5 m de altura. Es solo decoración: `contype="0" conaffinity="0"` significa "no choca con nada". |
+| `<body name="carro" pos="0 0 0.5">` | La primera **pieza**: el carro, a 0,5 m de altura, sobre el raíl. |
+| `<joint name="deslizar" type="slide" axis="1 0 0" range="-1.8 1.8" .../>` | Su articulación: **desliza** (`slide`) a lo largo del eje x (`1 0 0`), y solo entre **−1,8 y +1,8 m** (`range`): el raíl se acaba. `damping="0.1"` es un rozamiento pequeñito. |
+| `<geom name="carro" type="box" size="0.15 0.1 0.05" mass="1" .../>` | Su forma: una caja azul de 30 × 20 × 10 cm (los `size` son las **mitades**) y **1 kg**. |
+| `<body name="palo" pos="0 0 0">` | La segunda pieza, **dentro** del carro (el árbol del NB01): el palo va montado en el carro. |
+| `<joint name="bisagra" type="hinge" axis="0 1 0" .../>` | Una **bisagra** que gira alrededor del eje y (`0 1 0`): el palo puede caer hacia delante o hacia atrás a lo largo del raíl. Sin `range`: puede girar del todo. |
+| `<geom name="palo" type="capsule" fromto="0 0 0 0 0 1" size="0.03" mass="0.5" .../>` | La forma del palo: un cilindro naranja de **1 m** de largo (de z = 0 a z = 1), 3 cm de radio y **0,5 kg**. |
+| `<motor name="empuje" joint="deslizar" gear="10" ctrlrange="-1 1" .../>` | El único **motor**: empuja la articulación `deslizar` (el carro). La orden va de −1 a +1 (`ctrlrange`), y `gear="10"` la multiplica: como mucho, **10 newtons** de fuerza. |
+
+Fíjate en que el motor **solo empuja el carro**. Al palo no lo toca nadie: si se mantiene de pie, será
+porque el carro se ha puesto debajo a tiempo. Exactamente como tu mano con la escoba.
+
+Ahora, el plano entero, guardado en una variable (NB06), con tres comillas porque ocupa muchas líneas:
+"""),
+
+code(r"""import mujoco
+import taller
+
+PALO = '''<!-- El palo de escoba de MuJoCo: un carrito que se desliza sobre un raíl y lleva un palo
+     sujeto por una bisagra. El único motor empuja el carrito. Es la versión con física de
+     verdad del palo de escoba del NB11, y el banco de pruebas de las prácticas NB11-NB33. -->
+<mujoco model="palo_escoba">
+  <option timestep="0.01"/>
+  <worldbody>
+    <light pos="0 0 4"/>
+    <geom name="suelo" type="plane" size="4 2 0.1" rgba=".8 .9 .8 1"/>
+    <geom name="rail" type="capsule" fromto="-2 0 0.5 2 0 0.5" size="0.02" rgba=".4 .4 .4 1" contype="0" conaffinity="0"/>
+    <body name="carro" pos="0 0 0.5">
+      <joint name="deslizar" type="slide" axis="1 0 0" range="-1.8 1.8" limited="true" damping="0.1"/>
+      <geom name="carro" type="box" size="0.15 0.1 0.05" mass="1" rgba=".2 .4 .9 1" contype="0" conaffinity="0"/>
+      <body name="palo" pos="0 0 0">
+        <joint name="bisagra" type="hinge" axis="0 1 0" damping="0.01"/>
+        <geom name="palo" type="capsule" fromto="0 0 0 0 0 1" size="0.03" mass="0.5" rgba="1 .5 .1 1" contype="0" conaffinity="0"/>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="empuje" joint="deslizar" gear="10" ctrlrange="-1 1" ctrllimited="true"/>
+  </actuator>
+</mujoco>
+'''
+
+modelo, datos = taller.cargar(PALO)
+print("Piezas:", modelo.nbody, "| articulaciones:", modelo.njnt, "| motores:", modelo.nu)
+print("Paso de tiempo:", modelo.opt.timestep, "s")"""),
+
+md(r"""**3 piezas** (el mundo, el carro y el palo), **2 articulaciones** (deslizar y bisagra) y **1 motor**.
+Tu primer robot. Y no es un robot cualquiera: es **exactamente** el plano que usará el curso a partir de
+ahora (está guardado en `notebooks/robots/palo_escoba.xml`, y `taller.cargar("palo_escoba")` lo carga).
+Compruébalo: `open(...).read()` (ya escrito; lo verás en el NB26) lee un fichero entero como texto, y `==`
+(NB08) compara los dos textos letra a letra:
+"""),
+
+code(r"""print("¿Es tu plano el mismo que el del curso?", PALO == open("robots/palo_escoba.xml").read())"""),
+
+md(r"""Una foto, con la cámara quieta (`seguir=False`) y algo apartada:"""),
+
+code(r"""taller.foto(modelo, datos, seguir=False, distancia=4, titulo="Tu palo de escoba en MuJoCo");"""),
+
+md(r"""### Paso 2 · Qué hay en `datos.qpos` (y una sorpresa con los signos)
+
+Este robot tiene dos articulaciones, así que `datos.qpos` es una lista de **dos** números (NB09):
+
+- `datos.qpos[0]`: dónde está el **carro**, en metros (0 = en el centro del raíl).
+- `datos.qpos[1]`: el ángulo del **palo**, en **radianes** (NB03b).
+
+Tu juguete hablaba en **grados**. Un radián son unos 57,3 grados (180 ÷ 3,14159), así que basta con
+multiplicar. Guardamos ese número en una constante (apartado 4):
+"""),
+
+code(r"""GRADOS = 180 / 3.14159        # para pasar de radianes a grados
+
+datos.qpos[1] = 0.1             # inclinamos el palo 0,1 radianes, a mano (como poner_angulo del NB01)
+mujoco.mj_forward(modelo, datos)
+print("Ángulo del palo:", round(datos.qpos[1] * GRADOS, 1), "grados")
+taller.foto(modelo, datos, seguir=False, distancia=4, titulo="qpos[1] = +0,1");"""),
+
+md(r"""Un ángulo **positivo** inclina el palo hacia la **derecha** de la foto (hacia +x, hacia donde empuja
+el motor cuando le das una orden positiva). En tu juguete era al revés: empujar con un número positivo
+**aumentaba** la inclinación (`aceleración = 10 × inclinación + empuje`). Aquí, empujar el carro hacia +x
+lo mete debajo de un palo que cae hacia +x, y eso **reduce** el ángulo.
+
+No pasa nada: es solo un **convenio de signos**, como el de la pelota del NB06 (abajo positivo en tu
+simulador, arriba positivo en MuJoCo). Para que tus políticas funcionen **sin tocarlas**, el traductor
+del paso siguiente le dará la vuelta al signo del ángulo con un menos.
+"""),
+
+md(r"""### Paso 3 · El traductor: MuJoCo habla radianes, tus políticas hablan grados
+
+Tus políticas del proyecto reciben `(inclinacion, velocidad)` en grados y grados por segundo, y devuelven
+un `empuje` entre −40 y +40. El motor de MuJoCo quiere una orden entre −1 y +1. Hacen falta dos funciones
+pequeñas que traduzcan, en los dos sentidos.
+
+**Observar** (MuJoCo → tu política): el ángulo y su velocidad de giro (`datos.qvel[1]`), en grados y con
+el signo cambiado:
+"""),
+
+code(r"""def observar():
+    inclinacion = -datos.qpos[1] * GRADOS
+    velocidad = -datos.qvel[1] * GRADOS
+    return inclinacion, velocidad"""),
+
+md(r"""(Fíjate en que la función **lee** las cajas `datos` y `GRADOS`, que están fuera: la idea pequeña del
+apartado 11.)
+
+Y ahora la **función de paso** de MuJoCo, hermana de tu función `paso` del apartado 5. Recibe el empuje
+de tu política y hace lo mismo que la tuya, pero con física de verdad:
+
+1. **El motor**: `empuje / EMPUJE_MAXIMO` convierte ±40 en ±1. Si la política pide más de 40, MuJoCo lo
+   recorta solo a ±1 (es lo que significa `ctrlrange` en el plano): tu `if` del apartado 5, hecho por MuJoCo.
+2. **El viento**: un empujoncito al azar **en la bisagra del palo** (`datos.qfrc_applied[1]` es "fuerza
+   extra aplicada a la articulación 1"). Lo medimos en newton·metro; con 1,0 el viento es lo bastante fuerte
+   para poner a prueba a las políticas (en el reto 1 lo quitarás).
+3. **La física**: **dos** pasitos de MuJoCo de 0,01 s, para que cada decisión dure 0,02 s, como tu
+   `PASO_TIEMPO`. (El humanoide hace lo mismo con 5 pasitos, NB05.)
+4. **Recompensa y final**: copiados de tu `paso`, letra a letra.
+"""),
+
+code(r"""VIENTO_MUJOCO = 1.0      # el viento, en newton·metro sobre la bisagra
+
+def paso_mujoco(empuje):
+    datos.ctrl[0] = empuje / EMPUJE_MAXIMO                                   # 1. el motor
+    datos.qfrc_applied[1] = random.uniform(-VIENTO_MUJOCO, VIENTO_MUJOCO)    # 2. el viento
+    mujoco.mj_step(modelo, datos)                                            # 3. la física:
+    mujoco.mj_step(modelo, datos)                                            #    0,02 s
+
+    inclinacion, velocidad = observar()
+    terminado = inclinacion > CAIDA or inclinacion < -CAIDA                  # 4. igual que tu paso
+    if terminado:
+        recompensa = 0
+    else:
+        recompensa = 1 - (inclinacion / CAIDA) ** 2
+    return inclinacion, velocidad, recompensa, terminado"""),
+
+md(r"""Y **reiniciar**: `mujoco.mj_resetData` (ya escrito) pone todos los datos a cero (carro en el centro,
+palo derecho, reloj a 0) y después inclinamos el palo **2 grados**, como en tu `reiniciar`. (El menos es,
+otra vez, el convenio de signos: −2 grados de MuJoCo son +2 de tu juguete.)
+"""),
+
+code(r"""def reiniciar_mujoco():
+    mujoco.mj_resetData(modelo, datos)
+    datos.qpos[1] = -2 / GRADOS
+    return observar()"""),
+
+md(r"""### Paso 4 · Episodios y evaluación, como en el proyecto
+
+`episodio_mujoco` es **tu función `episodio`** del apartado 6, con dos palabras cambiadas: `reiniciar` →
+`reiniciar_mujoco` y `paso` → `paso_mujoco`. Mismas semillas, mismo máximo de 500 pasos (10 segundos),
+mismo `break`. Y `evaluar_mujoco`, la media de las semillas 0 a 4, igual que tu `evaluar`:
+"""),
+
+code(r"""def episodio_mujoco(politica, semilla):
+    random.seed(semilla)
+    inclinacion, velocidad = reiniciar_mujoco()
+    retorno = 0
+    pasos_aguantados = 0
+    for n in range(PASOS_MAXIMOS):
+        empuje = politica(inclinacion, velocidad)                                  # EL AGENTE (tuyo)
+        inclinacion, velocidad, recompensa, terminado = paso_mujoco(empuje)        # EL ENTORNO (MuJoCo)
+        retorno = retorno + recompensa
+        pasos_aguantados = pasos_aguantados + 1
+        if terminado:
+            break
+    return retorno, pasos_aguantados
+
+def evaluar_mujoco(politica):
+    retornos = []
+    for semilla in range(5):
+        retorno, pasos_aguantados = episodio_mujoco(politica, semilla)
+        retornos.append(retorno)
+    return sum(retornos) / len(retornos)"""),
+
+md(r"""### Paso 5 · Tus cuatro políticas, contra la física de verdad
+
+Las mismas funciones del proyecto (`politica_nada`, `politica_azar`, `politica_solo_inclinacion`,
+`politica_a_mano`), **sin cambiarles nada**. Un bucle sobre una lista de políticas (sí: una lista puede
+guardar funciones, igual que números) y una lista de nombres en paralelo (NB09):
+"""),
+
+code(r"""politicas = [politica_nada, politica_azar, politica_solo_inclinacion, politica_a_mano]
+nombres = ["Nada", "Al azar", "Solo inclinación", "Inclinación + velocidad"]
+
+for i in range(len(politicas)):
+    print(nombres[i], "->", round(evaluar_mujoco(politicas[i]), 1), "| juguete:", round(evaluar(politicas[i]), 1))"""),
+
+md(r"""| Política | Tu juguete | MuJoCo |
+|---|---|---|
+| Nada | 44,8 | 32,4 |
+| Al azar | 43,2 | 22,9 |
+| Solo inclinación | 296,0 | 173,0 |
+| Inclinación + velocidad | **499,9** | **331,8** |
+
+El **orden** es el mismo: nada y azar fracasan (el azar, otra vez, **peor** que no hacer nada), y mirar la
+velocidad mejora mucho a mirar solo la inclinación. Tu juguete acertó en lo importante. Pero... la campeona
+del proyecto ya no llega a 500. ¿Qué le pasa? Hagamos lo que hacen los profesionales (apartado 9): mirar
+episodio a episodio. Esta vez, además, preguntamos **dónde acaba el carro** (`datos.qpos[0]`):
+"""),
+
+code(r"""for semilla in range(5):
+    retorno, pasos_aguantados = episodio_mujoco(politica_a_mano, semilla)
+    print("semilla", semilla, "| retorno", round(retorno, 1), "| aguantó", pasos_aguantados,
+          "pasos | carro en x =", round(datos.qpos[0], 2), "m")"""),
+
+md(r"""¡Ahí está! En los episodios que fallan, el carro termina en **x = 1,8** o **−1,8**: **el final del raíl**.
+
+Esto es lo que tu juguete **no tenía**. En tu física, solo existía el palo: el "carrito" podía moverse
+para siempre sin llegar a ningún sitio. En MuJoCo hay un carro **de verdad**, que se mueve de verdad, y el
+raíl **se acaba** (el `range="-1.8 1.8"` del plano). La política "inclinación + velocidad" mantiene el palo
+de pie, sí, pero para hacerlo mueve el carro, y el carro se va quedando con **velocidad** hacia un lado
+(al enderezar el palo del principio y al responder a cada golpe de viento). Nada en la política lo frena,
+porque ella **no mira el carro**... hasta que el carro **choca con el tope**, se para en seco y el palo, sin
+nadie debajo, se cae.
+
+Míralo (el vídeo, ya escrito, repite exactamente el episodio de la semilla 0: el carro decide cada dos
+pasitos, con el mismo viento; la línea `% 2 == 0` significa "solo en los pasitos pares"):
+"""),
+
+code(r"""def control_video(modelo, datos):
+    if round(datos.time / 0.01) % 2 == 0:                  # cada 0,02 s, como en paso_mujoco
+        inclinacion, velocidad = observar()
+        datos.ctrl[0] = politica_del_video(inclinacion, velocidad) / EMPUJE_MAXIMO
+        datos.qfrc_applied[1] = random.uniform(-VIENTO_MUJOCO, VIENTO_MUJOCO)
+
+politica_del_video = politica_a_mano
+random.seed(0)
+reiniciar_mujoco()
+taller.video(modelo, datos, segundos=3.3, control=control_video, nombre="nb11_rail",
+             seguir=False, distancia=5);"""),
+
+md(r"""### Paso 6 · ¿Lo arregla la búsqueda aleatoria?
+
+Quizá el 30 y el 8 no son buenas ruedecillas para MuJoCo. Probemos **tu búsqueda aleatoria** del apartado
+12 sobre la física de verdad: los mismos 20 candidatos (`candidatos_inclinacion` y `candidatos_velocidad`
+siguen en la memoria del cuaderno), la misma `politica_ruedecillas`, solo que evaluada con `evaluar_mujoco`:
+"""),
+
+code(r"""mejor_retorno = -1
+for intento in range(20):
+    ruedecilla_inclinacion = candidatos_inclinacion[intento]
+    ruedecilla_velocidad = candidatos_velocidad[intento]
+    puntos = evaluar_mujoco(politica_ruedecillas)
+    if puntos > mejor_retorno:
+        mejor_retorno = puntos
+        mejor_inclinacion = ruedecilla_inclinacion
+        mejor_velocidad = ruedecilla_velocidad
+
+print("Mejores ruedecillas en MuJoCo:", round(mejor_inclinacion, 1), "y", round(mejor_velocidad, 1),
+      "| retorno", round(mejor_retorno, 1))"""),
+
+md(r"""**336 puntos**, como mucho. Ninguna pareja de ruedecillas lo salva. Y es lógico: el problema no es
+**cuánto** empujar, sino que la política **no sabe dónde está el carro**. Con la información que tiene
+(inclinación y velocidad del palo), no puede saber que se acerca al final del raíl.
+
+¿Te suena? Es **la misma lección del apartado 10**, un nivel más arriba: allí a la política le faltaba la
+velocidad (el problema de la foto); aquí le falta **la posición del carro**. En un mundo más real, hay
+más cosas que mirar.
+"""),
+
+md(r"""### Paso 7 · Política 5: mirar también el carro
+
+Una política que mira **cuatro** números: la inclinación y la velocidad del palo (como antes) y además la
+**posición** del carro (`datos.qpos[0]`) y su **velocidad** (`datos.qvel[0]`), que lee directamente de la
+caja `datos` de fuera. Cuatro ruedecillas. Los valores de abajo son los de un ingeniero de control (los
+encontrarás también en el plan del curso para este robot; aprenderás a calcularlos tú mismo en el NB40):
+"""),
+
+code(r"""ruedecilla_inclinacion = 2.1
+ruedecilla_velocidad = 0.56
+ruedecilla_carro = 4
+ruedecilla_vel_carro = 8
+
+def politica_con_carro(inclinacion, velocidad):
+    return (-ruedecilla_inclinacion * inclinacion - ruedecilla_velocidad * velocidad
+            + ruedecilla_carro * datos.qpos[0] + ruedecilla_vel_carro * datos.qvel[0])
+
+for semilla in range(5):
+    retorno, pasos_aguantados = episodio_mujoco(politica_con_carro, semilla)
+    print("semilla", semilla, "| retorno", round(retorno, 1), "| aguantó", pasos_aguantados,
+          "pasos | carro en x =", round(datos.qpos[0], 2), "m")
+print("Media:", round(evaluar_mujoco(politica_con_carro), 1))"""),
+
+md(r"""**Los cinco episodios completos**, con el carro bien lejos de los topes, y unos **490 puntos de media**.
+
+Fíjate en dos cosas muy curiosas de esas ruedecillas:
+
+- Las del palo son **pequeñas** (2,1 y 0,56, frente a 30 y 8): empujar con suavidad basta para tener el
+  palo de pie, y empujar fuerte lanza el carro de un lado a otro, hacia los topes.
+- Las del carro van con signo **más**: si el carro se ha ido a la derecha, la política lo empuja... ¡**más
+  a la derecha**! Parece al revés, pero es lo que haces tú con una escoba en la mano cuando quieres volver
+  a tu sitio: primero das un empujoncito "hacia fuera", eso **inclina el palo hacia dentro**, y entonces la
+  parte de la inclinación hace que el carro lo siga de vuelta hacia el centro. Para ir a la izquierda, el
+  palo tiene que inclinarse primero a la izquierda.
+
+Y la prueba de verdad (apartado 12): **mundos nuevos**, las semillas 100 a 109.
+"""),
+
+code(r"""completos = 0
+for semilla in range(100, 110):
+    retorno, pasos_aguantados = episodio_mujoco(politica_con_carro, semilla)
+    if pasos_aguantados == PASOS_MAXIMOS:
+        completos = completos + 1
+print("Episodios completos en 10 mundos nuevos:", completos, "de 10")"""),
+
+md(r"""**10 de 10.** Míralo aguantar (5 segundos de la semilla 0):"""),
+
+code(r"""politica_del_video = politica_con_carro
+random.seed(0)
+reiniciar_mujoco()
+taller.video(modelo, datos, segundos=5, control=control_video, nombre="nb11_con_carro",
+             seguir=False, distancia=5);"""),
+
+md(r"""### Paso 8 · Que el ordenador encuentre solo las cuatro ruedecillas
+
+El gran final, otra vez: ¿puede tu **búsqueda aleatoria** encontrar sola unas buenas ruedecillas, ahora que
+son cuatro? Con cuatro ruedecillas hay muchas más combinaciones, así que le damos **50** candidatos. Primero
+los inventamos todos (como en el apartado 12):
+"""),
+
+code(r"""random.seed(42)
+candidatos = []
+for intento in range(50):
+    candidatos.append([random.uniform(0, 50), random.uniform(0, 20), random.uniform(0, 20), random.uniform(0, 20)])
+
+print("Primer candidato:", candidatos[0])"""),
+
+md(r"""(Cada candidato es una **lista de cuatro números**, y `candidatos` es una lista de esas listas: una
+"lista de listas", que verás con calma en el NB11b. `candidatos[intento][0]` es la primera ruedecilla del
+candidato número `intento`.)
+
+Y el bucle del aprendizaje, el mismo de siempre:
+"""),
+
+code(r"""mejor_retorno = -1
+for intento in range(50):
+    ruedecilla_inclinacion = candidatos[intento][0]
+    ruedecilla_velocidad = candidatos[intento][1]
+    ruedecilla_carro = candidatos[intento][2]
+    ruedecilla_vel_carro = candidatos[intento][3]
+    puntos = evaluar_mujoco(politica_con_carro)
+    if puntos > mejor_retorno:
+        mejor_retorno = puntos
+        mejor = candidatos[intento]
+        print("intento", intento, "| ruedecillas", round(mejor[0], 1), round(mejor[1], 1),
+              round(mejor[2], 1), round(mejor[3], 1), "| retorno", round(puntos, 1), "  <- ¡nuevo mejor!")"""),
+
+md(r"""El ordenador encuentra **solo** unas ruedecillas de unos **491 puntos**, tan buenas como las del
+ingeniero en los 5 mundos de práctica. Y fíjate en cuáles son: **4,5 / 0,9 / 2,2 / 12,5**. ¡Se parecen
+muchísimo a las del ingeniero (2,1 / 0,56 / 4 / 8)! Pequeñas para el palo y **positivas para el carro**: la
+búsqueda ha "redescubierto" el truco de empujar hacia fuera para volver, sin que nadie se lo explicara.
+
+¿Y en mundos nuevos?
+"""),
+
+code(r"""ruedecilla_inclinacion = mejor[0]
+ruedecilla_velocidad = mejor[1]
+ruedecilla_carro = mejor[2]
+ruedecilla_vel_carro = mejor[3]
+
+completos = 0
+for semilla in range(100, 110):
+    retorno, pasos_aguantados = episodio_mujoco(politica_con_carro, semilla)
+    if pasos_aguantados == PASOS_MAXIMOS:
+        completos = completos + 1
+print("Lo aprendido, en 10 mundos nuevos:", completos, "de 10 completos")"""),
+
+md(r"""**8 de 10.** Aquí la física de verdad nos da otra lección que el juguete no nos dio: la búsqueda eligió
+sus ruedecillas mirando **solo cinco vientos**, y en dos de los diez mundos nuevos el carro vuelve a
+acabar contra el tope. En el juguete, 5 mundos bastaban para generalizar; en un mundo más difícil, **5
+mundos de práctica se quedan cortos** (reto 3). Por eso los profesionales entrenan con muchísimos
+episodios distintos, y por eso las ruedecillas del ingeniero, que salen de entender la física, aguantan
+los 10.
+
+Recapitulemos:
+
+| | Tu juguete | MuJoCo |
+|---|---|---|
+| Nada / azar | 44,8 / 43,2 | 32,4 / 22,9 |
+| Solo inclinación | 296,0 | 173,0 |
+| Inclinación + velocidad (30 y 8) | **499,9** | 331,8 (choca con el final del raíl) |
+| Mejor búsqueda con 2 ruedecillas | 499,9 | 336,0 |
+| **Mirando también el carro (4 ruedecillas)** | (no existe el carro) | **490,5** (5/5; 10/10 en mundos nuevos) |
+| Búsqueda aleatoria con 4 ruedecillas | — | **491,5** (8/10 en mundos nuevos) |
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1.** Pon el viento a cero (`VIENTO_MUJOCO = 0`) y repite el episodio de la semilla 0 con
+`politica_solo_inclinacion` y con `politica_a_mano`, mirando dónde acaba el carro. Predice antes: sin viento,
+¿se libra `politica_a_mano` del final del raíl? (Cuando acabes, vuelve a ponerlo a 1.0.)
+
+**Reto 2.** Haz el palo **el doble de largo**: en `PALO`, cambia `fromto="0 0 0 0 0 1"` por
+`fromto="0 0 0 0 0 2"`, vuelve a ejecutar la celda del plano y evalúa `politica_con_carro` con las
+ruedecillas del ingeniero (2,1 / 0,56 / 4 / 8). Antes, predice: ¿es más fácil o más difícil equilibrar un
+palo largo? (Piensa en una escoba frente a un lápiz.)
+
+**Reto 3.** Repite la búsqueda del Paso 8, pero evaluando con **diez** semillas en vez de cinco. Escribe una
+`evaluar_mujoco_10` igual que `evaluar_mujoco` pero con `range(10)`, y úsala dentro del bucle. ¿Aguanta
+mejor lo aprendido en los mundos 100-109?
+
+**Reto 4 (piensa).** En el juguete, el empuje máximo era una regla (`EMPUJE_MAXIMO = 40`). ¿Dónde está esa
+regla en MuJoCo, y qué número tendrías que cambiar para tener un motor más débil?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+Sorpresa doble:
+
+- `politica_a_mano` **no** se libra: sin una gota de viento, choca con el tope (x = −1,8) en el paso
+  **280**. Al enderezar los 2 grados del principio, el carro arranca con algo de velocidad... y como la
+  política no mira el carro, nunca lo frena. El viento solo hacía que pasara antes.
+- `politica_solo_inclinacion` aguanta los **500 pasos** (retorno unos **436**, con el carro en x = −0,49):
+  el palo oscila un poco, pero en MuJoCo, sin viento, no llega a caerse ni a chocar.
+
+Moraleja: el problema del raíl no lo crea el viento; lo crea **no mirar el carro**. (Para la política con
+carro, sin viento, el carro acaba en el centro exacto y el retorno es 499,9.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+**Más fácil**: un palo largo cae **más despacio** (como una escoba frente a un lápiz: el NB37 te dirá por
+qué con números). Con el palo de 2 metros, las ruedecillas del ingeniero siguen completando los 5
+episodios, con un retorno de unos **495,5** (más alto que los 490,5 del palo de 1 m: el palo se tuerce menos).
+Al terminar, vuelve a poner `fromto="0 0 0 0 0 1"` y ejecuta de nuevo la celda del plano.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+def evaluar_mujoco_10(politica):
+    retornos = []
+    for semilla in range(10):
+        retorno, pasos_aguantados = episodio_mujoco(politica, semilla)
+        retornos.append(retorno)
+    return sum(retornos) / len(retornos)
+```
+
+y en el bucle del Paso 8, `puntos = evaluar_mujoco_10(politica_con_carro)`. Ahora la búsqueda no se deja
+engañar por cinco vientos "fáciles": elige otro candidato (10,7 / 2,6 / 18,7 / 11,4, retorno medio 471,7 en sus
+diez mundos de práctica) que completa **9 de 10** mundos nuevos, en vez de 8. Más
+variedad de práctica → mejor generalización. Tarda el doble, claro: es el precio.
+</details>
+
+<details>
+<summary>▶ Solución Reto 4</summary>
+
+En el plano: `<motor ... gear="10" ctrlrange="-1 1"/>`. La orden se recorta a ±1 (`ctrlrange`) y se
+multiplica por `gear`, así que la fuerza máxima son **10 newtons**. Para un motor más débil, cambia `gear`
+(por ejemplo, `gear="3"`: con solo 3 newtons, ni la política con carro aguanta; el retorno cae a unos 58).
+En tu juguete era una constante de Python; en MuJoCo es un número del plano del
+robot: el **cuerpo** (NB01), no la mente.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- A **escribir el plano MJCF de un robot propio**: `option`, `worldbody`, `body` dentro de `body` (el
+  árbol), articulaciones `slide` (con `range`) y `hinge`, formas `geom` con `mass`, y un `motor` con `gear`
+  y `ctrlrange`.
+- `qpos`/`qvel` del palo: `[posición del carro, ángulo del palo]`, en metros y **radianes**; cuidado con el
+  **convenio de signos**.
+- A conectar **tus** políticas a MuJoCo con un **traductor** (`observar`, `paso_mujoco`, `reiniciar_mujoco`
+  con `mj_resetData`), a meter **viento** con `qfrc_applied` y a decidir cada 2 pasitos.
+- Que la física de verdad tiene cosas que tu juguete no tenía (**el carro y el final del raíl**), y que para
+  ellas hace falta **más información** en la observación (4 ruedecillas en vez de 2).
+- Que tu **búsqueda aleatoria funciona sobre MuJoCo** (491,5 puntos, ruedecillas parecidas a las de un
+  ingeniero), pero que generalizar a mundos nuevos exige practicar en **más** mundos.
+
+Este palo de escoba (el fichero `robots/palo_escoba.xml`) será tu banco de pruebas durante mucho tiempo: en
+él probarás la imitación, las redes neuronales y, en el NB29, tu **primer entrenamiento de verdad** en
+MuJoCo. En la práctica del NB11b leerás, línea a línea, un **script de MuJoCo de verdad** que lo controla, y
+reconocerás en él todas las formas nuevas de Python de esa lección.
+"""),
+md(r"""## 17 · Posdata: se acaba la Parte 1
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
 Con este proyecto **termina la Parte 1**. Mira hacia atrás: hace siete lecciones no sabías qué era `print`. Hoy has
 construido un entorno de aprendizaje por refuerzo, has diagnosticado una política que fallaba mirando sus datos, y has
-hecho que un ordenador **aprenda solo** a mantener un palo de pie. Con tu propio código, línea a línea.
+hecho que un ordenador **aprenda solo** a mantener un palo de pie. Con tu propio código, línea a línea. Y
+has escrito el plano de tu primer robot de MuJoCo y has descubierto que la física de verdad pide mirar más cosas.
 
 Antes de la Parte 2, el **NB11b** te presentará unas cuantas formas de escribir Python que vas a encontrar enseguida (argumentos con nombre, tuplas, listas de listas...). Y en la **Parte 2** vamos a por las dos cosas que nos faltan para el humanoide: las **matemáticas** que permiten girar
 miles de ruedecillas a la vez con inteligencia (empezando, desde cero, por las **flechas** —los vectores— y las

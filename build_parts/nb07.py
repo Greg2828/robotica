@@ -7,6 +7,9 @@ acumulador (retorno de 1000 pasos = 5000, robot C del NB04), Gauss 1..100, y el
 simulador de la pelota con bucle: tabla del NB02 completa (con su ruido de
 decimales), y la comprobación de que el paso pequeño se acerca a la realidad:
 dt 0.1 → 0.5 m, 0.01 → 0.725 m, 0.001 → 0.7475 m; exacto 0.75 m.
+Práctica en MuJoCo (apartado 13): tu bucle for + mj_step; MuJoCo reproduce 0.5/0.725/0.7475
+y la tabla (atraviesa el suelo en el paso 6); humanoide 333 pasitos → torso 0,28 m;
+acumulador: altura media del torso en el 1.er segundo 0,98 m.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -34,6 +37,7 @@ Al final de hoy:
   que se quedaba quieto y sacaba 5.000 puntos?).
 - Y **comprobarás con el ordenador** lo que el NB02 te contó sobre los pasos grandes y pequeños del
   simulador. Ya no tendrás que creértelo: lo verás.
+- Y en la práctica final escribirás **tu propio bucle de simulación con MuJoCo**.
 
 Una idea nueva por celda. Vamos.
 """),
@@ -598,13 +602,229 @@ salga una sola vez al final.
 </details>
 """),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: tu propio bucle de simulación
+
+En el NB06 tuviste que **copiar** la celda de `mj_step` para cada pasito. Se acabó: hoy escribes
+**tu propio bucle de simulación**, que es exactamente lo que hay en el corazón de todo programa
+que usa MuJoCo, desde una pelota hasta un humanoide que aprende a andar:
+
+```
+   for paso in range(cuantos_pasitos):
+       mujoco.mj_step(modelo, datos)
+```
+
+Dos líneas. Y con ellas vas a repetir con MuJoCo el experimento del apartado 9 (pasos grandes
+contra pasos pequeños) y a dejar caer al humanoide con tu propio bucle.
+"""),
+
+md(r"""### Paso 1 · La pelota, otra vez (ya escrita)
+
+El mismo plano del NB02, con la gravedad redonda de nuestras tablas (−10) escrita dentro del
+plano, en la línea `<option ...>`:
+"""),
+
+code(r"""import mujoco
+import taller
+
+PELOTA = '''
+<mujoco>
+  <option gravity="0 0 -10"/>
+  <worldbody>
+    <light pos="0 0 5"/>
+    <geom type="plane" size="5 5 0.1" rgba=".8 .9 .8 1"/>
+    <body name="pelota" pos="0 0 2">
+      <freejoint/>
+      <geom type="sphere" size="0.05" rgba="1 .3 .1 1"/>
+    </body>
+  </worldbody>
+</mujoco>
+'''"""),
+
+md(r"""### Paso 2 · Tu bucle: medio segundo con pasos de 0,1
+
+Igual que en el apartado 9: medio segundo con pasos de 0,1 segundos son **5** pasitos. Las dos
+primeras líneas (cargar y poner el paso) ya las conoces del NB06. Lo nuevo, lo tuyo, es el
+**bucle**: en vez de copiar `mujoco.mj_step(modelo, datos)` cinco veces, se lo pides al `for`. Fíjate
+en la **sangría**: `mj_step` está dentro del bucle (se repite) y el `print` está fuera (sale una
+vez, al final):
+"""),
+
+code(r"""modelo, datos = taller.cargar(PELOTA)
+modelo.opt.timestep = 0.1
+
+for paso in range(5):
+    mujoco.mj_step(modelo, datos)
+
+print("Pasos de 0.1 s -> reloj:", round(datos.time, 4), "| altura:", round(datos.qpos[2], 4), "m")"""),
+
+md(r"""**0,5 metros**, igual que tu simulador del apartado 9. Ahora, pasos **diez veces más pequeños**.
+Como en el apartado 9, solo cambian dos números: el tamaño del paso y las vueltas del bucle:
+"""),
+
+code(r"""modelo, datos = taller.cargar(PELOTA)
+modelo.opt.timestep = 0.01
+
+for paso in range(50):
+    mujoco.mj_step(modelo, datos)
+
+print("Pasos de 0.01 s -> reloj:", round(datos.time, 4), "| altura:", round(datos.qpos[2], 4), "m")"""),
+
+md(r"""**0,725**, como el tuyo. Y ahora, con pasitos de una milésima. **Escríbelo tú** antes de mirar la
+celda de abajo: ¿qué dos números cambian?
+"""),
+
+code(r"""modelo, datos = taller.cargar(PELOTA)
+modelo.opt.timestep = 0.001
+
+for paso in range(500):
+    mujoco.mj_step(modelo, datos)
+
+print("Pasos de 0.001 s -> reloj:", round(datos.time, 4), "| altura:", round(datos.qpos[2], 4), "m")"""),
+
+md(r"""**0,7475**. La misma tabla del apartado 9, número a número:
+
+| Paso | Pasitos | Tu simulador (apartado 9) | MuJoCo | Verdad |
+|---|---|---|---|---|
+| 0,1 s | 5 | 0,5 m | 0,5 m | 0,75 m |
+| 0,01 s | 50 | 0,725 m | 0,725 m | 0,75 m |
+| 0,001 s | 500 | 0,7475 m | 0,7475 m | 0,75 m |
+
+MuJoCo usa, para una pelota que cae, **la misma receta** que tú (primero la gravedad cambia la
+velocidad; luego la velocidad nueva cambia la altura), así que comete **el mismo error** con los
+pasos grandes. Por eso el humanoide usa pasitos de 0,003 s (NB05): con pasos finos, el error es
+pequeño.
+"""),
+
+md(r"""### Paso 3 · La tabla, paso a paso
+
+Con el `print` **dentro** del bucle (con sangría), sale una línea en cada vuelta. Es la tabla del
+NB02, escrita ahora por MuJoCo. Usamos `range(1, 7)` para contar los pasos desde 1, como la tabla:
+"""),
+
+code(r"""modelo, datos = taller.cargar(PELOTA)
+modelo.opt.timestep = 0.1
+
+for paso in range(1, 7):
+    mujoco.mj_step(modelo, datos)
+    print("paso", paso, "| tiempo", round(datos.time, 1), "| altura", round(datos.qpos[2], 2))"""),
+
+md(r"""1,9 → 1,7 → 1,4 → 1,0 → 0,5 → **−0,1**. En el paso 6, la pelota **atraviesa el suelo**, la rareza 1
+del NB02. Tu simulador del apartado 8 hacía lo mismo... y MuJoCo, con pasos tan grandes, también.
+"""),
+
+md(r"""### Paso 4 · El humanoide, con tu bucle
+
+Ahora, el robot de verdad. Un segundo del humanoide son **333 pasitos** de 0,003 s (NB05). Tu bucle
+es **idéntico** al de la pelota: solo cambia el robot y el número de vueltas. Al final, una foto (ya
+escrita) para ver cómo ha quedado:
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+
+for paso in range(333):
+    mujoco.mj_step(modelo, datos)
+
+print("Reloj:", round(datos.time, 3), "s | altura del torso:", round(datos.qpos[2], 2), "m")
+taller.foto(modelo, datos, titulo="Tras 333 pasitos de tu bucle");"""),
+
+md(r"""Tras un segundo, el torso está a **0,28 m**: en el suelo. Es la misma caída del NB00, pero esta
+vez la ha calculado **tu bucle**: 333 llamadas a `mj_step`, una detrás de otra.
+
+Lo que hace `taller.video` (la herramienta del curso que llevas usando desde el NB00) es justo esto:
+un bucle de `mj_step` que, cada pocos pasitos, saca una foto. Ya sabes lo que hay dentro de esa caja
+negra.
+"""),
+
+md(r"""### Paso 5 · El acumulador, sobre la simulación
+
+Una pregunta que necesita un **acumulador** (apartado 7): durante ese primer segundo, ¿a qué altura
+estuvo el torso **de media**? La receta de siempre: hucha a 0 **antes** del bucle, sumar **dentro**
+(la altura de cada pasito), mirar **después** (dividir entre el número de pasitos):
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+
+suma_alturas = 0
+for paso in range(333):
+    mujoco.mj_step(modelo, datos)
+    suma_alturas = suma_alturas + datos.qpos[2]
+
+print("Altura media del torso en el primer segundo:", round(suma_alturas / 333, 2), "m")"""),
+
+md(r"""**0,98 m de media**: empezó a 1,4 y acabó a 0,28. Ya ves lo que hacía la recompensa del NB04 al
+**sumar** cosas paso a paso durante un episodio: es esta misma hucha, dentro del bucle de
+simulación.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1.** Haz con MuJoCo el ejercicio E7 (la pelota en la **Luna**): medio segundo con pasos de
+0,001 s y gravedad 1,6. Pista: después de cargar la pelota, cambia la gravedad con
+`modelo.opt.gravity = [0, 0, -1.6]` (NB06). ¿Sale lo mismo que con tu simulador?
+
+**Reto 2.** Cambia el bucle del Paso 4 para simular **3 segundos** del humanoide. ¿Cuántas vueltas
+necesitas? ¿Dónde está el torso al final?
+
+**Reto 3.** En el Paso 3, usa pasos de **0,05** s. ¿Cuántas vueltas hacen falta para llegar a los
+0,6 segundos? ¿Atraviesa también el suelo?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+modelo, datos = taller.cargar(PELOTA)
+modelo.opt.timestep = 0.001
+modelo.opt.gravity = [0, 0, -1.6]
+
+for paso in range(500):
+    mujoco.mj_step(modelo, datos)
+
+print(round(datos.qpos[2], 4))
+```
+
+Sale **1.7996**, exactamente lo mismo que tu simulador de cajas del E7 (y a 0,4 mm de la verdad, 1,8 m).
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+3 segundos ÷ 0,003 = **1000 vueltas**: `for paso in range(1000):`. Al final el torso está a unos
+**0,08 m**: el robot está completamente tumbado en el suelo (a los 3 segundos ya ha dejado de rodar).
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+0,6 ÷ 0,05 = **12** vueltas: `range(1, 13)` y `modelo.opt.timestep = 0.05`. En el paso 12 (0,60 s) la
+pelota está a **0,05 m** (justo su radio: rozando el suelo) y, si das una vuelta más (`range(1, 14)`),
+en el paso 13 salta a **−0,275**: sí, lo atraviesa, y más que con pasos de 0,1, igual que viste en el
+Reto 1 del NB02. Con pasos grandes, que atraviese o no el suelo depende
+de la casualidad de dónde caiga cada salto.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **El bucle de simulación**: `for paso in range(n): mujoco.mj_step(modelo, datos)`. Todo programa de
+  MuJoCo tiene uno.
+- Con el `print` **dentro** del bucle ves cada pasito; **fuera**, solo el final.
+- Para un mismo tiempo simulado: paso ÷ 10 → vueltas × 10 → error ÷ 10. MuJoCo lo confirma (0,5 →
+  0,725 → 0,7475 m).
+- Un **acumulador** dentro del bucle mide algo durante toda la simulación (altura media del torso: 0,98 m).
+- `taller.video` es, por dentro, un bucle de `mj_step` que hace fotos.
+
+En la práctica del NB08 tu bucle aprenderá a **parar solo**: con un `if` detectarás el momento en
+que el humanoide se cae y acabarás el episodio con `break`.
+"""),
+
+
+md(r"""## 14 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
 Ya tienes tres de las cuatro grandes piezas de la programación: **instrucciones en orden** (NB05),
-**memoria** (NB06) y **repetición** (este NB07). Con ellas has construido un simulador de verdad y has
-comprobado por ti mismo una propiedad de los simuladores que antes solo podías creerte. Eso es pensar
+**memoria** (NB06) y **repetición** (este NB07). Con ellas has construido un simulador de verdad, has
+comprobado por ti mismo una propiedad de los simuladores que antes solo podías creerte, y has escrito
+el bucle que mueve a MuJoCo. Eso es pensar
 como un ingeniero: **no te lo creas, mídelo**.
 
 En el **NB08** llega la cuarta pieza: las **decisiones** (`if`, "si..."). Con ella, la pelota por fin

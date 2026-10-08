@@ -5,6 +5,9 @@ código, todo el contexto: qué es un ordenador, un programa, un lenguaje, un
 notebook y cómo se ejecuta. Luego: print("hola"), texto vs número, orden de
 ejecución, errores REALES (celdas code_err) y cómo leerlos, comentarios, punto
 decimal (no coma), y la recompensa del NB04 calculada por el ordenador.
+Práctica en MuJoCo (apartado 16): tus primeros print preguntándole al humanoide
+(nbody/njnt/nu, modelo.opt.gravity/timestep, 0,015 s = 67 decisiones/s,
+AttributeError, datos.time y altura del torso antes/después de 1 s).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -30,7 +33,8 @@ Así va a ser. Hoy aparecerán las primeras celdas de código de todo el curso, 
 
 Al final de hoy habrás escrito tu primer programa, habrás visto tus primeros errores (y sabrás
 que no pasa nada por cometerlos), y habrás hecho que el ordenador calcule la recompensa de
-nuestro humanoide. Vamos despacio.
+nuestro humanoide. Y en la práctica final escribirás tus primeras líneas **para MuJoCo**,
+preguntándole cosas al humanoide. Vamos despacio.
 """),
 
 md(r"""## 1 · ¿Qué es un ordenador, en realidad?
@@ -553,12 +557,235 @@ muestra `9.8`.
 </details>
 """),
 
-md(r"""## 16 · Posdata
+md(r"""## 16 · 🛠 Práctica en MuJoCo: tu primera línea, preguntándole al robot
+
+Hasta ahora, en las prácticas de la Parte 0, el código de MuJoCo venía **ya escrito**: tú
+ejecutabas y mirabas. Hoy cambia una cosa pequeña pero importante: **las líneas `print` las
+escribes tú**. Vas a usar lo único que sabes de Python (`print`, texto entre comillas, números sin
+comillas, la coma y las cuentas) para **hacerle preguntas al humanoide** y que MuJoCo te conteste.
+
+Hay cosas que todavía no sabes escribir (cargar el robot, por ejemplo). Esas te las doy hechas y
+te explico en una frase qué hacen. Lo tuyo es todo lo que empieza por `print`.
+"""),
+
+md(r"""### Paso 1 · Despertar a MuJoCo y cargar el humanoide (ya escrito)
+
+Estas tres líneas son las mismas del NB00. La primera y la segunda **sacan dos cajas de
+herramientas** (MuJoCo y el `taller` del curso; lo de "sacar cajas de herramientas" se llama
+`import` y lo verás en el NB11). La tercera carga el robot y te da dos cosas, que ya conoces del
+NB00: el **modelo** (el plano, lo que no cambia) y los **datos** (cómo está ahora).
+"""),
+
+code(r"""import mujoco
+import taller
+
+modelo, datos = taller.cargar("humanoide")"""),
+
+md(r"""No sale nada: igual que cuando cargas una foto en el móvil, no se ve hasta que la abres.
+Ahora toca **preguntar**.
+"""),
+
+md(r"""### Paso 2 · Tu primera pregunta: ¿cuántas piezas tiene?
+
+En el NB01 viste que MuJoCo guarda el número de piezas en `modelo.nbody`. Para que el
+ordenador te lo enseñe, basta con meterlo en un `print`. **Sin comillas**, porque no queremos
+que copie el texto "modelo.nbody", sino que lo **interprete** y busque el número (apartado 9):
+"""),
+
+code(r"""print(modelo.nbody)"""),
+
+md(r"""**14**. Las 13 piezas del robot más el "mundo" (la pieza número 0, el suelo y todo lo que no
+se mueve), como viste en el NB01. ¿Qué pasa si te equivocas y pones comillas?
+"""),
+
+code(r"""print("modelo.nbody")"""),
+
+md(r"""Exacto: copia el texto tal cual, letra a letra. Es el `print("2 + 3")` del apartado 9 otra
+vez: **con comillas, se copia; sin comillas, se interpreta**. Esta diferencia te va a acompañar
+toda la vida.
+"""),
+
+md(r"""### Paso 3 · Varias preguntas, con su etiqueta
+
+Un número suelto, sin decir qué es, se olvida enseguida. La coma dentro de `print` (apartado 12)
+sirve para poner **un texto y luego un número** en la misma línea. Así que cada pregunta lleva su
+etiqueta. `modelo.njnt` es el número de articulaciones y `modelo.nu`, el de motores (NB01):
+"""),
+
+code(r"""print("Piezas:", modelo.nbody)
+print("Articulaciones:", modelo.njnt)
+print("Motores:", modelo.nu)"""),
+
+md(r"""**14 piezas, 18 articulaciones y 17 motores**: los mismos números que contaste en el NB01,
+pero esta vez las líneas que los piden son **tuyas**.
+
+Y como `print` también calcula, puedes hacer cuentas con lo que contesta MuJoCo. Por ejemplo,
+las piezas **del robot** (sin contar el mundo):
+"""),
+
+code(r"""print("Piezas del robot:", modelo.nbody - 1)"""),
+
+md(r"""### Paso 4 · Las reglas del mundo
+
+En el NB02 viste que el mundo de mentira tiene dos reglas básicas: la **gravedad** y el
+**paso de tiempo** (cada cuánto calcula MuJoCo el futuro). Las dos están en `modelo.opt` (de
+*options*, "opciones"):
+"""),
+
+code(r"""print("Gravedad:", modelo.opt.gravity)
+print("Paso de tiempo:", modelo.opt.timestep, "segundos")"""),
+
+md(r"""La gravedad son **tres números** (hacia delante, hacia un lado y hacia arriba, NB02); solo el
+último no es cero: **−9,81**, tirando hacia abajo. Fíjate en que MuJoCo escribe los decimales con
+**punto** (9.81), como Python: el ordenador entero habla "en inglés" con los decimales.
+
+Y el paso de tiempo es **0,003 segundos**: tres milésimas. ¿Cuánto es eso en milésimas? Una
+multiplicación con `*` (apartado 13):
+"""),
+
+code(r"""print(modelo.opt.timestep * 1000, "milisegundos")"""),
+
+md(r"""**3 milisegundos.** Y aquí sale un número que te prometí en el apartado 13: el simulador del
+humanoide (el de Gymnasium, el que usaremos para entrenar) deja que la mente decida **una vez cada
+5 pasitos** de MuJoCo. ¿Cuánto dura entonces cada decisión?
+"""),
+
+code(r"""print("Cada decisión dura", modelo.opt.timestep * 5, "segundos")"""),
+
+md(r"""**0,015 segundos**. Y una decisión cada 0,015 s son unas **67 decisiones por segundo** (1 ÷ 0,015
+≈ 66,7): de ahí salía el "67 veces por segundo" del apartado 13. Acabas de **comprobar** un dato del
+curso preguntándole al propio simulador.
+"""),
+
+md(r"""### Paso 5 · Un error nuevo: preguntar por algo que no existe
+
+Si le preguntas a `modelo` por un nombre que no tiene, MuJoCo se queja. Esta celda **falla
+adrede**: pregunta por `modelo.motores` (en castellano), pero el modelo solo entiende sus nombres
+en inglés (`nu`). Aplica tu receta de tres pasos: lee la **última línea**.
+"""),
+
+code_err(r"""print(modelo.motores)"""),
+
+md(r"""Última línea: `AttributeError: 'mujoco._structs.MjModel' object has no attribute 'motores'`.
+Traducido: **"error de atributo: el objeto modelo de MuJoCo no tiene ningún dato llamado
+`motores`"**. Es un primo del `NameError` del apartado 10: allí Python no conocía un nombre suelto;
+aquí, el **modelo** no conoce un nombre que va **detrás de su punto**. (A esos datos que van detrás
+de un punto se les llama **atributos**; los verás con calma en el NB11b.) La solución, como casi
+siempre, es corregir la palabra: `modelo.nu`.
+"""),
+
+md(r"""### Paso 6 · Que pase el tiempo, y vuelve a preguntar
+
+Hasta ahora has preguntado al **modelo** (el plano, que no cambia). Ahora vas a preguntar a los
+**datos** (cómo está el robot **ahora**). Primero, el reloj y la altura del torso **antes** de
+hacer nada. `datos.time` es el reloj de la simulación, y `datos.qpos[2]` es la altura del torso en
+metros (lo de los corchetes `[2]` lo entenderás en el NB09; por ahora, léelo como "la altura"):
+"""),
+
+code(r"""print("Reloj:", datos.time, "segundos")
+print("Altura del torso:", datos.qpos[2], "metros")"""),
+
+md(r"""El reloj está a **0** (aún no ha pasado nada) y el torso está a **1,4 metros**: la altura a la
+que aparece el humanoide al empezar. Ahora dejamos que la física actúe **1 segundo**, con el vídeo
+del NB00 (esta línea ya está escrita: simula y te lo enseña):
+"""),
+
+code(r"""taller.video(modelo, datos, segundos=1, nombre="nb05_un_segundo");"""),
+
+md(r"""Y ahora, **la misma pregunta otra vez**. Copia tus dos líneas de antes (son las mismas):
+"""),
+
+code(r"""print("Reloj:", datos.time, "segundos")
+print("Altura del torso:", datos.qpos[2], "metros")"""),
+
+md(r"""Mismas líneas, **respuestas distintas**: el reloj marca **0,999** segundos (333 pasitos de
+0,003 s; el último milisegundo no le "cabe"; y ese `0008` del final es un "ruido" de los decimales
+del ordenador que te explicará el NB06) y el torso ha bajado a unos **0,28 metros**: el robot
+está en el suelo. Las preguntas a `datos` dan respuestas distintas según **cuándo** las hagas,
+porque los datos son el estado de **ahora**. Las preguntas a `modelo`, no: el plano no cambia
+porque el robot se caiga.
+"""),
+
+md(r"""### Tus retos
+
+Crea una celda nueva para cada reto (**Esc** y luego **B**), escribe tu línea y ejecútala.
+
+**Reto 1.** Pregunta cuántos **grados de libertad** tiene el humanoide (está en `modelo.nv`, NB01),
+con una etiqueta delante.
+
+**Reto 2.** ¿Cuántos grados de libertad **no tienen motor**? Escríbelo con una sola línea `print`
+que haga la resta.
+
+**Reto 3.** Un episodio del humanoide dura como mucho **1000 decisiones**, y cada decisión son
+**5 pasitos** de MuJoCo. Escribe una línea que calcule cuántos **segundos** dura un episodio
+completo, usando `modelo.opt.timestep`.
+
+**Reto 4 (predice).** Sin ejecutarlo: ¿qué escribe `print(modelo.nu, "motores")`? ¿Y
+`print("modelo.nu", "motores")`?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+print("Grados de libertad:", modelo.nv)
+```
+
+Sale **23**: los 17 de las bisagras más los 6 de la articulación libre del tronco (NB01).
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+print("Grados de libertad sin motor:", modelo.nv - modelo.nu)
+```
+
+Sale **6** (23 − 17): los de la articulación libre. Ningún motor empuja directamente el tronco
+en el espacio; por eso el robot es **subactuado** (NB01).
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+print("Un episodio dura", 1000 * 5 * modelo.opt.timestep, "segundos")
+```
+
+Sale **15.0** segundos: 5000 pasitos de 0,003 s. Es el "final del partido" del NB03, calculado
+con los números del propio simulador. (Con el robot cayéndose en menos de 1 segundo, la mayoría de
+los episodios del principio del entrenamiento terminan muchísimo antes.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 4</summary>
+
+- `print(modelo.nu, "motores")` → **`17 motores`**: `modelo.nu` va sin comillas, así que se
+  interpreta (17); `"motores"` va entre comillas, así que se copia.
+- `print("modelo.nu", "motores")` → **`modelo.nu motores`**: los dos van entre comillas, así que
+  los dos se copian tal cual. Nadie le ha preguntado nada a MuJoCo.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **Leer el modelo tú mismo**: `print(modelo.nbody)`, `modelo.njnt`, `modelo.nu`, `modelo.nv`.
+- Las reglas del mundo están en **`modelo.opt`**: `modelo.opt.gravity` y `modelo.opt.timestep`
+  (0,003 s en el humanoide; la mente decide cada 5 pasitos = 0,015 s ≈ 67 veces por segundo).
+- **`modelo`** es el plano (no cambia); **`datos`** es el estado de ahora (`datos.time`, la altura
+  del torso), y cambia cuando pasa el tiempo.
+- Preguntar por un nombre que el modelo no tiene da un **`AttributeError`**.
+
+En la práctica del NB05b sacarás MuJoCo del cuaderno: lanzarás una simulación **desde la
+terminal** y medirás cuántos pasitos por segundo es capaz de calcular la Raspberry Pi.
+"""),
+
+
+md(r"""## 17 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
 Hoy has escrito tus primeras líneas de código, y has visto que la programación no es magia: es
-escribir recetas precisas para un cocinero literal. Antes, el **NB05b** abrirá la caja del ordenador (bits, memoria, archivos) y te explicará las "palabras mágicas" de la terminal. Y en el **NB06** daremos el siguiente paso, y es un
+escribir recetas precisas para un cocinero literal. Y con esas mismas líneas ya le has hecho
+preguntas a un simulador de verdad. Antes, el **NB05b** abrirá la caja del ordenador (bits, memoria, archivos) y te explicará las "palabras mágicas" de la terminal. Y en el **NB06** daremos el siguiente paso, y es un
 paso enorme: aprender a **guardar** valores en "cajas con nombre" (las **variables**), para que el
 ordenador pueda **recordar** cosas como la velocidad del robot o su altura. Con eso, el cálculo de la
 recompensa dejará de ser una ristra de números y se convertirá en un pequeño programa que se entiende

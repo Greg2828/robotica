@@ -7,6 +7,10 @@ sum, max, min y la media; lista vacía + append (método con punto); grabar la
 trayectoria de la pelota que rebota (300 alturas), trozos [inicio:fin], contar
 con if, la altura del primer rebote (1,24 m); dos listas en paralelo con
 range(len(...)); observación/acción del humanoide = listas.
+Práctica en MuJoCo (apartado 15): grabar la altura del torso (667 pasitos) con append;
+max/min/porción; primera foto < 1 m = índice 199 (paso 200 del NB08); 199 fotos de pie;
+plt.plot quieto vs azar; pelota MuJoCo con solref -10000 -14: bote en el índice 62 (como el
+simulador de cajas), sube a 1,38 m (vs 1,24).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -28,7 +32,8 @@ observación (NB03). Y con cada una habría que escribir su propia línea de cá
 
 Hoy aprenderás la solución: las **listas**, cajas que guardan **muchos valores a la vez, en orden**. Con
 ellas, los 17 números de la acción del humanoide caben en **una sola caja**, y un bucle los recorre todos.
-Y de propina, grabaremos la **trayectoria** completa de la pelota que rebota, para estudiarla después.
+Y de propina, grabaremos la **trayectoria** completa de la pelota que rebota, para estudiarla después; y en
+la práctica final grabarás y **dibujarás** la caída del humanoide en MuJoCo.
 
 Una idea nueva por celda. Vamos.
 """),
@@ -585,7 +590,278 @@ lista son los momentos en que sube.
 </details>
 """),
 
-md(r"""## 15 · Posdata
+md(r"""## 15 · 🛠 Práctica en MuJoCo: graba la caída y dibújala
+
+En el apartado 11 grabaste la "película" de tu pelota en una lista y le hiciste preguntas. Hoy vas
+a hacer lo mismo con MuJoCo: **grabar la altura del torso del humanoide en cada pasito**, hacerle
+preguntas a la grabación con `len`, `max`, `min`, índices y porciones, y, por primera vez,
+**dibujarla**. A una grabación así los ingenieros la llaman **trayectoria**.
+"""),
+
+md(r"""### Paso 1 · Grabar la trayectoria
+
+Tu bucle de simulación del NB07, con las **dos líneas nuevas** del apartado 11: la lista vacía antes
+del bucle y el `append` dentro. Simulamos **2 segundos** (667 pasitos de 0,003 s):
+"""),
+
+code(r"""import mujoco
+import taller
+
+modelo, datos = taller.cargar("humanoide")
+
+alturas = []                                  # la "película", vacía
+for paso in range(667):
+    mujoco.mj_step(modelo, datos)
+    alturas.append(datos.qpos[2])             # graba la altura del torso en este pasito
+
+print("Fotos grabadas:", len(alturas))"""),
+
+md(r"""**667 fotos**, una por pasito. Ahora, las preguntas del apartado 11, a la grabación de MuJoCo:"""),
+
+code(r"""print("Altura máxima:", round(max(alturas), 3), "m")
+print("Altura mínima:", round(min(alturas), 3), "m")
+print("Primera foto:", round(alturas[0], 3), "| última foto:", round(alturas[-1], 3))"""),
+
+md(r"""La máxima es casi la de salida (1,4 m) y la mínima, unos **0,08 m**: el torso tumbado en el suelo.
+La última foto (índice `-1`, apartado 5) dice dónde acabó a los 2 segundos.
+
+Y una **porción** (apartado 11): las 5 primeras fotos.
+"""),
+
+code(r"""for h in alturas[0:5]:
+    print(round(h, 5))"""),
+
+md(r"""1,39996 → 1,39982 → 1,39960 → 1,39929 → 1,39889: en los cinco primeros pasitos el torso baja **ni un
+milímetro**, pero cada vez un poco más deprisa (la gravedad empezando a ganar, como en tu pelota). (Recorremos
+la porción con un `for` y redondeamos cada número porque, con `print(alturas[0:5])` a secas, MuJoCo enseña sus
+números con una etiqueta técnica, `np.float64(...)`, que lo ensucia todo; la entenderás en el NB15.)
+"""),
+
+md(r"""### Paso 2 · ¿En qué foto se cayó?
+
+En el NB08 viste que el humanoide quieto se cae (torso por debajo de 1 m) en el **paso 200**. Busquémoslo
+en la grabación: recorremos los índices con `range(len(...))` (apartado 12) y paramos en el primero que
+esté por debajo de 1 metro (`if` y `break`, NB08):
+"""),
+
+code(r"""for i in range(len(alturas)):
+    if alturas[i] < 1.0:
+        print("Primera foto por debajo de 1 m: índice", i, "-> altura", round(alturas[i], 3))
+        break"""),
+
+md(r"""**Índice 199**. ¿Y no era el paso 200? ¡Sí! Es la "traducción" del apartado 11: el paso 200 (contando
+desde 1, como en el NB08) es el índice 199 (contando desde 0, como Python). La misma caída, vista desde
+la grabación.
+
+Y una pregunta con acumulador + `if` (apartado 11): ¿cuántas fotos tiene el torso **por encima** de 1 m?
+"""),
+
+code(r"""fotos_de_pie = 0
+for h in alturas:
+    if h > 1.0:
+        fotos_de_pie = fotos_de_pie + 1
+
+print("Fotos de pie:", fotos_de_pie, "de", len(alturas))"""),
+
+md(r"""**199 de 667**: menos de un tercio del tiempo de pie, y luego, al suelo. Si cada una de esas fotos valiera
+los +5 puntos del NB04, ya sabrías cuánto puntúa el robot quieto antes de caerse.
+"""),
+
+md(r"""### Paso 3 · Dibujarla
+
+Mirar 667 números es imposible; un **dibujo** lo dice todo de un vistazo. Para dibujar se usa otra caja
+de herramientas, **matplotlib** (las tres primeras líneas la sacan del armario; lo de `import ... as plt`
+lo explica el NB11b). La línea importante es **`plt.plot(alturas)`**: "dibuja esta lista como una línea".
+El resto pone títulos y una raya horizontal en 1 metro:
+"""),
+
+code(r"""import matplotlib.pyplot as plt
+
+plt.plot(alturas)
+plt.axhline(1.0, color="gray", linestyle="--")         # la raya de "se ha caído"
+plt.xlabel("índice de la foto (pasito)")
+plt.ylabel("altura del torso (m)")
+plt.title("El humanoide quieto, 2 segundos")
+plt.show()"""),
+
+md(r"""Así es la caída entera: primero un pequeño hundimiento (hasta 1,28 m, hacia la foto 50: el cuerpo se
+"asienta" doblando cintura y rodillas), un rato casi quieto, después el desplome, que cruza la raya de 1
+metro en el índice 199, y hacia la foto 370 el torso queda tumbado a unos 8 cm del suelo, ya sin moverse. Una lista + `plt.plot` = una trayectoria que se entiende de un vistazo.
+"""),
+
+md(r"""### Paso 4 · Dos trayectorias, un dibujo
+
+Ahora grabamos **otra** película: el robot con **motores al azar** (el mando `taller.al_azar` del NB08),
+en una lista distinta. Luego dibujamos las dos juntas: cada `plt.plot` añade una línea, y `label` le pone
+nombre para la leyenda:
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+control = taller.al_azar(0)
+
+alturas_azar = []
+for paso in range(667):
+    control(modelo, datos)
+    mujoco.mj_step(modelo, datos)
+    alturas_azar.append(datos.qpos[2])
+
+plt.plot(alturas, label="quieto")
+plt.plot(alturas_azar, label="motores al azar")
+plt.axhline(1.0, color="gray", linestyle="--")
+plt.xlabel("índice de la foto (pasito)")
+plt.ylabel("altura del torso (m)")
+plt.legend()
+plt.show()"""),
+
+md(r"""La línea del azar **cruza la raya antes** (en el NB08 lo mediste: paso 86) y no se queda tan quieta en
+el suelo: los motores siguen sacudiendo el cuerpo tumbado. Comparar políticas **dibujando sus
+trayectorias** es una de las cosas que más hacen los ingenieros de robótica.
+"""),
+
+md(r"""### Paso 5 · Una pelota de MuJoCo que rebota
+
+En el apartado 11 tu pelota rebotaba con un 0,8. ¿Y la de MuJoCo? Por defecto, su suelo es de
+"plastilina" (NB02). Pero se puede hacer **botón**: en el plano de abajo, la pelota lleva un ajuste
+nuevo, `solref="-10000 -14"`. Son las dos cifras del **choque** con el suelo: lo **duro** que es
+(10000, como un muelle muy rígido) y cuánto **frena** (14, como un amortiguador). Los entenderás de
+verdad en el NB39b (muelles y amortiguadores). Hoy, solo grabamos lo que pasa: 300 fotos con pasitos de
+0,01 s, como en el apartado 11:
+"""),
+
+code(r"""PELOTA_BOTONA = '''
+<mujoco>
+  <option gravity="0 0 -10" timestep="0.01"/>
+  <worldbody>
+    <light pos="0 0 5"/>
+    <geom type="plane" size="5 5 0.1" rgba=".8 .9 .8 1"/>
+    <body name="pelota" pos="0 0 2">
+      <freejoint/>
+      <geom type="sphere" size="0.05" rgba="1 .3 .1 1" solref="-10000 -14"/>
+    </body>
+  </worldbody>
+</mujoco>
+'''
+
+modelo, datos = taller.cargar(PELOTA_BOTONA)
+alturas_pelota = []
+for paso in range(300):
+    mujoco.mj_step(modelo, datos)
+    alturas_pelota.append(datos.qpos[2])
+
+print("Fotos:", len(alturas_pelota))
+print("Índices 61, 62, 63:", round(alturas_pelota[61], 3), round(alturas_pelota[62], 3), round(alturas_pelota[63], 3))
+print("Altura máxima tras el primer bote:", round(max(alturas_pelota[100:300]), 2), "m")"""),
+
+md(r"""El primer bote está en el **índice 62**, exactamente donde lo encontraste con tu pelota en el apartado
+11 (las dos caen igual, con la misma receta y el mismo paso). Las alturas son las del **centro** de la
+pelota, así que tocar el suelo sería 0,05 m (su radio); en el índice 62 marca −0,003: durante el choque
+la pelota **se hunde** unos 5 cm en el suelo, porque con pasitos de 0,01 s un choque tan duro se calcula
+de forma bastante gruesa. Tras el bote sube hasta **1,38 m**: con estos
+dos números de choque, la pelota de MuJoCo es algo más botona que la tuya (1,24 m). Para verlo, las
+dos películas en un dibujo (tu lista `alturas` del apartado 11 ya no existe, porque el Paso 1 reutilizó
+ese nombre; así que la recalculamos, ya escrita, con tu receta del apartado 11):
+"""),
+
+code(r"""altura = 2.0
+velocidad = 0.0
+alturas_tuyas = []
+for paso in range(300):
+    velocidad = velocidad + 10 * 0.01
+    altura = altura - velocidad * 0.01
+    if altura < 0:
+        altura = 0
+        velocidad = -velocidad * 0.8
+    alturas_tuyas.append(altura)
+
+plt.plot(alturas_tuyas, label="tu simulador (rebote 0,8)")
+plt.plot(alturas_pelota, label="MuJoCo (solref -10000 -14)")
+plt.xlabel("índice de la foto (pasito de 0,01 s)")
+plt.ylabel("altura (m)")
+plt.legend()
+plt.show()"""),
+
+md(r"""Las dos curvas caen **pegadas** hasta el primer bote; después, la de MuJoCo sube un poco más (1,38 m
+contra 1,24) y, sobre todo, en el **segundo** bote apenas pierde altura (vuelve a 1,32 m), mientras la
+tuya baja a 0,77. Tu rebote quita **siempre** un 20 % de velocidad; el choque de MuJoCo no funciona así:
+cuánto devuelve depende de cómo llegue la pelota y de lo grueso del paso de tiempo. La lista y el dibujo
+te lo han enseñado sin una sola cuenta. Lo que en tu simulador era **una línea** (`-velocidad * 0.8`), en
+MuJoCo son **dos números del choque**.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1.** Con la lista `alturas_azar` del Paso 4, busca el primer índice por debajo de 1 m (copia la
+celda del Paso 2 cambiando el nombre de la lista). ¿Cuadra con el paso 86 del NB08?
+
+**Reto 2.** ¿Cuál es la altura **media** del torso en esos 2 segundos, quieto? Usa `sum` y `len`
+(apartado 9).
+
+**Reto 3.** Graba además los **motores**: en MuJoCo, el nombre del motor número `i` es
+`modelo.actuator(i).name`. Construye una lista `nombres` con los 17 nombres usando un `for` con
+`range(modelo.nu)` y `append`, y muestra los 3 primeros con una porción.
+
+**Reto 4.** En el Paso 5, cambia el freno del choque a `solref="-10000 -20"`. ¿Sube más o menos tras el
+primer bote?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+for i in range(len(alturas_azar)):
+    if alturas_azar[i] < 1.0:
+        print(i)
+        break
+```
+
+Sale el índice **85**: el paso 86 del NB08 contado desde 0. Cuadra.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+print(round(sum(alturas) / len(alturas), 2))
+```
+
+Unos **0,54 m**: el robot pasa la mayor parte de esos 2 segundos en el suelo.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+nombres = []
+for i in range(modelo.nu):
+    nombres.append(modelo.actuator(i).name)
+print(len(nombres), nombres[0:3])
+```
+
+(Si el último modelo cargado es la pelota, que no tiene motores, sale una lista vacía: carga antes el
+humanoide con `modelo, datos = taller.cargar("humanoide")`.) Sale **17** y `['abdomen_y', 'abdomen_z',
+'abdomen_x']`: la lista de nombres que va emparejada con la acción (apartado 12).
+</details>
+
+<details>
+<summary>▶ Solución Reto 4</summary>
+
+**Menos**: con más freno, el choque se come más energía y la pelota sube solo hasta unos **1,15 m**. Con
+estos números se ajusta lo "botón" que es un suelo, igual que tu 0,8.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **Grabar una trayectoria**: lista vacía antes del bucle + `append(datos.qpos[2])` dentro.
+- Hacerle preguntas: `len`, `max`, `min`, índices, porciones; el paso 200 es el **índice 199**.
+- **Dibujarla** con `plt.plot(lista)`, y comparar dos políticas (quieto vs azar) en el mismo dibujo.
+- El rebote en MuJoCo se ajusta con los números del choque (`solref`); el primer bote cae en el mismo
+  índice (62) que el de tu simulador.
+
+En la práctica del NB10 meterás todo esto en una **función**, `caida(gravedad)`, que devuelve el tiempo
+que tarda el humanoide en caerse, y la usarás para comparar la Luna, Marte, la Tierra y Júpiter.
+"""),
+
+
+md(r"""## 16 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

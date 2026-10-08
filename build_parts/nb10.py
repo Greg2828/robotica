@@ -8,6 +8,9 @@ dentro de recompensa), variables locales (NameError real), devolver dos cosas
 (termostato) y el ENTORNO también (habitacion); simular(politica) con la
 política intercambiable; dos termostatos comparados con números (60 min:
 normal 23 min encendida, media 19.95; ahorrador 21 min, media 18.99).
+Práctica en MuJoCo (apartado 14): def caida(gravedad) → Luna 2,05 / Marte 1,13 / Tierra 0,60 /
+Júpiter 0,34 s; determinismo (==); caida_con(gravedad, politica) con políticas politica(modelo, datos):
+rodillas tiesas 0,83 s > muñeco de trapo 0,60 > azar 0,26; vídeo de rodillas tiesas.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -31,7 +34,8 @@ escribe sin funciones.
 Y hoy descubrirás algo precioso: la **política** del NB03 —esa caja que recibe una observación y devuelve una
 acción— **es, literalmente, una función**. Y el **entorno**, también. Al final de esta lección tendrás un
 agente y un entorno separados, cada uno en su función, y podrás **cambiar la política sin tocar el mundo**,
-que es justo lo que hacen los profesionales.
+que es justo lo que hacen los profesionales. En la práctica final harás lo mismo con MuJoCo: un experimento
+entero dentro de una función, y tu primera política para el humanoide.
 
 Una idea nueva por celda.
 """),
@@ -622,7 +626,228 @@ de la recompensa cambia qué política es "la mejor"**: es la lección del NB04,
 </details>
 """),
 
-md(r"""## 14 · Posdata
+md(r"""## 14 · 🛠 Práctica en MuJoCo: `caida(gravedad)`, un experimento en una función
+
+En el NB08 escribiste un episodio que mide cuándo se cae el humanoide. Funcionaba, pero para
+probarlo en la Luna había que **copiar toda la celda** y cambiar un número. Hoy lo metes en una
+**función**: una receta con nombre que recibe la gravedad y **devuelve** el tiempo que tarda en caer.
+Con ella, cada experimento será **una línea**, y podrás repetirlo cuantas veces quieras con el mismo
+resultado. Y al final, igual que en el apartado 11, le pasarás **la política** como argumento.
+"""),
+
+md(r"""### Paso 1 · Escribe la función
+
+Todo lo que hay dentro ya lo conoces: cargar el humanoide, poner la gravedad (NB06), el bucle con
+`mj_step` (NB07) y el `if` + `break` (NB08). Lo de hoy es el **envoltorio**: `def`, el parámetro
+`gravedad` y el `return`. Fíjate en que el `return` va **dentro del `if`**: en cuanto se cae, la
+función devuelve el reloj y termina (como un `break`, apartado 10). Y si no se cae en 5000 pasitos,
+llega al último `return`, fuera del bucle:
+"""),
+
+code(r"""import mujoco
+import taller
+
+def caida(gravedad):
+    modelo, datos = taller.cargar("humanoide")
+    modelo.opt.gravity = [0, 0, -gravedad]
+    for paso in range(5000):
+        mujoco.mj_step(modelo, datos)
+        if datos.qpos[2] < 1.0:
+            return datos.time
+    return datos.time"""),
+
+md(r"""No sale nada: **definir** no ejecuta (apartado 2). Ahora, **llamarla**:"""),
+
+code(r"""t = caida(9.81)
+print("En la Tierra se cae en", round(t, 3), "segundos")"""),
+
+md(r"""**0,6 segundos**, lo mismo que mediste en el NB08. Pero ahora el experimento entero cabe en una
+palabra: `caida(9.81)`.
+
+Y como la función **devuelve** (no imprime), puedes usar el resultado en cuentas (apartado 5). Por
+ejemplo, ¿cuántos pasitos de 0,003 s son?
+"""),
+
+code(r"""print("Pasitos:", round(caida(9.81) / 0.003))"""),
+
+md(r"""**200**: el paso 200 del NB08. Todo cuadra.
+"""),
+
+md(r"""### Paso 2 · Un experimento por planeta
+
+Con la función, comparar mundos es un bucle (NB07) sobre dos listas en paralelo (NB09). Mira lo corta
+que queda la celda, aunque cada llamada simula un episodio entero:
+"""),
+
+code(r"""planetas = ["Luna", "Marte", "Tierra", "Júpiter"]
+gravedades = [1.62, 3.71, 9.81, 24.79]
+
+for i in range(len(planetas)):
+    print(planetas[i], "(g =", gravedades[i], ") -> se cae en", round(caida(gravedades[i]), 3), "s")"""),
+
+md(r"""| Mundo | Gravedad | Tiempo hasta caer |
+|---|---|---|
+| Luna | 1,62 | 2,05 s |
+| Marte | 3,71 | 1,13 s |
+| Tierra | 9,81 | 0,60 s |
+| Júpiter | 24,79 | 0,34 s |
+
+Cuanta más gravedad, antes se cae. Y fíjate en un detalle bonito: la gravedad de la Luna es unas
+**6 veces** más pequeña que la de la Tierra, pero el robot no tarda 6 veces más, sino unas **3,4**.
+Si fuera una piedra, la fórmula de la caída (NB04b), t = √(2·h/g), diría √6 ≈ **2,5** veces: con la raíz
+cuadrada, 6 veces menos gravedad no da 6 veces más tiempo. Al humanoide le sale algo más (3,4) porque no cae
+como una piedra (NB08): primero se dobla despacio y luego se desploma, y con poca gravedad esa fase lenta
+del principio se alarga mucho. Las funciones te dejan hacer esta clase de preguntas en una línea.
+"""),
+
+md(r"""### Paso 3 · Reproducible: misma pregunta, misma respuesta
+
+Una propiedad importantísima de un simulador: si lo ejecutas dos veces **con lo mismo**, da **lo
+mismo**, hasta el último decimal. Compruébalo con `==` (NB08):
+"""),
+
+code(r"""primera = caida(9.81)
+segunda = caida(9.81)
+print(primera, segunda, "¿Iguales?", primera == segunda)"""),
+
+md(r"""`True`. A esto se le llama ser **determinista**, y es una de las grandes ventajas del mundo de
+mentira sobre el real (NB02): un robot de verdad nunca se cae dos veces exactamente igual. Gracias a eso,
+un experimento metido en una función es un **experimento reproducible**: cualquiera que llame a
+`caida(9.81)` obtiene 0,6 s.
+"""),
+
+md(r"""### Paso 4 · La política, como argumento
+
+Ahora, la gran idea del apartado 11: **una función puede recibir otra función**. Vamos a hacer una
+segunda versión, `caida_con`, que además de la gravedad recibe **la política**: una función que, antes de
+cada pasito, escribe las órdenes de los motores. Las políticas para MuJoCo reciben `modelo` y `datos`, y
+escriben en `datos.ctrl` (la lista de las 17 órdenes, NB09). Solo cambia una línea respecto a `caida`:
+"""),
+
+code(r"""def caida_con(gravedad, politica):
+    modelo, datos = taller.cargar("humanoide")
+    modelo.opt.gravity = [0, 0, -gravedad]
+    for paso in range(5000):
+        politica(modelo, datos)                  # NUEVO: la política decide
+        mujoco.mj_step(modelo, datos)
+        if datos.qpos[2] < 1.0:
+            return datos.time
+    return datos.time"""),
+
+md(r"""Y ahora, **tu primera política para MuJoCo**. Una muy sencilla: "estira las rodillas". En la lista de
+motores del humanoide (NB01), las rodillas son los motores número **6** (derecha) y **10** (izquierda).
+La política pone esas dos órdenes a 0,5 (en este robot, un número positivo empuja la rodilla hacia
+"estirada") y no devuelve nada: su trabajo es **escribir** en `datos.ctrl`:
+"""),
+
+code(r"""def rodillas_tiesas(modelo, datos):
+    datos.ctrl[6] = 0.5        # rodilla derecha
+    datos.ctrl[10] = 0.5       # rodilla izquierda"""),
+
+md(r"""Y para comparar, el robot "muñeco de trapo" (no hace nada; `datos.ctrl` empieza a 0 y así se queda) y
+el robot al azar del NB08 (`taller.al_azar(0)` **devuelve una función**, así que se puede pasar igual).
+Fíjate: los nombres de las funciones van **sin paréntesis** (apartado 11), porque no las llamamos
+nosotros, se las damos a `caida_con` para que las llame ella:
+"""),
+
+code(r"""def muneco_de_trapo(modelo, datos):
+    datos.ctrl[0] = 0          # una orden de 0 a un motor: no hacer nada
+
+print("Muñeco de trapo:", round(caida_con(9.81, muneco_de_trapo), 3), "s")
+print("Al azar:        ", round(caida_con(9.81, taller.al_azar(0)), 3), "s")
+print("Rodillas tiesas:", round(caida_con(9.81, rodillas_tiesas), 3), "s")"""),
+
+md(r"""| Política | Tiempo hasta caer |
+|---|---|
+| Muñeco de trapo | 0,60 s |
+| Al azar | 0,26 s |
+| **Rodillas tiesas** | **0,83 s** |
+
+¡Tu política de dos líneas **gana**! Con las rodillas estiradas, el robot no se dobla por las piernas
+y aguanta casi un 40 % más que el muñeco de trapo. Sigue cayéndose (en el vídeo verás que las piernas se quedan
+rectas, pero el cuerpo se **dobla hacia delante por la cintura** hasta tocar el suelo: las rodillas tiesas
+no saben **equilibrar**), pero ya has hecho lo que hace el entrenamiento: **probar políticas
+distintas en el mismo mundo**, sin tocar el mundo, y quedarte con la que mejor puntúa. Es exactamente el
+`simular_una_hora(politica)` del termostato, con un humanoide.
+
+Y mira el vídeo de tu política (ya escrito):
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+taller.video(modelo, datos, segundos=1.5, control=rodillas_tiesas, nombre="nb10_rodillas_tiesas");"""),
+
+md(r"""### Tus retos
+
+**Reto 1.** Escribe `rodillas_dobladas`, igual que `rodillas_tiesas` pero con **−0,5**. Antes de probarla,
+predice: ¿aguantará más o menos que el muñeco de trapo?
+
+**Reto 2.** Prueba `caida_con` en la **Luna** con las rodillas tiesas. ¿Cuánto aguanta?
+
+**Reto 3.** Escribe una función `media_azar(gravedad)` que pruebe el robot al azar con las semillas 0 a 4
+(`taller.al_azar(semilla)`), guarde los 5 tiempos en una lista y **devuelva** la media.
+
+**Reto 4 (piensa).** ¿Por qué `muneco_de_trapo` necesita al menos una línea dentro, aunque no haga nada útil?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+def rodillas_dobladas(modelo, datos):
+    datos.ctrl[6] = -0.5
+    datos.ctrl[10] = -0.5
+
+print(round(caida_con(9.81, rodillas_dobladas), 3))
+```
+
+**Menos**: 0,25 s. Doblar las rodillas a propósito es **agacharse** a toda velocidad: el torso baja de 1
+metro casi tan rápido como con los motores al azar.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+`print(round(caida_con(1.62, rodillas_tiesas), 3))` → **3,6 s**, frente a los 2,05 s del muñeco de trapo
+en la Luna. Con poca gravedad, la ventaja de las rodillas tiesas es aún mayor (un 75 % más de tiempo).
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+def media_azar(gravedad):
+    tiempos = []
+    for semilla in range(5):
+        tiempos.append(caida_con(gravedad, taller.al_azar(semilla)))
+    return sum(tiempos) / len(tiempos)
+
+print(round(media_azar(9.81), 3))
+```
+
+Sale unos **0,35 s** (las cinco semillas dan 0,26, 0,35, 0,46, 0,41 y 0,29). Con una sola semilla habrías
+dicho "0,26"; la media de varias es mucho más fiable. Es la costumbre que usarás en el NB11.
+</details>
+
+<details>
+<summary>▶ Solución Reto 4</summary>
+
+Porque en Python una función **no puede estar vacía**: el cuerpo, con su sangría, necesita al menos una
+instrucción. Escribir un 0 en un motor que ya estaba a 0 no cambia nada, así que es una forma honrada de
+"no hacer nada". (Python tiene una palabra especial para eso, `pass`, que verás más adelante.)
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Un **experimento** entero (cargar, ajustar el mundo, simular, medir) cabe en una **función** que
+  devuelve un número: `caida(9.81)` → 0,6 s.
+- Con un bucle sobre listas, comparas mundos en una celda: Luna 2,05 s, Marte 1,13, Tierra 0,60, Júpiter 0,34.
+- MuJoCo es **determinista**: la misma llamada da el mismo resultado, hasta el último decimal.
+- Una **política para MuJoCo** es una función `politica(modelo, datos)` que escribe en `datos.ctrl`, y se
+  le puede pasar a otra función. Rodillas tiesas (0,83 s) > muñeco de trapo (0,60) > azar (0,26).
+
+En la práctica del NB11 construirás **tu propio robot en MuJoCo**, el palo de escoba, escribiendo su plano
+tú mismo, y probarás en él todas las políticas del proyecto, incluida la que encuentra el ordenador solo.
+"""),
+md(r"""## 15 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

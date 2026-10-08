@@ -5,6 +5,9 @@ Microdosis: comparaciones (< > <= >= == !=), True/False (bool), la trampa = vs =
 caído), and/or y la condición "sano" del Humanoid-v5 (1 < altura < 2) dando el +5,
 if dentro de un bucle: el termostato (1.ª política a mano), la pelota que REBOTA
 (choque con el suelo), y break: el fin de episodio (terminado vs truncado).
+Práctica en MuJoCo (apartado 15): condición "sano" con la altura real del torso; episodio con
+if+break: quieto se cae (torso<1 m) en el paso 200 = 0,6 s, al azar (semilla 0) paso 86 = 0,26 s;
+terminado/truncado con una caja True/False (100 pasitos → truncado).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -32,6 +35,7 @@ Al final de hoy:
 - Programarás el **fin de un episodio** exactamente como lo hace el simulador del humanoide: "si el
   torso baja de 1 metro, se acabó".
 - Y verás que el premio de **+5 por seguir de pie** del NB04 es, por dentro, un simple `if`.
+- En la práctica final, tu bucle de MuJoCo **detectará la caída del humanoide** y parará solo.
 
 Una idea nueva por celda, como siempre.
 """),
@@ -628,7 +632,190 @@ terminaría por **tiempo**, nunca por caída. Por eso el `break` es imprescindib
 </details>
 """),
 
-md(r"""## 15 · Posdata
+md(r"""## 15 · 🛠 Práctica en MuJoCo: detecta la caída y acaba el episodio
+
+En el apartado 12 programaste el final de un episodio con una "piedra" que caía. Hoy vas a hacer lo
+mismo con **el humanoide de verdad**: tu bucle de simulación del NB07, más un `if` que vigila la
+altura del torso y un `break` que corta el episodio en cuanto el robot se cae. Es, literalmente, la
+regla de fin de episodio del simulador profesional del humanoide.
+"""),
+
+md(r"""### Paso 1 · ¿Está sano? Un `if` sobre MuJoCo
+
+Cargamos el humanoide (ya escrito) y guardamos la altura del torso en una caja. Recuerda del NB05
+que `datos.qpos[2]` es la altura del torso, en metros:
+"""),
+
+code(r"""import mujoco
+import taller
+
+modelo, datos = taller.cargar("humanoide")
+altura_torso = datos.qpos[2]
+print("Altura del torso:", altura_torso)"""),
+
+md(r"""Y ahora, **tu** `if`: la condición "sano" del apartado 9 (torso entre 1 y 2 metros), que da el +5
+de la recompensa. Es la misma celda de antes, pero la altura ya no te la inventas tú: la dice MuJoCo.
+"""),
+
+code(r"""if altura_torso > 1.0 and altura_torso < 2.0:
+    premio_de_pie = 5
+else:
+    premio_de_pie = 0
+
+print("Premio por seguir de pie:", premio_de_pie)"""),
+
+md(r"""**5**: al empezar, el humanoide está a 1,4 m, de pie. Veamos cuánto le dura.
+"""),
+
+md(r"""### Paso 2 · Tu episodio, con `break`
+
+El bucle del NB07 (`mj_step` dentro de un `for`), más lo de hoy: después de cada pasito, leer la
+altura y **preguntar** si ha bajado de 1 metro. Si es así, avisar y `break`. Damos como mucho **5000
+pasitos** (15 segundos, el máximo de un episodio del humanoide, NB05), y el `print` del final está
+**fuera** del bucle (sin sangría):
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+
+for paso in range(1, 5001):
+    mujoco.mj_step(modelo, datos)
+    altura_torso = datos.qpos[2]
+    if altura_torso < 1.0:
+        print("Se ha caído en el paso", paso, "-> fin del episodio")
+        break
+
+print("Reloj al acabar:", round(datos.time, 3), "s | altura del torso:", round(altura_torso, 2), "m")"""),
+
+md(r"""El bucle **podía** dar 5000 vueltas, pero en la **200** el torso bajó de 1 metro y el `break` lo
+cortó: **0,6 segundos** después de empezar. El robot quieto aguanta el doble que la "piedra" del
+apartado 12 (0,285 s): no cae como un bloque, sino que se va doblando por las rodillas y la
+cintura, y eso frena un poco la caída del torso.
+
+Y la simulación se ha **parado de verdad** en ese momento: el reloj de MuJoCo marca 0,6 s, no 15.
+En un entrenamiento con millones de episodios, no seguir simulando a un robot que ya está en el
+suelo ahorra muchísimo tiempo.
+
+Así se ve ese episodio (el vídeo, ya escrito, dura justo lo que diga el reloj):
+"""),
+
+code(r"""duracion = datos.time
+modelo, datos = taller.cargar("humanoide")
+taller.video(modelo, datos, segundos=duracion, nombre="nb08_episodio");"""),
+
+md(r"""### Paso 3 · ¿Terminado o truncado?
+
+Un episodio puede acabar de dos formas (apartado 12): **terminado** (se ha caído) o **truncado** (se
+acabó el tiempo). Para saber cuál de las dos ha pasado, guardamos la respuesta en una caja con
+`True`/`False` (apartado 2). Empieza en `False` ("aún no se ha caído") y el `if` la cambia a `True`.
+Para provocar un truncado, esta vez solo damos **100 pasitos** (0,3 segundos):
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+terminado = False
+
+for paso in range(1, 101):
+    mujoco.mj_step(modelo, datos)
+    if datos.qpos[2] < 1.0:
+        terminado = True
+        break
+
+if terminado:
+    print("TERMINADO: se cayó en el paso", paso)
+else:
+    print("TRUNCADO: se acabó el tiempo a los", round(datos.time, 2), "s, con el torso a", round(datos.qpos[2], 2), "m")"""),
+
+md(r"""**Truncado**: a los 0,3 s el torso aún está por encima de 1 metro (se está cayendo, pero aún no
+ha llegado). Fíjate: **el `if` de después del bucle** decide qué contar según lo que pasó **dentro**.
+Esa caja `terminado` es exactamente la que devuelve el simulador profesional en cada paso.
+"""),
+
+md(r"""### Paso 4 · Con motores al azar
+
+Ahora, el robot **moviendo sus motores al azar**, como en el NB00. La línea `control = taller.al_azar(0)`
+(ya escrita) prepara un "mando" que, cada vez que lo usas, escribe órdenes al azar en los 17 motores.
+Lo usamos **dentro** del bucle, antes de cada pasito: es la **política** (NB03) que decide en cada paso.
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+control = taller.al_azar(0)
+
+for paso in range(1, 5001):
+    control(modelo, datos)                 # la política: órdenes al azar
+    mujoco.mj_step(modelo, datos)          # el mundo: un pasito
+    if datos.qpos[2] < 1.0:                # ¿se ha caído?
+        print("Con motores al azar, se ha caído en el paso", paso, "a los", round(datos.time, 3), "s")
+        break"""),
+
+md(r"""**Paso 86, a los 0,26 segundos**: ¡se cae en **menos de la mitad** de tiempo que quieto (0,6 s)!
+Es lo que ya sabías del NB04: moverse sin saber es **peor** que no hacer nada. Y ahora lo has
+medido tú, con un `if` y un `break`.
+
+Mira la forma de esa celda: **política → mundo → ¿se acabó?**, repetido en cada vuelta. Es el bucle
+del NB03, en código de MuJoCo de verdad.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1.** En el Paso 2, ¿en qué paso **toca el suelo** el torso? Cambia el umbral de 1,0 a **0,5**.
+
+**Reto 2.** En el Paso 4, cambia la semilla del azar: `taller.al_azar(1)`, `taller.al_azar(2)`...
+¿Aguanta siempre lo mismo?
+
+**Reto 3 (`elif`).** Después de cargar el humanoide y dar **170** pasitos (sin `if` dentro del bucle),
+clasifica su estado con un `if`/`elif`/`else`: "de pie" si el torso está por encima de 1,2 m, "en
+peligro" si está entre 1,0 y 1,2, y "caído" si está por debajo de 1,0.
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+Con `if altura_torso < 0.5:` el bucle para en el paso **274**, a los **0,82 s**: el torso tarda unas
+dos décimas más en ir de 1 metro a medio metro.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+No: cada semilla es un "baile" al azar distinto. Con la semilla 1 se cae en el paso **116** (0,35 s).
+Por eso, para comparar políticas con justicia, hay que probar **varias** semillas y hacer la media
+(lo harás en el NB11).
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+modelo, datos = taller.cargar("humanoide")
+for paso in range(170):
+    mujoco.mj_step(modelo, datos)
+
+altura_torso = datos.qpos[2]
+if altura_torso > 1.2:
+    print("de pie", altura_torso)
+elif altura_torso >= 1.0:
+    print("en peligro", altura_torso)
+else:
+    print("caído", altura_torso)
+```
+
+A los 170 pasitos (0,51 s) sale **"en peligro"**, con el torso a unos **1,14 m**: va camino del
+suelo, pero aún no ha bajado de 1 metro. Prueba con 50 pasitos (de pie) y con 250 (caído).
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Un **`if` dentro del bucle de simulación** vigila el estado del robot en cada pasito.
+- **`break`** corta la simulación cuando el episodio **termina** (caída: torso < 1 m); si se acaban
+  las vueltas del `for`, el episodio está **truncado**.
+- El humanoide quieto se cae (torso < 1 m) en el **paso 200 = 0,6 s**; con motores al azar, en el
+  **paso 86 = 0,26 s**.
+- El esquema **política → `mj_step` → ¿terminado?** es el bucle de un episodio de verdad.
+
+En la práctica del NB09 **grabarás** en una lista la altura del torso en cada pasito y la dibujarás:
+verás la caída entera como una curva.
+"""),
+
+
+md(r"""## 16 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

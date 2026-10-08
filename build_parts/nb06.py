@@ -29,7 +29,8 @@ olvida todo al instante y pasa a tener **memoria**.
 Al final de hoy sabrás crear cajas, mirar lo que hay dentro, cambiarlo, y hacer todas las
 operaciones de números que necesitaremos durante mucho tiempo. Y lo usaremos para escribir dos
 programas de robot de verdad: la **recompensa** de un paso del humanoide, y los primeros **pasitos de
-la pelota** del simulador del NB02.
+la pelota** del simulador del NB02. En la práctica final meterás tus cajas **dentro de MuJoCo** y
+cambiarás el mundo cambiando lo que hay en ellas.
 
 Como siempre: una idea nueva por celda, y antes de cada celda te digo qué va a pasar.
 """),
@@ -726,12 +727,270 @@ vez de `1.0`: es el ruido de los decimales del apartado 12. Lo veremos en direct
 </details>
 """),
 
-md(r"""## 19 · Posdata
+md(r"""## 19 · 🛠 Práctica en MuJoCo: las reglas del mundo, en cajas
+
+En el apartado 16 programaste **tu propio simulador** de la pelota con cajas: `gravedad`,
+`paso_tiempo`, `altura`, `velocidad`. Ahora vas a hacer lo mismo **con MuJoCo**: guardar las
+reglas del mundo en **tus** variables, metérselas al simulador, y comparar sus números con los
+de tu simulador de cajas. Y después, cambiar el mundo cambiando lo que hay dentro de las cajas.
+
+Como en el NB05, lo que aún no sabes escribir te lo doy hecho y explicado en una frase. Lo tuyo
+son las **cajas**.
+"""),
+
+md(r"""### Paso 1 · El plano de la pelota (ya escrito)
+
+Es el mismo mundo del NB02: un suelo y una pelota de 5 cm de radio a 2 metros de altura. Fíjate
+en la primera línea del código: `PELOTA = '''...'''`. ¡Es una **variable**! Una caja (con nombre en
+MAYÚSCULAS) que guarda un texto largo: el plano entero. Las tres comillas `'''` dejan que el
+texto ocupe varias líneas.
+"""),
+
+code(r"""import mujoco
+import taller
+
+PELOTA = '''
+<mujoco>
+  <worldbody>
+    <light pos="0 0 5"/>
+    <geom type="plane" size="5 5 0.1" rgba=".8 .9 .8 1"/>
+    <body name="pelota" pos="0 0 2">
+      <freejoint/>
+      <geom type="sphere" size="0.05" rgba="1 .3 .1 1"/>
+    </body>
+  </worldbody>
+</mujoco>
+'''"""),
+
+md(r"""### Paso 2 · Tus reglas, en cajas
+
+Ahora escribe las reglas de **tu** simulador del apartado 16. Una diferencia: MuJoCo mide hacia
+**arriba** (NB02), así que su gravedad es **negativa**, −10, "hacia abajo". Es la decisión del
+signo de la que te avisé en el apartado 16: MuJoCo eligió el contrario que nosotros.
+"""),
+
+code(r"""gravedad = -10
+paso_tiempo = 0.1"""),
+
+md(r"""Y ahora, a meter tus cajas en el simulador. Las dos líneas del medio (ya escritas) son **el
+mismo `=` de siempre**: "guarda lo de la derecha en la caja de la izquierda". La única novedad es que
+las cajas de la izquierda viven **dentro** del modelo, por eso tienen puntos en el nombre:
+`modelo.opt.timestep` es "la caja `timestep` de las opciones del modelo". (La gravedad son tres
+números, adelante-lado-arriba, y se escribe entre corchetes; lo de los corchetes es el NB09.)
+"""),
+
+code(r"""modelo, datos = taller.cargar(PELOTA)
+modelo.opt.timestep = paso_tiempo
+modelo.opt.gravity = [0, 0, gravedad]
+
+print("Paso:", modelo.opt.timestep, "| gravedad:", modelo.opt.gravity)"""),
+
+md(r"""MuJoCo ya tiene **tus** reglas. Fíjate en el orden (apartado 8): primero creaste las cajas y
+**después** las usaste. Si ejecutas la celda de abajo sin haber ejecutado la de `gravedad = -10`,
+verás tu viejo amigo el `NameError`.
+"""),
+
+md(r"""### Paso 3 · Un pasito de MuJoCo, guardado en tus cajas
+
+`mujoco.mj_step(modelo, datos)` (NB02) da **un pasito** de simulación. Después del pasito, leemos
+lo que ha calculado MuJoCo y lo guardamos en **tus** cajas `altura` y `velocidad`: `datos.qpos[2]`
+es la altura de la pelota y `datos.qvel[2]` su velocidad hacia arriba (los corchetes, otra vez, en el
+NB09):
+"""),
+
+code(r"""mujoco.mj_step(modelo, datos)
+altura = datos.qpos[2]
+velocidad = datos.qvel[2]
+print("Tras un pasito:", velocidad, altura)"""),
+
+md(r"""**−1 y 1,9.** Compáralo con tu simulador del apartado 16: **1,0 y 1,9**. ¡La misma altura! La
+velocidad sale con el signo cambiado porque MuJoCo cuenta "hacia arriba" como positivo, y la pelota
+va hacia **abajo**. Mismo mundo, otro convenio de signos.
+
+Como en el apartado 16, para dar otro pasito... copiamos la celda:
+"""),
+
+code(r"""mujoco.mj_step(modelo, datos)
+altura = datos.qpos[2]
+velocidad = datos.qvel[2]
+print("Tras otro pasito:", velocidad, altura)"""),
+
+code(r"""mujoco.mj_step(modelo, datos)
+altura = datos.qpos[2]
+velocidad = datos.qvel[2]
+print("Tras otro pasito:", velocidad, altura)"""),
+
+md(r"""**1,7 y luego 1,4**: exactamente las filas 2 y 3 de tu simulador de cajas y de la tabla del
+NB02. El simulador profesional y el tuyo de cuatro cajas hacen **la misma cuenta**. Y copiar celdas
+sigue siendo un rollo (para eso viene el NB07).
+"""),
+
+md(r"""### Paso 4 · Cambiar el mundo cambiando una caja
+
+Ahora lo interesante de tener las reglas en cajas: para cambiar el mundo, **solo cambias lo que hay
+dentro de una caja**. Vamos a preparar un experimento: soltar la pelota y mirar a qué altura está
+al cabo de **1 segundo**. Usaremos pasitos más finos (0,002 s) para que no atraviese el suelo (la
+rareza del NB02). Tres cajas:
+"""),
+
+code(r"""gravedad = -9.81          # la Tierra
+paso_tiempo = 0.002
+segundos = 1"""),
+
+md(r"""Y el experimento (las líneas de MuJoCo ya escritas; mira cómo **usan tus cajas**). El vídeo
+simula los segundos que diga la caja `segundos` y luego preguntamos la altura:
+"""),
+
+code(r"""modelo, datos = taller.cargar(PELOTA)
+modelo.opt.timestep = paso_tiempo
+modelo.opt.gravity = [0, 0, gravedad]
+
+taller.video(modelo, datos, segundos=segundos, nombre="nb06_tierra", seguir=False, distancia=4)
+print("Al cabo de", segundos, "s, la pelota está a", round(datos.qpos[2], 2), "m")"""),
+
+md(r"""**0,05 m**: está en el suelo (0,05 es su radio: el centro de la pelota queda a 5 cm del suelo
+cuando la pelota lo toca). En la Tierra, en un segundo, una pelota soltada desde 2 metros ya ha
+llegado abajo.
+
+Ahora, **cambia una sola caja**: la gravedad de la **Luna** (1,62). Ejecuta esta celda y luego
+**vuelve a ejecutar la celda del experimento de arriba**, sin tocarla:
+"""),
+
+code(r"""gravedad = -1.62          # la Luna
+print("Nueva gravedad:", gravedad)"""),
+
+md(r"""(Si estás leyendo sin ejecutar: la celda del experimento, ejecutada con esta caja, dice que la
+pelota está a **1,19 m** al cabo de 1 segundo. En la Luna aún le queda más de un metro de caída.)
+
+Aquí lo repetimos, para que lo veas:
+"""),
+
+code(r"""modelo, datos = taller.cargar(PELOTA)
+modelo.opt.timestep = paso_tiempo
+modelo.opt.gravity = [0, 0, gravedad]
+
+taller.video(modelo, datos, segundos=segundos, nombre="nb06_luna", seguir=False, distancia=4)
+print("Al cabo de", segundos, "s, la pelota está a", round(datos.qpos[2], 2), "m")"""),
+
+md(r"""**1,19 m.** Mismo código, **otra caja**, otro mundo. Esto es lo que hace un ingeniero cuando
+"aleatoriza el mundo" (NB02): cambia los números de las cajas y vuelve a simular.
+
+¿Te salen las cuentas? En el NB04b aprendiste la fórmula de la caída: lo que baja es
+½ · g · t². Escríbela con tus cajas (el `-gravedad` es para quitarle el signo de MuJoCo):
+"""),
+
+code(r"""bajada = 0.5 * -gravedad * segundos ** 2
+print("La fórmula dice:", 2 - bajada, "m")"""),
+
+md(r"""**1,19 m** según la fórmula, igual que MuJoCo (si te sale algo como `1.1899999999999999`, es el
+ruido de los decimales del apartado 12; con `round` desaparece).
+"""),
+
+md(r"""### Paso 5 · La masa también es una caja
+
+El modelo guarda la **masa** de cada pieza en `modelo.body_mass`. La pelota es la pieza número 1
+(la 0 es el mundo, NB01). Guardémosla en una caja:
+"""),
+
+code(r"""modelo, datos = taller.cargar(PELOTA)
+masa = modelo.body_mass[1]
+print("La pelota pesa", round(masa, 3), "kg")"""),
+
+md(r"""**0,524 kg**. MuJoCo la ha calculado solo a partir del tamaño (una esfera de 5 cm de radio
+hecha de un material como el agua, que es lo que supone si no le dices nada).
+
+Una pregunta clásica: **¿cae antes una pelota más pesada?** Vamos a hacerla **100 veces más
+pesada** con la idea del apartado 14 (una caja que se actualiza con su propio valor) y medir dónde
+está al cabo de **medio segundo**, en la Tierra. La línea `mujoco.mj_setConst` (ya escrita) le dice
+a MuJoCo "he cambiado un número del plano: vuelve a hacer tus cuentas internas"; sin ella, MuJoCo
+usaría la masa vieja en parte de sus cálculos.
+"""),
+
+code(r"""masa = masa * 100
+modelo.body_mass[1] = masa
+mujoco.mj_setConst(modelo, datos)
+modelo.opt.timestep = 0.002
+modelo.opt.gravity = [0, 0, -9.81]
+
+taller.video(modelo, datos, segundos=0.5, nombre="nb06_pesada", seguir=False, distancia=4)
+print("Masa:", round(masa, 1), "kg | altura tras 0,5 s:", round(datos.qpos[2], 3), "m")"""),
+
+md(r"""**52,4 kg** y, al cabo de medio segundo, a **0,769 m**... ¿Y con la masa normal? Haz la prueba
+(reto 2): sale **lo mismo**. **La masa no cambia cómo cae.** Es lo que descubrió Galileo hace 400
+años: sin aire que frene, una pelota de plomo y una de corcho caen a la vez. La gravedad tira más
+fuerte de la pesada, pero a la pesada también le cuesta más ponerse en marcha (la inercia del NB02),
+y las dos cosas se compensan exactamente. Lo verás con números en el NB37.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1.** Prueba la gravedad de **Júpiter** (−24,79) en el experimento del Paso 4, cambiando solo
+la caja `gravedad`. ¿Dónde está la pelota al cabo de 1 segundo? ¿Y al cabo de **0,3** segundos
+(cambia también la caja `segundos`)?
+
+**Reto 2.** Repite el Paso 5 **sin** multiplicar la masa por 100 (borra la línea `masa = masa * 100`
+o ponla como `masa = masa * 1`). Comprueba que la altura a los 0,5 s sale igual.
+
+**Reto 3 (predice).** Si ejecutas **dos veces seguidas** la celda que tiene `masa = masa * 100`, ¿qué
+masa tendrá la pelota? Pista: apartado 14.
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+gravedad = -24.79
+segundos = 1
+```
+
+Con 1 segundo, la pelota ya está en el **suelo** (0,05 m): en Júpiter cae todavía antes. Con
+`segundos = 0.3`, está a **0,88 m**: en solo 0,3 s ha bajado más de un metro (la fórmula da
+2 − ½ · 24,79 · 0,3² = 0,88). Cuidado: la caja `segundos` también la usa la cuenta de la fórmula; si
+ejecutas otra vez esa celda, calculará con el número nuevo.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+Con la masa normal (0,524 kg), la altura a los 0,5 s es **0,769 m**, igual que con 52,4 kg. (La fórmula
+da una bajada de ½ · 9,81 · 0,5² = 1,23 m, es decir, una altura de 2 − 1,23 = 0,77 m; MuJoCo se queda
+medio centímetro por debajo por el tamaño de sus pasitos, como viste en el NB02.) La masa no aparece en la fórmula de la
+caída: por eso no cambia nada.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+**5236 kg**, 10 000 veces la original. La primera vez, `masa = masa * 100` convierte 0,524 en 52,4 y
+lo guarda en la caja. La segunda vez coge **lo que hay ahora en la caja** (52,4) y lo multiplica otra
+vez por 100. Es la trampa de la memoria del cuaderno (apartado 8): el resultado depende de **cuántas
+veces y en qué orden** ejecutes las celdas. Si te pasa, vuelve a ejecutar la celda que carga la
+pelota y empieza de cero. (Y la pelota de 5 toneladas... cae exactamente igual.)
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Las reglas del mundo son **cajas dentro del modelo**: `modelo.opt.timestep`, `modelo.opt.gravity`,
+  y se cambian con el `=` de siempre.
+- Guardar tus parámetros en **variables** y metérselos al modelo te permite cambiar el mundo cambiando
+  una caja y repitiendo el mismo código.
+- `datos.qpos[2]` y `datos.qvel[2]` son la altura y la velocidad de la pelota; MuJoCo cuenta **hacia
+  arriba** como positivo.
+- MuJoCo hace **la misma cuenta** que tu simulador de cajas: 1,9 → 1,7 → 1,4.
+- La masa de cada pieza está en **`modelo.body_mass`**; si la cambias, avisa a MuJoCo con
+  `mujoco.mj_setConst`. Y la masa no cambia cómo cae algo (Galileo).
+
+En la práctica del NB07 dejarás de copiar celdas: escribirás **tu propio bucle de simulación** con
+`mj_step` y comprobarás con MuJoCo la tabla de pasos grandes y pequeños.
+"""),
+
+
+md(r"""## 20 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
 Hoy el ordenador ha ganado **memoria**: ya puede guardar la velocidad, la altura, los pesos de la
-recompensa... y tú has programado tu primer simulador de física, aunque a base de copiar y pegar. En el
+recompensa... y tú has programado tu primer simulador de física, aunque a base de copiar y pegar (y has
+visto que MuJoCo, por dentro, hace la misma cuenta que tus cuatro cajas). En el
 **NB07** aprenderás a decirle al ordenador "**repite esto 1.000 veces**" en una sola línea: los
 **bucles**. Con ellos, la pelota caerá durante todos los pasitos que queramos, comprobaremos con el
 ordenador lo que el NB02 te contó sobre los pasos grandes y pequeños, y sumaremos los puntos de un
