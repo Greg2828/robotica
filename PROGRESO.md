@@ -1,5 +1,15 @@
 # Progreso
 
+## ▶ PARA RETOMAR (2026-10-08) · PRÁCTICAS EN MUJOCO EN CADA NOTEBOOK
+- Petición de Gregori (2026-10-07): **cada notebook, desde el NB00, cierra con «🛠 Práctica en MuJoCo»** a su
+  nivel. Plan, itinerario, convenciones y estado: **PLAN_PRACTICAS_MUJOCO.md**. Herramienta: notebooks/taller.py;
+  banco de pruebas común: notebooks/robots/palo_escoba.xml.
+- Hechos, verificados y subidos: NB00, NB01, NB02. El resto (NB03→NB53) lo están haciendo agentes por partes;
+  cuando acaben, revisar `git status`, verificar (nbconvert EXIT 0) y commitear por partes.
+- Si se corta: `git diff --stat` dice qué builds tienen ya la práctica (grep "Práctica en MuJoCo" build_parts/).
+  Dile a Claude: **«sigamos con las prácticas de MuJoCo»**.
+- NB54 (entorno 3D profesional) queda en pausa hasta terminar esto.
+
 ## ▶ PARA RETOMAR (actualizado 2026-10-06)
 - **Hechos, verificados (EXIT 0) y subidos: NB00–NB50 + puente P1–P7 + 10 lecciones de relleno** (todo el
   Bloque A de simulación a fondo incluido).
