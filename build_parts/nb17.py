@@ -10,6 +10,10 @@ camino de la subida: (12, 2) 416 → (22,6; 6,2) ~463 en 30 pasos y 120
 evaluaciones. Óptimo local con dos colinas (desde 0 → colina pequeña 3; desde
 4 → grande 5). Coste: 2 evaluaciones por ruedecilla y paso → con 5.933, muy
 caro: hace falta calcular todas las pendientes de golpe (retropropagación).
+Práctica en MuJoCo: el brazo robot del NB16 entrena sus dos ruedecillas
+(fuerza, freno) con el gradiente por diferencias finitas: (0,5; 3) 44 puntos →
+(2,8; 1,8) 131,7 en 30 pasos (tasa 0,01, h 0,05); mapa de la montaña (cresta
+diagonal) con el camino; vídeos antes/después.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -470,7 +474,225 @@ que **las laderas suaves se suben despacio**. (El humanoide no tendrá tanta sue
 </details>
 """),
 
-md(r"""## 9 · Posdata
+md(r"""## 9 · 🛠 Práctica en MuJoCo: el brazo robot aprende solo
+
+En la práctica del NB16 construiste en MuJoCo un **brazo robot** que tenía que levantarse hasta la vertical, con dos
+ruedecillas (**fuerza** y **freno**), y mediste las pendientes de su montaña moviendo **una** de ellas. Hoy das el paso de esta
+lección: el brazo va a **ajustar sus dos ruedecillas a la vez**, siguiendo el **gradiente**, sin que nadie le diga dónde está la
+cumbre. Es tu primer **entrenamiento** de un robot simulado en MuJoCo.
+
+(El palo de escoba de MuJoCo no es buen terreno para empezar: con sus cuatro ruedecillas, en cuanto una se tuerce un poco el palo se
+cae y los puntos se desploman de golpe, como un **acantilado**; las pendientes se vuelven gigantes y el ascenso salta sin control.
+El brazo, en cambio, nunca "se cae": su montaña es suave. Empezamos por ahí, como los buenos montañeros.)
+"""),
+
+md(r"""### Paso 1 · El brazo, otra vez
+
+El mismo plano MJCF y los mismos puntos de la práctica del NB16 (un mundo sin gravedad, un brazo de 1 m que empieza horizontal y
+debe llegar a 1,57 radianes; 200 pasitos; un punto por pasito menos el castigo por estar lejos y por gastar batería):
+"""),
+
+code(r"""import mujoco
+import taller
+
+BRAZO = '''
+<mujoco>
+  <option timestep="0.01" gravity="0 0 0"/>
+  <worldbody>
+    <light pos="0 -2 4"/>
+    <geom type="plane" size="2 2 0.1" rgba=".8 .9 .8 1"/>
+    <geom type="cylinder" fromto="0 0.15 0 0 0.15 1" size="0.05" rgba=".4 .4 .4 1"/>
+    <geom type="capsule" fromto="0 0 1 0 0 2" size="0.01" rgba=".1 .8 .1 .4" contype="0" conaffinity="0"/>
+    <body name="brazo" pos="0 0 1">
+      <joint name="hombro" type="hinge" axis="0 -1 0" damping="0.1"/>
+      <geom type="capsule" fromto="0 0 0 1 0 0" size="0.04" mass="2" rgba="1 .5 .1 1"/>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="motor" joint="hombro" ctrlrange="-5 5" ctrllimited="true"/>
+  </actuator>
+</mujoco>
+'''
+modelo, datos = taller.cargar(BRAZO)
+OBJETIVO = 1.57
+
+def puntos(fuerza, freno):
+    mujoco.mj_resetData(modelo, datos)
+    total = 0
+    for paso in range(200):
+        orden = fuerza * (OBJETIVO - datos.qpos[0]) - freno * datos.qvel[0]
+        orden = max(-5, min(5, orden))
+        datos.ctrl[0] = orden
+        mujoco.mj_step(modelo, datos)
+        total = total + 1 - ((OBJETIVO - datos.qpos[0]) / OBJETIVO) ** 2 - 0.05 * orden ** 2
+    return total"""),
+
+md(r"""### Paso 2 · Un brazo flojo y muy frenado
+
+Empezamos con unas ruedecillas malas a propósito: **fuerza 0,5** (empuja poquísimo) y **freno 3** (frena muchísimo). Para verlo,
+una pequeña fábrica de políticas: `politica(fuerza, freno)` devuelve una función de control con esas ruedecillas dentro (una
+función que fabrica funciones, como el `al_azar` de `taller`):
+"""),
+
+code(r"""def politica(fuerza, freno):
+    def control(modelo, datos):
+        orden = fuerza * (OBJETIVO - datos.qpos[0]) - freno * datos.qvel[0]
+        datos.ctrl[0] = max(-5, min(5, orden))
+    return control
+
+print("Puntos al empezar:", round(puntos(0.5, 3.0), 1))
+modelo, datos = taller.cargar(BRAZO)
+taller.video(modelo, datos, segundos=3, control=politica(0.5, 3.0), nombre="nb17_brazo_antes", seguir=False, distancia=3.5);"""),
+
+md(r"""**44 puntos.** El brazo se levanta **a cámara lenta**: a los 3 segundos aún no ha llegado. Mucho freno y poca fuerza.
+"""),
+
+md(r"""### Paso 3 · El gradiente en el brazo
+
+Tu función `gradiente` del apartado 4 sirve **tal cual**: le pasamos `puntos` (una función de dos ruedecillas, aunque dentro tenga
+un simulador entero), el punto de partida y h = 0,05:
+"""),
+
+code(r"""g = gradiente(puntos, 0.5, 3.0, 0.05)
+print("Gradiente en (0,5; 3):", [round(x, 1) for x in g])"""),
+
+md(r"""**(74,1; −9,5)**: la flecha dice "**mucha más fuerza** (pendiente grande y positiva) y **un poco menos de freno** (pendiente
+negativa)". Justo lo que habrías dicho tú mirando el vídeo. Cada una de estas dos pendientes ha costado dos simulaciones del brazo:
+cuatro en total.
+"""),
+
+md(r"""### Paso 4 · ¡A entrenar!
+
+El bucle del apartado 4, sin cambiar nada: 30 pasos, tasa **0,01**, y guardamos el camino para dibujarlo. Son 30 × 4 + 30 = 150
+simulaciones de 2 segundos cada una; a MuJoCo le cuestan menos de un segundo:
+"""),
+
+code(r"""fuerza, freno = 0.5, 3.0
+tasa = 0.01
+camino_fuerza = [fuerza]
+camino_freno = [freno]
+
+for paso in range(1, 31):
+    g = gradiente(puntos, fuerza, freno, 0.05)
+    fuerza = fuerza + tasa * g[0]
+    freno = freno + tasa * g[1]
+    camino_fuerza.append(fuerza)
+    camino_freno.append(freno)
+    if paso in [1, 2, 5, 10, 20, 30]:
+        print("paso", paso, "| fuerza", round(fuerza, 2), "| freno", round(freno, 2), "| puntos", round(puntos(fuerza, freno), 1))"""),
+
+md(r"""De **44** a **131,7** puntos en 30 pasos. Las ruedecillas acaban en **fuerza ≈ 2,8 y freno ≈ 1,8**. Nadie se las ha dicho: el
+brazo las ha encontrado **probando y siguiendo la pendiente**.
+
+¿Es de verdad la cumbre? Para comprobarlo (cosa que solo se puede hacer con 2 ruedecillas, nunca con miles) dibujamos el **mapa de la
+montaña** como en el apartado 4: los puntos en una cuadrícula de 24 × 24 ruedecillas (576 simulaciones, unos segundos) y el camino
+encima:
+"""),
+
+code(r"""valores_fuerza = []
+for i in range(1, 25):
+    valores_fuerza.append(i * 0.25)          # de 0,25 a 6
+valores_freno = []
+for j in range(1, 25):
+    valores_freno.append(j * 0.15)           # de 0,15 a 3,6
+
+mapa = []
+for b in valores_freno:
+    fila = []
+    for a in valores_fuerza:
+        fila.append(puntos(a, b))
+    mapa.append(fila)
+
+plt.figure(figsize=(7, 5))
+plt.contourf(valores_fuerza, valores_freno, mapa, levels=[0, 40, 80, 100, 115, 122, 127, 130, 131, 132], cmap="viridis")
+plt.colorbar(label="puntos")
+plt.plot(camino_fuerza, camino_freno, "o-", color="tab:red", markersize=3)
+plt.xlabel("ruedecilla de fuerza")
+plt.ylabel("ruedecilla de freno")
+plt.show()"""),
+
+md(r"""El camino rojo sale de abajo... perdón, de **arriba a la izquierda** (poca fuerza, mucho freno), da unos saltos grandes hacia la
+derecha siguiendo la flecha y se queda en la mancha amarilla, la zona más alta. Fíjate en la forma de la montaña: una **cresta
+alargada en diagonal**. Si subes la fuerza, conviene subir también el freno; la cresta es el "equilibrio" entre las dos. El
+ascenso llega a la cresta enseguida y luego camina por ella, despacito, hasta la cumbre: igual que el palo de escoba de juguete del
+apartado 4.
+"""),
+
+md(r"""### Paso 5 · El brazo entrenado
+
+Y el resultado, en vídeo, con las ruedecillas que ha aprendido:
+"""),
+
+code(r"""print("Ruedecillas aprendidas: fuerza", round(fuerza, 2), "| freno", round(freno, 2))
+modelo, datos = taller.cargar(BRAZO)
+taller.video(modelo, datos, segundos=3, control=politica(fuerza, freno), nombre="nb17_brazo_despues", seguir=False, distancia=3.5);"""),
+
+md(r"""Ahora sube rápido y se queda en la vertical sin apenas pasarse. **Acabas de entrenar un robot en MuJoCo**: un simulador con
+física de verdad, una política con ruedecillas, unos puntos que dicen qué es "hacerlo bien", y un algoritmo que gira las
+ruedecillas cuesta arriba. Los entrenamientos de humanoides que verás en el curso son esto mismo... con muchísimas más ruedecillas
+y una forma más lista de calcular el gradiente.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1 · Tasas.** Repite el entrenamiento del Paso 4 con tasa **0,005** y con tasa **0,2**. ¿Cuántos puntos hay a los 5 pasos y a
+los 30? ¿Qué le pasa a la tasa grande en el primer paso?
+
+**Reto 2 · Otro punto de partida.** Empieza en fuerza 6 y freno 0,3 (un brazo nervioso que va y viene). ¿Llega a la misma cumbre?
+
+**Reto 3 · Batería cara.** En `puntos`, cambia el castigo de batería de 0,05 a **0,2** (la batería cuesta cuatro veces más) y vuelve a
+entrenar desde (0,5; 3). ¿Las ruedecillas finales son más grandes o más pequeñas? ¿Por qué?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+Cambia `tasa = 0.01` por el valor y vuelve a ejecutar el Paso 4.
+
+- Tasa **0,005**: a los 5 pasos, unos **110 puntos**; a los 30, **131,7**. Llega, pero más despacio.
+- Tasa **0,2**: el primer paso es un salto enorme, a fuerza ≈ **15** y freno ≈ **1,1**, con **−67 puntos** (¡mucho peor que al
+  empezar! un brazo con tanta fuerza va y viene sin parar y gasta batería a lo loco). Después vuelve a la cresta, pero muy lejos de
+  la cumbre (fuerza ≈ 12, freno ≈ 10) y se arrastra por ella: a los 15 pasos solo tiene ~122. Demasiada tasa: saltos que se pasan de
+  frenada (apartado 2).
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+fuerza, freno = 6.0, 0.3
+for paso in range(30):
+    g = gradiente(puntos, fuerza, freno, 0.05)
+    fuerza = fuerza + 0.01 * g[0]
+    freno = freno + 0.01 * g[1]
+print(round(fuerza, 2), round(freno, 2), round(puntos(fuerza, freno), 1))
+```
+
+Sale de otra esquina del mapa, sube primero el **freno** (lo que más falta a un brazo nervioso) y acaba también cerca de la cresta
+amarilla, con unos **130** puntos tras 30 pasos. En esta montaña solo hay **una** cumbre, así que todos los caminos llevan a ella
+(más o menos deprisa). No siempre es así: recuerda los óptimos locales del apartado 5.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Las ruedecillas finales salen **más pequeñas** (menos fuerza): si empujar cuesta más, compensa llegar un poco más despacio y ahorrar
+batería. Los **puntos** deciden qué aprende el robot: cambias el premio, cambias el comportamiento (la lección de la recompensa del
+NB04).
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Una función `puntos(ruedecillas)` que simula un episodio entero con `mj_resetData` + un bucle de `mj_step` es una **montaña**
+  sobre la que se puede hacer **ascenso por gradiente** con diferencias finitas.
+- Una **fábrica de políticas** (`politica(fuerza, freno)`) crea funciones de control para `taller.video`.
+- Has entrenado tu primer robot en MuJoCo: de 44 a 131,7 puntos en 30 pasos y 150 simulaciones.
+- Las montañas de los robots pueden tener **crestas** (ruedecillas que se compensan) y **acantilados** (cuando el robot se cae);
+  la tasa de aprendizaje decide si las recorres bien.
+
+En la práctica del NB17b medirás la **energía** de una pelota en MuJoCo y comprobarás con las reglas de las pendientes cómo cambia.
+"""),
+
+md(r"""## 10 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

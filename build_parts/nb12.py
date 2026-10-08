@@ -8,6 +8,10 @@ al revés), restar (de A a B: flecha hacia la meta), longitud con Pitágoras
 desde cero y la raíz cuadrada (** 0.5), 3D y 45 dimensiones (distancia entre
 observaciones), y un mini-proyecto: un robot que camina hacia una meta con
 viento lateral (llega en 25 pasos, dibujado).
+Práctica en MuJoCo: la gravedad del humanoide es una flecha (longitud 9,81);
+posiciones xpos de torso y pies (separados 0,18 m); desplazamiento del torso al
+caer 1 s (1,2 m) y su velocidad qvel[0:3] (2,24 m/s); gravedad inclinada
+(4; 0; −8,96) → cae y resbala hacia delante (vídeo).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -654,12 +658,231 @@ más de 1 m/s), un poquito más despacio. (Fíjate: 0,8 y 0,6 forman otro trián
 </details>
 """),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: las flechas del simulador
+
+Hoy has aprendido a sumar, restar, estirar y medir flechas con tus propias funciones. La sorpresa es que **MuJoCo
+guarda casi todo como flechas**: la gravedad, la posición de cada pieza del robot, su velocidad... Así que tus
+funciones `sumar`, `escalar`, `restar` y `longitud` (que siguen vivas en este notebook) sirven tal cual para
+**preguntarle cosas al humanoide**: ¿a qué distancia tiene los pies?, ¿cuánto se ha desplazado al caer?, ¿qué pasa si
+la gravedad apunta en otra dirección?
+
+Una idea por celda, como siempre.
+"""),
+
+md(r"""### Paso 1 · La gravedad es una flecha
+
+Cargamos el humanoide (con `taller.cargar`, como en todas las prácticas) y miramos su gravedad. En el NB02 viste que
+salía como **tres números**. Ahora ya sabes qué es eso: una **flecha en 3D**, (x, y, z), que apunta hacia abajo.
+
+MuJoCo guarda sus flechas en un formato propio (un *array*, que conocerás en el NB15). Para usarlas con tus funciones,
+las convertimos en una lista normal con **`list(...)`**. Y para que se lean bien, una ayudita que redondea cada
+componente a 3 decimales (`float(x)` lo convierte en un decimal normal de Python):
+"""),
+
+code(r"""import mujoco
+import taller
+
+def redondear(flecha):
+    resultado = []
+    for x in flecha:
+        resultado.append(round(float(x), 3))
+    return resultado
+
+modelo, datos = taller.cargar("humanoide")
+gravedad = list(modelo.opt.gravity)
+print("Gravedad:", redondear(gravedad))
+print("Su longitud:", round(longitud(gravedad), 2))"""),
+
+md(r"""La flecha (0, 0, −9,81): **nada** hacia delante, **nada** hacia un lado, y **9,81 hacia abajo**. Su longitud,
+**9,81**, es "cuánto tira" la gravedad, sin importar hacia dónde. Dirección (abajo) y tamaño (9,81): justo las dos cosas
+que una flecha sabe decir y un número suelto no.
+"""),
+
+md(r"""### Paso 2 · Dónde está cada pieza
+
+Cada pieza del humanoide tiene una **posición** en el mundo, que también es una flecha (x, y, z) que va desde el
+origen hasta la pieza. Se pide así: `datos.body("torso")` es la ficha de la pieza llamada `torso` en los datos, y su
+**`.xpos`** es su posición (la `x` de delante es de "posición en el mundo", no del eje x). Pedimos la del torso y la de
+los dos pies:
+"""),
+
+code(r"""torso = list(datos.body("torso").xpos)
+pie_derecho = list(datos.body("right_foot").xpos)
+pie_izquierdo = list(datos.body("left_foot").xpos)
+
+print("Torso:        ", redondear(torso))
+print("Pie derecho:  ", redondear(pie_derecho))
+print("Pie izquierdo:", redondear(pie_izquierdo))"""),
+
+md(r"""El torso está a **1,4 m** de altura (z), justo encima del origen. Los pies, casi en el suelo (z = 0,082: es la
+altura del centro del pie, que es una cápsula gordita), uno a cada lado: y = −0,09 el derecho e y = +0,09 el izquierdo.
+
+¿A qué distancia están los pies? Con la receta del apartado 7: **destino menos origen**, y luego la longitud:
+"""),
+
+code(r"""de_pie_a_pie = restar(pie_izquierdo, pie_derecho)
+print("Flecha del pie derecho al izquierdo:", redondear(de_pie_a_pie))
+print("Distancia entre los pies:", round(longitud(de_pie_a_pie), 3), "m")
+print("Distancia del pie derecho al torso:", round(longitud(restar(torso, pie_derecho)), 3), "m")"""),
+
+md(r"""Los pies están separados **18 cm**, y la flecha que los une es (0; 0,18; 0): todo de lado, nada adelante ni
+arriba. Y del pie derecho al torso hay **1,321 m** en línea recta: Pitágoras en 3D, con las tres componentes.
+"""),
+
+md(r"""### Paso 3 · ¿Cuánto se ha movido al caer?
+
+Ahora dejamos caer al humanoide durante **1 segundo** (sin motores: el muñeco de trapo). El paso de tiempo de este
+modelo es de 0,003 s, así que hacen falta 1 / 0,003 ≈ **333** pasitos de `mj_step` (el bucle del NB07). Guardamos la
+posición del torso **antes** y **después**, y la flecha que las une es el **desplazamiento**:
+"""),
+
+code(r"""inicio = list(datos.body("torso").xpos)
+
+for paso in range(333):
+    mujoco.mj_step(modelo, datos)
+
+final = list(datos.body("torso").xpos)
+desplazamiento = restar(final, inicio)
+print("Tiempo:", round(datos.time, 2), "s")
+print("Desplazamiento del torso:", redondear(desplazamiento))
+print("Lo que se ha movido en línea recta:", round(longitud(desplazamiento), 2), "m")"""),
+
+md(r"""El torso ha ido **0,41 m hacia atrás** (x negativa: se ha caído de espaldas), casi nada de lado, y **1,12 m hacia
+abajo**. En línea recta, **1,2 metros**. Tres números que cuentan la caída entera: hacia dónde y cuánto.
+
+¿Y la **velocidad** del torso en este instante? También es una flecha: MuJoCo la guarda en los tres primeros números
+de `datos.qvel` (el torso cuelga de una articulación libre, NB01, y sus tres primeras velocidades son las de avanzar en
+x, y y z). Su longitud es la **rapidez** del apartado 8:
+"""),
+
+code(r"""velocidad = list(datos.qvel[0:3])
+print("Velocidad del torso:", redondear(velocidad), "m/s")
+print("Rapidez:", round(longitud(velocidad), 2), "m/s")"""),
+
+md(r"""Va a **2,24 m/s** (unos 8 km/h): 1,16 hacia atrás y 1,91 hacia abajo. En ese instante está a punto de dar contra
+el suelo.
+"""),
+
+md(r"""### Paso 4 · Una gravedad que apunta hacia delante
+
+Como la gravedad es una flecha, nada nos impide **girarla**. Vamos a darle la flecha (4; 0; −8,96): mide casi lo mismo
+que la de la Tierra (compruébalo: Pitágoras da 9,81), pero apunta **un poco hacia delante**. Es como si el mundo entero
+estuviera **inclinado**, igual que una rampa: el humanoide sentirá que el suelo "cae" hacia delante.
+"""),
+
+code(r"""inclinada = [4, 0, -8.96]
+print("Longitud de la gravedad inclinada:", round(longitud(inclinada), 2))
+
+modelo, datos = taller.cargar("humanoide")
+modelo.opt.gravity = inclinada
+
+taller.video(modelo, datos, segundos=2, nombre="nb12_gravedad_inclinada");"""),
+
+md(r"""Se derrumba **hacia delante** y, una vez en el suelo, sigue **resbalando** hacia delante, como un trineo en una cuesta.
+Misma fuerza, distinta dirección: un mundo completamente distinto. (En 1 segundo, su torso acaba a **1,89 m** por
+delante del origen, en vez de 0,41 m por detrás.)
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1 · Odometría del torso.** Repite la caída del Paso 3 (recarga el humanoide), pero esta vez, en **cada** pasito,
+calcula el pequeño desplazamiento del torso (posición de ahora menos la del pasito anterior) y **súmalo** a un
+acumulador `recorrido = [0, 0, 0]`, como el robot de los cuatro pasos del apartado 5. Al final, ¿coincide con el
+desplazamiento total del Paso 3?
+
+**Reto 2 · Las manos.** Las piezas `right_lower_arm` y `left_lower_arm` son los antebrazos. ¿A qué distancia están uno
+del otro con el humanoide de pie?
+
+**Reto 3 · La Luna, con flechas.** La gravedad de la Luna es 1,62. Fabrica la flecha de la gravedad lunar **sin
+escribir sus tres números**: estirando (o encogiendo) la de la Tierra con tu función `escalar`. ¿Qué número tienes que
+poner?
+
+**Reto 4 · Caer de lado.** En el Paso 4, cambia la gravedad a (0; 4; −8,96). Antes de ejecutarlo: ¿hacia dónde caerá?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+modelo, datos = taller.cargar("humanoide")
+recorrido = [0, 0, 0]
+anterior = list(datos.body("torso").xpos)
+for paso in range(333):
+    mujoco.mj_step(modelo, datos)
+    ahora = list(datos.body("torso").xpos)
+    recorrido = sumar(recorrido, restar(ahora, anterior))
+    anterior = ahora
+print(redondear(recorrido))
+```
+
+Sale **[−0,41; −0,009; −1,124]**: exactamente el desplazamiento del Paso 3. Tiene que ser así: al sumar todos los
+pasitos, cada posición intermedia aparece una vez sumando y otra restando, y solo quedan la final menos la inicial.
+Aquí no hay error que se acumule porque los "pasos" los mide MuJoCo con precisión; un robot de verdad, que los mide
+con sensores imperfectos, sí acumularía error (la pega de la odometría del apartado 5).
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+modelo, datos = taller.cargar("humanoide")
+mano_d = list(datos.body("right_lower_arm").xpos)
+mano_i = list(datos.body("left_lower_arm").xpos)
+print(round(longitud(restar(mano_i, mano_d)), 3))
+```
+
+**0,7 m**: los antebrazos están a 35 cm del centro cada uno (y = ±0,35), con los brazos algo abiertos.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+Hay que encoger la flecha de la Tierra hasta que mida 1,62: multiplicarla por **1,62 / 9,81** (el mismo truco del
+mini-proyecto para dar pasos de 0,5):
+
+```python
+luna = escalar(1.62 / 9.81, gravedad)
+print(redondear(luna), round(longitud(luna), 2))
+```
+
+Sale **[0; 0; −1,62]**, de longitud **1,62**. Misma dirección (abajo), seis veces más corta. Multiplicar por un número
+cambia el **cuánto**, nunca el **hacia dónde**.
+</details>
+
+<details>
+<summary>▶ Solución Reto 4</summary>
+
+Hacia la **izquierda** del humanoide (y positiva): la flecha ahora "tira" de lado. Tras 1 segundo, su torso está en
+y = **1,85 m**. Para comprobarlo sin vídeo:
+
+```python
+modelo, datos = taller.cargar("humanoide")
+modelo.opt.gravity = [0, 4, -8.96]
+for paso in range(333):
+    mujoco.mj_step(modelo, datos)
+print(redondear(datos.body("torso").xpos))
+```
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **`modelo.opt.gravity`** es una flecha en 3D: puedes cambiar su tamaño (otro planeta) y también su **dirección**
+  (un mundo inclinado).
+- **`datos.body("nombre").xpos`** es la posición de una pieza en el mundo: una flecha (x, y, z) desde el origen. Con
+  `restar` y `longitud` mides distancias entre piezas.
+- Los tres primeros números de **`datos.qvel`** son la velocidad del torso: una flecha cuya longitud es la rapidez.
+- Con `list(...)` conviertes las flechas de MuJoCo en listas para tus propias funciones.
+
+En la práctica del NB13 usarás el **producto escalar** para medir algo que un robot necesita saber a cada instante:
+**cuánto se está inclinando**. Y le darás al palo de escoba de MuJoCo una **neurona** como cerebro.
+"""),
+
+md(r"""## 14 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
 Hoy has aprendido a pensar en **flechas**: sumarlas, estirarlas, medirlas, y a ver la observación del humanoide como
-una flecha en 45 dimensiones. En el **NB13** llega la operación de flechas más importante de toda la inteligencia
+una flecha en 45 dimensiones. Y en la práctica has comprobado que MuJoCo piensa igual: gravedad, posiciones y velocidades
+son flechas. En el **NB13** llega la operación de flechas más importante de toda la inteligencia
 artificial: el **producto escalar**. Y te va a dar una sorpresa: la política del palo de escoba, `-30 * inclinacion -
 8 * velocidad`, era un producto escalar sin que lo supieras... y es exactamente lo que calcula, por dentro, una
 **neurona artificial**.

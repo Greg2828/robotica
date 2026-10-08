@@ -11,6 +11,11 @@ NB11; obs (348,) con obs[0] = altura 1,39; recompensa del primer paso ≈ 5;
 política lineal np.clip(W @ obs + b, ±0,4); W = 0 → 198,6 (= muñeco de trapo
 del NB04); W al azar → ~58; búsqueda aleatoria de 20 matrices: mejor 141,7 <
 198,6 → hace falta otra forma de aprender (pendientes).
+Práctica en MuJoCo: qpos/qvel/ctrl/xpos/xmat son ndarrays (formas 24, 23, 17,
+14×3, 14×9); alturas de todas las piezas con xpos[:, 2] y argmax; cabeza con
+reshape(3,3) @; registro 500×14 de una caída dibujado; obs de Gymnasium =
+qpos[2:] + qvel (diferencia 0); una foto es un array 360×480×3 (espejo,
+negativo, sin rojo).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -30,8 +35,8 @@ Hoy conocerás **NumPy**, la herramienta que usa **todo** el mundo que trabaja c
 ingenieros de robótica, investigadores de inteligencia artificial. Con ella, todo lo que hiciste con bucles en el NB12,
 NB13 y NB14 se escribe en **una línea**, y va **decenas de veces más rápido**.
 
-Y luego viene el momento que llevamos esperando desde el NB00: vamos a abrir, por primera vez, **el simulador de verdad**
-del humanoide. Verás que su observación **es** un vector de NumPy, le aplicarás **tu propia** política lineal, y medirás
+Y luego viene el momento que llevamos esperando desde el NB00: en las prácticas ya has tocado MuJoCo pieza a pieza, pero hoy
+vas a manejar al humanoide como lo hacen los profesionales para **entrenarlo**: a través de **Gymnasium**. Verás que su observación **es** un vector de NumPy, le aplicarás **tu propia** política lineal, y medirás
 sus puntos con la recompensa real del NB04. Todo lo aprendido hasta ahora, encajando de golpe.
 
 Una idea nueva por celda, como siempre.
@@ -303,8 +308,9 @@ ordenadores con tarjeta gráfica, como los de Google Colab.
 
 md(r"""## 8 · El gran momento: el humanoide de verdad
 
-Llevamos quince lecciones hablando de él. Lo viste desplomarse en un GIF (NB00), desmontaste su cuerpo (NB01), conociste su simulador
-(NB02), su observación y su acción (NB03), su recompensa (NB04). Hoy, por fin, **lo vas a manejar tú**.
+Llevamos quince lecciones hablando de él. Lo viste desplomarse (NB00), desmontaste su cuerpo (NB01), conociste su simulador
+(NB02), su observación y su acción (NB03), su recompensa (NB04), y en las prácticas lo has tocado directamente en MuJoCo. Hoy, por
+fin, **lo vas a manejar como un entorno de entrenamiento**, con observación, acción y recompensa listas para aprender.
 
 El humanoide vive en una biblioteca llamada **Gymnasium** (del inglés: "gimnasio", un sitio para **entrenar**). Gymnasium es el
 estándar para entornos de aprendizaje por refuerzo: contiene muchos mundos (el humanoide, un robot de cuatro patas, el carro con
@@ -607,7 +613,241 @@ cien millones de números, el bucle tardaría ya medio minuto o más... y en un 
 </details>
 """),
 
-md(r"""## 15 · Posdata
+md(r"""## 15 · 🛠 Práctica en MuJoCo: todo son arrays
+
+En las prácticas del NB12 al NB14 convertías las flechas de MuJoCo en listas con `list(...)` para usar tus funciones con
+bucles. Hoy descubres el secreto: **MuJoCo ya te las daba como arrays de NumPy**. Así que todo lo de esta lección (operar
+sin bucles, `@`, formas, `np.clip`...) funciona directamente sobre el simulador. Vas a:
+
+1. Ver que posiciones, velocidades y órdenes de MuJoCo son arrays, y leer sus **formas**.
+2. Sacar la altura de **todas** las piezas en una sola línea, y rehacer el cálculo de la cabeza del NB14 con `@`.
+3. **Registrar** una caída entera en un array de 500 × 14 números y dibujarla.
+4. Comprobar que la observación de Gymnasium del apartado 8 **son** estos arrays, pegados.
+5. Descubrir que una **foto** también es un array... y retocarla con matemáticas.
+"""),
+
+md(r"""### Paso 1 · Los datos de MuJoCo son arrays
+
+Cargamos el humanoide y preguntamos el **tipo** (NB05) y la **forma** (apartado 2) de lo que guarda:
+"""),
+
+code(r"""import mujoco
+import taller
+import matplotlib.pyplot as plt
+
+modelo, datos = taller.cargar("humanoide")
+print("Tipo de datos.qpos:", type(datos.qpos))
+print("qpos:", datos.qpos.shape, "| qvel:", datos.qvel.shape, "| ctrl:", datos.ctrl.shape)
+print("xpos:", datos.xpos.shape, "| xmat:", datos.xmat.shape)"""),
+
+md(r"""**`numpy.ndarray`**: arrays de NumPy. Y sus formas cuentan el robot entero:
+
+- `qpos` (24,): las posiciones de las articulaciones (7 del torso libre + 17 articulaciones). `qvel` (23,): sus
+  velocidades (una menos: el giro del torso se describe con 4 números pero gira con 3 velocidades).
+- `ctrl` (17,): una orden por motor.
+- `xpos` (14, 3): **una matriz**, con una fila por pieza (14 piezas contando el "mundo", NB01) y 3 columnas (x, y, z).
+- `xmat` (14, 9): los 9 números de giro de cada pieza (NB14), una fila por pieza.
+"""),
+
+md(r"""### Paso 2 · La altura de todas las piezas, en una línea
+
+La altura es la columna 2 (la z) de `xpos`. Con NumPy se pide una **columna entera** con `datos.xpos[:, 2]`: el `:` significa
+"**todas** las filas" y el 2, "la columna 2". Y **`np.argmax`** ("dónde está el máximo") devuelve la **posición** del número
+más grande, que nos sirve para preguntar el nombre de la pieza más alta con `modelo.body(posición).name`:
+"""),
+
+code(r"""alturas = datos.xpos[:, 2]
+print("Alturas:", np.round(alturas, 2))
+
+mas_alta = np.argmax(alturas)
+print("La pieza más alta es la número", mas_alta, "→", modelo.body(int(mas_alta)).name)"""),
+
+md(r"""14 alturas de golpe, sin bucle. La pieza más alta es el **brazo derecho** (`right_upper_arm`, 1,46 m), no el torso
+(1,40): los hombros están 6 cm por encima del centro del torso. (La primera, 0, es el "mundo". `int(...)` convierte la posición
+en un número normal de Python, que es lo que pide `modelo.body`.)
+
+Y el cálculo de la cabeza del NB14, que allí necesitó una función con un bucle anidado, ahora es **una línea**: `.reshape(3, 3)`
+reordena los 9 números en una tabla de 3 × 3, y `@` es matriz por vector (apartado 5):
+"""),
+
+code(r"""giro_torso = datos.xmat[1].reshape(3, 3)          # la pieza 1 es el torso
+cabeza = datos.xpos[1] + giro_torso @ modelo.geom("head").pos
+print("Cabeza (calculada):", cabeza, "| según MuJoCo:", datos.geom("head").xpos)"""),
+
+md(r"""Coinciden: la cabeza está a 1,59 m (el torso a 1,40, más los 19 cm de la cabeza). Matriz, vector y suma, sin un solo bucle.
+"""),
+
+md(r"""### Paso 3 · Registrar una caída entera
+
+Para estudiar lo que pasa durante una simulación, los profesionales **registran** los datos en un array preparado de antemano.
+Fabricamos uno lleno de ceros (apartado 6) con **una fila por pasito** y **una columna por pieza**: 500 × 14. En cada pasito
+copiamos la fila entera de alturas con `registro[paso] = ...`, y apuntamos también el tiempo:
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+registro = np.zeros((500, modelo.nbody))
+tiempos = np.zeros(500)
+
+for paso in range(500):
+    mujoco.mj_step(modelo, datos)
+    registro[paso] = datos.xpos[:, 2]
+    tiempos[paso] = datos.time
+
+print("Forma del registro:", registro.shape)
+print("Altura del torso: máxima", round(np.max(registro[:, 1]), 2), "| mínima", round(np.min(registro[:, 1]), 2))"""),
+
+md(r"""**7.000 números** guardados en una tabla ordenada: la caída entera (1,5 s) de las 14 piezas. `registro[:, 1]` es la columna
+del torso (todas las filas, columna 1): su altura empieza en 1,40 y baja hasta 0,08. Y `plt.plot` con una tabla dibuja **una curva
+por columna**, todas a la vez (nos saltamos la columna 0, el mundo, con `registro[:, 1:]`):
+"""),
+
+code(r"""plt.figure(figsize=(7, 4))
+plt.plot(tiempos, registro[:, 1:])
+plt.xlabel("tiempo (s)")
+plt.ylabel("altura de cada pieza (m)")
+plt.grid(True, alpha=0.4)
+plt.show()
+
+print("Alturas al final:", np.round(registro[-1], 2))
+print("La más alta al final:", modelo.body(int(np.argmax(registro[-1]))).name)"""),
+
+md(r"""Se ve la caída por fases: hacia 0,15 s todas bajan de golpe unos centímetros (se le doblan las rodillas), entre 0,5 y 1,1 s se
+desploman, y desde 1,2 s ya no se mueve nada. Los pies (las curvas de abajo) apenas cambian. Al final, la pieza más alta ya no es el
+brazo sino la **espinilla izquierda** (`left_shin`, 0,37 m): el humanoide ha quedado tumbado con las **rodillas levantadas**.
+(Los pies salen a −0,01: se hunden un centímetro en el suelo, porque el suelo de MuJoCo es un poquito blando.)
+"""),
+
+md(r"""### Paso 4 · La observación de Gymnasium, por dentro
+
+En el apartado 8, `entorno.reset` te dio una observación de **348** números. ¿De dónde salen? Gymnasium guarda dentro su propia
+simulación de MuJoCo, y se puede mirar con `entorno.unwrapped.data` (son unos `datos` como los tuyos). Comprobemos que los primeros
+22 números de la observación son `qpos[2:]` (sin x ni y del torso) y los 23 siguientes, `qvel`. Para saber si dos arrays son
+iguales, miramos **la mayor diferencia** entre ellos: `np.max(np.abs(a - b))` (resta elemento a elemento, quita signos, el mayor):
+"""),
+
+code(r"""entorno = gym.make("Humanoid-v5")
+observacion, info = entorno.reset(seed=0)
+sus_datos = entorno.unwrapped.data
+
+print("Diferencia con qpos[2:]:", np.max(np.abs(observacion[:22] - sus_datos.qpos[2:])))
+print("Diferencia con qvel:    ", np.max(np.abs(observacion[22:45] - sus_datos.qvel)))
+entorno.close()"""),
+
+md(r"""**Cero y cero**: los 45 primeros números de la observación son exactamente las posiciones y velocidades de MuJoCo, pegadas. (El
+resto, hasta 348, son más cosas que MuJoCo calcula, como fuerzas y velocidades de cada pieza.) Gymnasium no hace magia: **envuelve**
+a MuJoCo y te entrega sus arrays. Lo que hiciste a mano en la práctica del NB14 es lo que hace Gymnasium por dentro.
+"""),
+
+md(r"""### Paso 5 · Una foto también es un array
+
+`taller.foto` enseña la imagen... y además la **devuelve**. ¿Qué es?
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+foto = taller.foto(modelo, datos)
+print("Forma:", foto.shape, "| tipo de número:", foto.dtype)
+print("El píxel del centro:", foto[180, 240])"""),
+
+md(r"""Una foto es un array de **360 × 480 × 3**: 360 filas de píxeles, 480 columnas, y **3 números por píxel**: cuánto **rojo**, cuánto
+**verde** y cuánto **azul** (de 0 a 255, `uint8` es "número entero pequeño, de 0 a 255"). Mezclando esos tres colores sale cualquier
+color de la pantalla. Así que retocar una foto es... **hacer cuentas con un array**. Tres retoques, sin un solo bucle:
+
+- `foto[:, ::-1]`: todas las filas, las columnas **al revés** (el `::-1` recorre hacia atrás) → un **espejo**.
+- `255 - foto`: cada color, al revés → un **negativo**.
+- Poner a 0 toda la capa roja (`[:, :, 0]`) → una foto **sin rojo**.
+"""),
+
+code(r"""espejo = foto[:, ::-1]
+negativo = 255 - foto
+sin_rojo = foto.copy()
+sin_rojo[:, :, 0] = 0
+
+plt.figure(figsize=(12, 3))
+for numero, (imagen, titulo) in enumerate([(espejo, "espejo"), (negativo, "negativo"), (sin_rojo, "sin rojo")]):
+    plt.subplot(1, 3, numero + 1)
+    plt.imshow(imagen)
+    plt.title(titulo)
+    plt.axis("off")
+plt.show()"""),
+
+md(r"""(`enumerate` recorre una lista dándote también el número de cada elemento, 0, 1, 2: lo verás bien en la Parte 3.)
+
+Sin rojo, el humanoide naranja se vuelve **verde oscuro** (su naranja era sobre todo rojo, con algo de verde) y el suelo blanco,
+**turquesa** (el blanco es rojo + verde + azul a tope; sin el rojo queda verde + azul). Esto, que parece
+un juego, es la base de la **visión de los robots**: una cámara le da al robot arrays como este, y su red neuronal hace cuentas con
+ellos para entender qué ve.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1 · ¿Cuánto corre MuJoCo?** Con `time.perf_counter` (apartado 7), cronometra 1.000 pasitos de `mujoco.mj_step` del humanoide.
+¿Cuántos pasos por segundo da tu ordenador? ¿Cuántas veces más rápido que el tiempo real? (Cada paso son 0,003 s de mundo.)
+
+**Reto 2 · El brillo de una foto.** El brillo medio de una foto es la media de todos sus números. Calcúlalo con `np.mean` para la foto
+y para su negativo. ¿Cuánto suman los dos? ¿Por qué?
+
+**Reto 3 · Velocidad con registro.** Repite el Paso 3, pero registra la **velocidad** del torso hacia abajo (`datos.qvel[2]`) en vez de
+las alturas. ¿Cuál fue la velocidad más rápida hacia abajo (la más negativa)?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+modelo, datos = taller.cargar("humanoide")
+inicio = time.perf_counter()
+for paso in range(1000):
+    mujoco.mj_step(modelo, datos)
+segundos = time.perf_counter() - inicio
+print("Pasos por segundo:", round(1000 / segundos))
+print("Veces más rápido que el tiempo real:", round(1000 * 0.003 / segundos))
+```
+
+En la Raspberry Pi 5 en la que se preparó el curso salen unos **5.000 pasos por segundo**: 3 segundos de mundo en 0,2 s de reloj,
+unas **15 veces** más rápido que la realidad (el humanoide cayéndose y chocando cuesta más que estar de pie). Con un robot
+pequeño como el palo de escoba va muchísimo más deprisa. Por eso se entrena en simulación: un ordenador vive en un día lo que un
+robot real en semanas.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+print(np.mean(foto), np.mean(negativo), np.mean(foto) + np.mean(negativo))
+```
+
+Los dos brillos suman **255**: cada número del negativo es 255 menos el original, así que la media del negativo es 255 menos la
+media original. Una foto oscura da un negativo claro, y al revés.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+modelo, datos = taller.cargar("humanoide")
+velocidades = np.zeros(500)
+for paso in range(500):
+    mujoco.mj_step(modelo, datos)
+    velocidades[paso] = datos.qvel[2]
+print("Más rápido hacia abajo:", round(np.min(velocidades), 2), "m/s")
+```
+
+El número más negativo es la caída más rápida: **−3,19 m/s** (unos 11 km/h), justo antes del golpe contra el suelo. En el NB16 verás que esta
+velocidad es la **pendiente** de la curva de altura del torso que acabas de dibujar.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- `datos.qpos`, `qvel`, `ctrl`, `xpos`, `xmat` son **arrays de NumPy**; sus **formas** describen el robot (24, 23, 17, 14 × 3, 14 × 9).
+- `datos.xpos[:, 2]` da la altura de todas las piezas; `np.argmax` + `modelo.body(i).name` dice cuál es la más alta.
+- `xmat[i].reshape(3, 3) @ punto` es el giro del NB14 en una línea.
+- **Registrar** una simulación = rellenar un array preparado con `np.zeros((pasos, columnas))`, fila a fila.
+- La observación de Gymnasium empieza por `qpos[2:]` y `qvel`: Gymnasium **envuelve** a MuJoCo (`entorno.unwrapped.data`).
+- Una **foto** es un array alto × ancho × 3 (rojo, verde, azul) de números de 0 a 255.
+
+En la práctica del NB15b verás algo que se apaga **exponencialmente** dentro de MuJoCo: un objeto frenado por el rozamiento.
+"""),
+
+md(r"""## 16 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

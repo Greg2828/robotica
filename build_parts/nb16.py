@@ -9,6 +9,11 @@ truco de mirar a los dos lados, y el límite del ordenador (h = 1e-12 estropea);
 la pendiente es otra función (2x); leer el signo para subir; la montaña del
 palo de escoba con batería (coste 0,001): retorno vs ruedecilla de inclinación
 (d = 8): pendiente +27,5 en 12, ≈ 0 en 23,5 (cima, ~462), −0,63 en 40.
+Práctica en MuJoCo: caída del palo de escoba; la pendiente "hacia atrás" del
+ángulo coincide EXACTAMENTE con qvel (así integra MuJoCo). Brazo robot en MJCF
+(sin gravedad, objetivo 1,57 rad) con política fuerza·error − freno·vel y
+puntos con batería (vídeo); montaña en la fuerza (freno 1,5): pendiente +53,3
+en 1, ≈ −0,6 en 2,5 (cumbre ~132), −13,4 en 4.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -532,7 +537,278 @@ donde recorrer todas las combinaciones sería imposible.
 </details>
 """),
 
-md(r"""## 12 · Posdata
+md(r"""## 12 · 🛠 Práctica en MuJoCo: la velocidad es una pendiente (y la montaña de un brazo robot)
+
+Dos frases de esta lección se pueden comprobar en el simulador:
+
+1. "**La velocidad es la pendiente de la posición**" (apartado 4). MuJoCo te da las dos cosas por separado: la posición en
+   `datos.qpos` y la velocidad en `datos.qvel`. ¿Coincide la pendiente que calculas tú con la velocidad que te da él?
+2. "**La pendiente señala la cumbre**" (apartado 9). Allí la montaña era la del palo de escoba de juguete. Hoy construirás un
+   **brazo robot** en MuJoCo, le darás una ruedecilla, y medirás las pendientes de su montaña.
+"""),
+
+md(r"""### Paso 1 · Grabar la caída del palo de escoba
+
+Cargamos el palo de escoba de MuJoCo, lo inclinamos 0,1 radianes y lo dejamos caer **sin motor** durante 0,6 segundos (60
+pasitos de 0,01 s). En cada pasito apuntamos, en dos listas, el **ángulo** del palo (`qpos[1]`) y la **velocidad** con la que
+gira según MuJoCo (`qvel[1]`). La primera posición de cada lista es la del instante 0:
+"""),
+
+code(r"""import mujoco
+import taller
+
+modelo, datos = taller.cargar("palo_escoba")
+datos.qpos[1] = 0.1
+
+angulos = [datos.qpos[1]]
+velocidades = [datos.qvel[1]]
+for paso in range(60):
+    mujoco.mj_step(modelo, datos)
+    angulos.append(datos.qpos[1])
+    velocidades.append(datos.qvel[1])
+
+tiempos = []
+for n in range(61):
+    tiempos.append(n * 0.01)
+
+plt.figure(figsize=(6, 3.5))
+plt.plot(tiempos, angulos, color="tab:blue")
+plt.grid(True, alpha=0.4)
+plt.xlabel("tiempo (s)")
+plt.ylabel("ángulo del palo (rad)")
+plt.show()"""),
+
+md(r"""Una curva que se empina cada vez más: el palo cae cada vez más deprisa. Su pendiente, en cada instante, debería ser la
+velocidad de giro.
+"""),
+
+md(r"""### Paso 2 · Pendiente calculada contra `qvel`
+
+Calculamos la pendiente del ángulo en tres instantes (0,1 s, 0,3 s y 0,5 s), con las recetas del apartado 6. Aquí h no
+puede ser tan pequeño como queramos: lo más pequeño que tenemos es **un pasito**, 0,01 s, porque solo hemos apuntado el ángulo
+en esos instantes. Así que comparamos tres formas de medir con h = 0,01:
+
+- **hacia delante**: (ángulo del pasito siguiente − ángulo de ahora) / 0,01,
+- **a los dos lados**: (siguiente − anterior) / 0,02,
+- **hacia atrás**: (ángulo de ahora − ángulo del pasito anterior) / 0,01,
+
+y las tres contra lo que dice MuJoCo:
+"""),
+
+code(r"""print(" tiempo | hacia delante | a los dos lados | hacia atrás | MuJoCo (qvel)")
+for n in [10, 30, 50]:
+    delante = (angulos[n + 1] - angulos[n]) / 0.01
+    dos_lados = (angulos[n + 1] - angulos[n - 1]) / 0.02
+    atras = (angulos[n] - angulos[n - 1]) / 0.01
+    print(f"  {tiempos[n]:.1f}  |    {delante:.4f}     |     {dos_lados:.4f}      |   {atras:.4f}    |   {velocidades[n]:.4f}")"""),
+
+md(r"""Las tres pendientes se parecen mucho a `qvel` (la velocidad **es** la pendiente de la posición: comprobado). Pero mira la
+columna "hacia atrás": coincide con MuJoCo **hasta el último decimal**. ¿Por qué esa, y no la de "a los dos lados", que en el
+apartado 6 era la más precisa?
+
+Porque así es como MuJoCo **avanza el tiempo**: en cada pasito calcula primero la velocidad nueva y luego hace **posición nueva
+= posición vieja + velocidad nueva × paso**. Es la cadena de oro del NB02. Si despejas (NB04b), la velocidad nueva es justo
+(posición nueva − posición vieja) / paso: la pendiente "hacia atrás". El simulador está hecho de pendientes.
+"""),
+
+md(r"""### Paso 3 · Un brazo robot con una ruedecilla
+
+Ahora, un robot nuevo, escrito por ti en MJCF: un **brazo** de 1 m y 2 kg, sujeto por un **hombro** (una bisagra) a 1 m de
+altura, con un motor que lo hace girar. Empieza **horizontal** (ángulo 0) y su misión es levantarse hasta la **vertical**: 90
+grados, es decir, **1,57 radianes** (NB03b). La línea verde y transparente marca el objetivo.
+
+Para que solo cuenten las ruedecillas, lo ponemos en un mundo **sin gravedad** (`gravity="0 0 0"`, como en el espacio): así
+el brazo no tiene que luchar contra su propio peso. (Cómo se lucha contra la gravedad lo verás en el NB40.)
+"""),
+
+code(r"""BRAZO = '''
+<mujoco>
+  <option timestep="0.01" gravity="0 0 0"/>
+  <worldbody>
+    <light pos="0 -2 4"/>
+    <geom type="plane" size="2 2 0.1" rgba=".8 .9 .8 1"/>
+    <geom type="cylinder" fromto="0 0.15 0 0 0.15 1" size="0.05" rgba=".4 .4 .4 1"/>
+    <geom type="capsule" fromto="0 0 1 0 0 2" size="0.01" rgba=".1 .8 .1 .4" contype="0" conaffinity="0"/>
+    <body name="brazo" pos="0 0 1">
+      <joint name="hombro" type="hinge" axis="0 -1 0" damping="0.1"/>
+      <geom type="capsule" fromto="0 0 0 1 0 0" size="0.04" mass="2" rgba="1 .5 .1 1"/>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="motor" joint="hombro" ctrlrange="-5 5" ctrllimited="true"/>
+  </actuator>
+</mujoco>
+'''
+modelo, datos = taller.cargar(BRAZO)
+OBJETIVO = 1.57"""),
+
+md(r"""¿Cómo decide el brazo cuánto empujar? Con una política muy parecida a la del palo de escoba:
+
+```
+   orden = fuerza × (lo que le falta para llegar) − freno × (lo deprisa que gira)
+```
+
+- La **fuerza** empuja más cuanto más lejos está del objetivo (y nada cuando ha llegado).
+- El **freno** frena más cuanto más deprisa va, para no pasarse.
+
+`fuerza` y `freno` son las dos **ruedecillas**. Y para saber si una política es buena, unos **puntos**, como en el apartado 9:
+durante 2 segundos (200 pasitos), cada pasito da 1 punto, menos un castigo por lo lejos que está del objetivo (al cuadrado, para
+que no importe el signo) y menos un castigo por gastar **batería** (0,05 × orden²):
+"""),
+
+code(r"""def puntos(fuerza, freno):
+    mujoco.mj_resetData(modelo, datos)         # vuelve a empezar: brazo horizontal y quieto
+    total = 0
+    for paso in range(200):
+        orden = fuerza * (OBJETIVO - datos.qpos[0]) - freno * datos.qvel[0]
+        if orden > 5:
+            orden = 5
+        if orden < -5:
+            orden = -5
+        datos.ctrl[0] = orden
+        mujoco.mj_step(modelo, datos)
+        total = total + 1 - ((OBJETIVO - datos.qpos[0]) / OBJETIVO) ** 2 - 0.05 * orden ** 2
+    return total
+
+print("Puntos con fuerza 2,5 y freno 1,5:", round(puntos(2.5, 1.5), 1))"""),
+
+md(r"""(`mujoco.mj_resetData` devuelve los datos al principio, con el reloj a 0: es el `reset` del palo de escoba del NB11.)
+
+Unos **132 puntos** de 200 posibles: los primeros pasitos, con el brazo aún lejos del objetivo, siempre restan. Así se ve esa
+política en acción:
+"""),
+
+code(r"""def mi_politica(modelo, datos):
+    orden = 2.5 * (OBJETIVO - datos.qpos[0]) - 1.5 * datos.qvel[0]
+    datos.ctrl[0] = max(-5, min(5, orden))
+
+modelo, datos = taller.cargar(BRAZO)
+taller.video(modelo, datos, segundos=3, control=mi_politica, nombre="nb16_brazo", seguir=False, distancia=3.5);"""),
+
+md(r"""(`max(-5, min(5, orden))` recorta la orden a ±5 en una línea: `min` se queda con el menor entre 5 y la orden, y `max` con el
+mayor entre −5 y eso. Hace lo mismo que los dos `if`.)
+
+El brazo se levanta con decisión, frena al acercarse a la línea verde, se pasa **un poquito** (unos 8 grados, hacia los
+2 segundos) y vuelve despacio. No es perfecto: es un equilibrio entre llegar pronto y no gastar demasiada batería.
+"""),
+
+md(r"""### Paso 4 · La montaña de la ruedecilla de fuerza
+
+Dejamos el freno quieto en 1,5 y dibujamos los puntos según la ruedecilla de **fuerza**, de 0,5 a 6. Es una función matemática
+(entra un número, sale otro) con un simulador entero dentro, como la del apartado 9:
+"""),
+
+code(r"""fuerzas = []
+alturas = []
+for i in range(5, 61):
+    fuerzas.append(i / 10)
+    alturas.append(puntos(i / 10, 1.5))
+
+plt.figure(figsize=(6, 3.5))
+plt.plot(fuerzas, alturas, color="tab:blue")
+plt.grid(True, alpha=0.4)
+plt.xlabel("ruedecilla de fuerza")
+plt.ylabel("puntos")
+plt.show()"""),
+
+md(r"""¡Otra montaña! Con poca fuerza, el brazo sube **demasiado despacio** y pasa mucho rato lejos del objetivo. Con mucha, llega
+deprisa pero **se pasa**, va y vuelve, y gasta mucha batería. En medio, hacia 2,5, la **cumbre**.
+
+Y ahora las pendientes, con tu función `pendiente` (a los dos lados, h = 0,1), en tres sitios:
+"""),
+
+code(r"""def puntos_con_freno_fijo(fuerza):
+    return puntos(fuerza, 1.5)
+
+for r in [1, 2.5, 4]:
+    print("fuerza", r, "| puntos", round(puntos_con_freno_fijo(r), 1),
+          "| pendiente", round(pendiente(puntos_con_freno_fijo, r, 0.1), 2))"""),
+
+md(r"""Léelo como el montañero con niebla:
+
+| Fuerza | Pendiente | Lo que dicen tus pies |
+|---|---|---|
+| 1 | **+53,3** | "¡Sube mucho hacia la derecha!" → más fuerza |
+| 2,5 | **−0,6** | "Casi plano" → estás en la cumbre (o a un pelín) |
+| 4 | **−13,4** | "Sube hacia la izquierda" → menos fuerza |
+
+Exactamente como en el palo de escoba de juguete, pero ahora con un robot simulado con física de verdad: **la pendiente sabe hacia
+dónde girar la ruedecilla**, y cada pendiente ha costado solo **dos** simulaciones.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1 · La aceleración, pendiente de la velocidad.** Con la lista `velocidades` del Paso 1, calcula la pendiente "hacia atrás"
+de la velocidad en el pasito 30: (velocidades[30] − velocidades[29]) / 0,01. MuJoCo guarda la aceleración en `datos.qacc`; para
+compararla, repite la grabación del Paso 1 apuntando también `datos.qacc[1]` después de cada `mj_step`. ¿Se parecen?
+
+**Reto 2 · Un h más grande.** En el Paso 2, calcula la pendiente a los dos lados en el pasito 30 con h = 0,1 (diez pasitos a cada
+lado: `(angulos[40] − angulos[20]) / 0.2`). ¿Se acerca más o menos a `qvel`?
+
+**Reto 3 · Mucha fuerza.** Haz un vídeo del brazo con fuerza **6** (y freno 1,5). ¿Qué ves? ¿Por qué tiene menos puntos?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+modelo, datos = taller.cargar("palo_escoba")
+datos.qpos[1] = 0.1
+vels = [datos.qvel[1]]
+aceleraciones = [0]
+for paso in range(60):
+    mujoco.mj_step(modelo, datos)
+    vels.append(datos.qvel[1])
+    aceleraciones.append(datos.qacc[1])
+print((vels[30] - vels[29]) / 0.01, aceleraciones[30])
+```
+
+Salen **3,522** y **3,525**: casi iguales (la aceleración **es** la pendiente de la velocidad). La pequeña diferencia viene de un
+detalle del simulador: el rozamiento de la bisagra (`damping`) lo aplica de una forma especial, un poquito "por adelantado", para que
+la simulación no se descontrole. Lo verás en el NB49.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+print((angulos[40] - angulos[20]) / 0.2, velocidades[30])
+```
+
+Sale **0,768** frente a **0,729** de `qvel`: **peor** que con h = 0,01 (0,747). Con un h grande miras un trozo largo de la curva, que
+ya no parece una recta (el zoom del apartado 5). Aquí el ruido de los decimales del apartado 6 no es problema; el problema es el
+contrario: h demasiado **grande**.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+def politica_fuerte(modelo, datos):
+    orden = 6 * (OBJETIVO - datos.qpos[0]) - 1.5 * datos.qvel[0]
+    datos.ctrl[0] = max(-5, min(5, orden))
+
+modelo, datos = taller.cargar(BRAZO)
+taller.video(modelo, datos, segundos=3, control=politica_fuerte, nombre="nb16_brazo_fuerte", seguir=False, distancia=3.5);
+```
+
+El brazo sale disparado, **se pasa** de la vertical, vuelve, se vuelve a pasar... y tarda en quedarse quieto: el freno (1,5) es
+poco para tanta fuerza. Pierde puntos por las dos cosas: el tiempo que pasa lejos del objetivo en cada vaivén y la batería de
+tanto acelerón. Saca unos **89 puntos**, frente a los 132 de la cumbre.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **`qvel` es la pendiente de `qpos`**: en cada pasito MuJoCo hace posición nueva = posición vieja + velocidad nueva × paso, así
+  que (posición nueva − vieja) / paso da **exactamente** `qvel`. Y `qacc` es (casi exactamente) la pendiente de `qvel`.
+- Un robot nuevo en MJCF: una bisagra (`hinge`) con su **eje**, un motor con `ctrlrange`, un mundo **sin gravedad**, y una forma
+  de adorno que no choca (`contype="0" conaffinity="0"`).
+- **`mujoco.mj_resetData`** devuelve una simulación al principio: imprescindible para evaluar muchas políticas seguidas.
+- Una **política con ruedecillas** (fuerza y freno) + unos **puntos** = una montaña que se puede medir con pendientes.
+
+En la práctica del NB17, el brazo **aprenderá solo**: subirá por la montaña de sus **dos** ruedecillas siguiendo el gradiente.
+"""),
+
+md(r"""## 13 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

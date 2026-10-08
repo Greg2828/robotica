@@ -8,6 +8,10 @@ proyección: cuánto de una flecha va en una dirección; el premio por avanzar
 del humanoide = velocidad · (1,0,0); acercarse a la meta; v·v = longitud² =
 esfuerzo; la neurona artificial (pesos · entradas + sesgo, y umbral =
 perceptrón); el termostato es una neurona; detector de caídas que anticipa.
+Práctica en MuJoCo: flecha "arriba" de una pieza (xmat[2,5,8], unitaria);
+derechura = arriba · (0,0,1) del torso del humanoide al caer (se arrodilla
+casi derecho y luego se tumba); neurona pesos · obs (3; 0,8; 0,1; 0,2) al mando
+del palo de escoba MuJoCo (vídeo, derecho); sin pesos cae a 0,52 s.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -536,14 +540,246 @@ cuando hace **mucho**). El signo del peso decide si una entrada **anima** o **fr
 </details>
 """),
 
-md(r"""## 12 · Posdata
+md(r"""## 12 · 🛠 Práctica en MuJoCo: ¿cuánto se inclina? y una neurona al mando
+
+Hoy has visto los dos significados del producto escalar: **cuánto apuntan dos flechas hacia el mismo sitio** y **una
+suma con pesos** (la neurona). En esta práctica vas a usar los dos en MuJoCo:
+
+1. Con el primero, medirás **cuánto se inclina el torso del humanoide** mientras se desploma. Es una de las cosas que
+   un robot necesita saber a cada instante para no caerse.
+2. Con el segundo, le darás al **palo de escoba de MuJoCo** (el carrito con un palo de la práctica del NB11) una
+   **neurona** como cerebro: empuje = pesos · observación.
+
+Tu función `producto_escalar` del apartado 2 sigue viva en este notebook: la usaremos tal cual.
+"""),
+
+md(r"""### Paso 1 · La flecha "arriba" de cada pieza
+
+Cada pieza de un robot tiene su **propia** idea de "arriba": la dirección en la que apunta su cabeza, por así decirlo.
+Si la pieza está derecha, su "arriba" coincide con el arriba del mundo, (0, 0, 1). Si está tumbada, apunta de lado.
+
+MuJoCo guarda, para cada pieza, **9 números** llamados **`xmat`** que describen hacia dónde apuntan sus tres ejes (en
+el NB14 entenderás por qué son 9 y qué significa cada uno). Por ahora basta una receta: los números de las posiciones
+**2, 5 y 8** forman la flecha "arriba" de la pieza. Una función que la saca:
+"""),
+
+code(r"""import mujoco
+import taller
+
+def arriba_de(datos, pieza):
+    m = datos.body(pieza).xmat
+    return [float(m[2]), float(m[5]), float(m[8])]
+
+modelo, datos = taller.cargar("humanoide")
+eje = arriba_de(datos, "torso")
+print("Arriba del torso:", eje)
+print("Su longitud al cuadrado (eje · eje):", producto_escalar(eje, eje))"""),
+
+md(r"""El humanoide aparece de pie, así que el "arriba" de su torso es justo (0, 0, 1). Y fíjate en el segundo número: eje ·
+eje = 1, o sea, la flecha mide **1**. Es un **vector unitario** (apartado 6): solo dice una **dirección**. MuJoCo las
+guarda siempre así.
+"""),
+
+md(r"""### Paso 2 · La "derechura": un producto escalar con la vertical
+
+Ahora la pregunta: **¿cuánto del "arriba" del torso va hacia el arriba del mundo?** Es una proyección (apartado 6): el
+producto escalar con el vector unitario (0, 0, 1). Lo llamaremos **derechura**:
+
+```
+   derechura = arriba del torso · (0, 0, 1)
+     1  →  derecho del todo
+     0  →  tumbado (su arriba apunta de lado: perpendicular a la vertical)
+    −1  →  cabeza abajo
+```
+
+Dejamos caer al humanoide **1,2 segundos** (400 pasitos de 0,003 s) y, cada décima de segundo (cada 33 pasitos),
+escribimos la derechura del torso y su altura:
+"""),
+
+code(r"""vertical = [0, 0, 1]
+
+print("tiempo  derechura  altura del torso")
+for paso in range(400):
+    if paso % 33 == 0:
+        derechura = producto_escalar(arriba_de(datos, "torso"), vertical)
+        altura = datos.body("torso").xpos[2]
+        print(f"{datos.time:5.2f}   {derechura:7.3f}    {altura:5.2f}")
+    mujoco.mj_step(modelo, datos)"""),
+
+md(r"""¡Qué interesante! Durante casi **0,8 segundos** el torso **baja** muchísimo (de 1,40 a 0,52 m de altura) pero su
+derechura sigue cerca de **1** (nunca baja de 0,93): el humanoide **se está arrodillando**, con el tronco
+casi derecho. Solo después se **tumba**: la derechura cae a 0,47 y luego a casi **0** (−0,06 y 0,07: tumbado del
+todo, con algún rebote).
+
+Moraleja de robótica: **la altura y la inclinación cuentan cosas distintas**. Un robot que solo mirara la altura no
+sabría si se está agachando a propósito o si se está cayendo de lado. Por eso los robots de verdad miden las dos (y
+la que mide la inclinación se calcula, exactamente, con este producto escalar).
+"""),
+
+md(r"""### Paso 3 · Una neurona controla el palo de escoba
+
+Ahora el otro significado: la **suma con pesos**. Cargamos el palo de escoba de MuJoCo. Recuerda cómo es: un carrito
+que se desliza sobre un raíl, con un palo sujeto por una bisagra, y **un motor** que empuja el carrito. MuJoCo nos da
+cuatro números de observación:
+
+- `datos.qpos[1]`: el **ángulo** del palo (en radianes; positivo = inclinado hacia delante, hacia x positiva).
+- `datos.qvel[1]`: lo deprisa que **gira** el palo.
+- `datos.qpos[0]`: dónde está el **carrito** en el raíl.
+- `datos.qvel[0]`: lo deprisa que se **mueve** el carrito.
+
+La política será **una neurona** sin sesgo: `empuje = pesos · observación`, con los pesos (3; 0,8; 0,1; 0,2). Son
+**positivos** (y no negativos como el −30 del NB11) porque aquí, si el palo se inclina hacia delante, hay que empujar el
+carrito **hacia delante**, para "ponerse debajo", igual que haces con una escoba en la palma de la mano. El motor solo
+acepta órdenes entre −1 y 1, así que las recortamos con dos `if` (como el motor del NB11):
+"""),
+
+code(r"""pesos = [3, 0.8, 0.1, 0.2]
+
+def neurona_al_mando(modelo, datos):
+    observacion = [datos.qpos[1], datos.qvel[1], datos.qpos[0], datos.qvel[0]]
+    empuje = producto_escalar(pesos, observacion)
+    if empuje > 1:
+        empuje = 1
+    if empuje < -1:
+        empuje = -1
+    datos.ctrl[0] = empuje"""),
+
+md(r"""Una función de control, como las de las prácticas anteriores: en cada pasito lee la observación, calcula el
+producto escalar y escribe la orden en `datos.ctrl`. Empezamos con el palo inclinado **0,1 radianes** (unos 6 grados)
+y miramos 5 segundos:
+"""),
+
+code(r"""modelo, datos = taller.cargar("palo_escoba")
+datos.qpos[1] = 0.1                       # el palo empieza inclinado
+
+taller.video(modelo, datos, segundos=5, control=neurona_al_mando, nombre="nb13_neurona_palo", distancia=3)
+print("Derechura del palo al final:", round(producto_escalar(arriba_de(datos, "palo"), vertical), 4))"""),
+
+md(r"""El carrito da un pequeño acelerón hacia delante, se pone debajo del palo, y lo deja **derecho**: derechura final
+**1,0**. Cuatro pesos y una suma: una neurona artificial manteniendo en equilibrio un objeto con física de verdad.
+"""),
+
+md(r"""### Paso 4 · Sin pesos no hay cerebro
+
+¿Y si todos los pesos son 0? La neurona siempre dice "empuja 0": el motor no hace nada. Esta vez no hace falta vídeo:
+simulamos en un bucle y apuntamos **cuándo** la derechura del palo baja de 0,9 (unos 25 grados de inclinación: ya no
+tiene arreglo). El palo de escoba avanza en pasitos de 0,01 s, así que 1.000 pasitos son 10 segundos:
+"""),
+
+code(r"""def cuando_cae(pesos_a_probar):
+    modelo, datos = taller.cargar("palo_escoba")
+    datos.qpos[1] = 0.1
+    for paso in range(1000):
+        observacion = [datos.qpos[1], datos.qvel[1], datos.qpos[0], datos.qvel[0]]
+        empuje = producto_escalar(pesos_a_probar, observacion)
+        if empuje > 1:
+            empuje = 1
+        if empuje < -1:
+            empuje = -1
+        datos.ctrl[0] = empuje
+        mujoco.mj_step(modelo, datos)
+        if producto_escalar(arriba_de(datos, "palo"), vertical) < 0.9:
+            return round(datos.time, 2)
+    return "no se cae en 10 s"
+
+print("Pesos (3; 0,8; 0,1; 0,2):", cuando_cae([3, 0.8, 0.1, 0.2]))
+print("Pesos todos a 0:         ", cuando_cae([0, 0, 0, 0]))"""),
+
+md(r"""Con los buenos pesos, **no se cae en 10 s**. Sin pesos, se cae a los **0,52 s**. La diferencia entre un robot que
+se mantiene y uno que se desploma son **cuatro números**: los pesos de una neurona.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1 · El problema de la foto.** Quita el peso de la velocidad de giro: pesos (3; 0; 0,1; 0,2). ¿Aguanta? Piensa
+en el detector de caídas del apartado 9 antes de ejecutarlo.
+
+**Reto 2 · Sin mirar el carrito.** Pesos (3; 0,8; 0; 0): la neurona solo mira el palo, no dónde está el carrito. ¿Qué
+crees que pasará? Pista: el raíl mide de −1,8 a 1,8 m.
+
+**Reto 3 · Los pesos al revés.** Pesos (−3; −0,8; −0,1; −0,2), como los del NB11. ¿Antes o después que sin pesos?
+
+**Reto 4 · El premio por avanzar.** Al final del Paso 2 (el humanoide ya en el suelo), calcula el premio por avanzar
+del apartado 7: 1,25 × (velocidad del torso · (1, 0, 0)). Recuerda (NB12) que la velocidad del torso son los tres
+primeros números de `datos.qvel`. Recarga y vuelve a dejarlo caer 0,6 s (200 pasitos): ¿qué premio recibe en ese
+momento, y por qué tiene ese signo?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+print(cuando_cae([3, 0, 0.1, 0.2]))
+```
+
+Se cae a los **1,25 s**: aguanta algo más que sin pesos, pero no lo salva. Sin peso en la velocidad, la neurona solo ve
+**dónde** está el palo, no **hacia dónde va**: empuja cuando ya está inclinado, se pasa, el palo se balancea cada vez
+más, y acaba cayendo. Es el **problema de la foto** (NB03, NB11, apartado 9): para anticiparse hay que mirar la velocidad.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+print(cuando_cae([3, 0.8, 0, 0]))
+```
+
+Se cae a los **3,88 s**. El palo se mantiene de pie un buen rato, pero el carrito, para conseguirlo, se va desplazando
+poco a poco hacia un lado sin que nadie lo frene... hasta que llega al **final del raíl** (x = 1,8), choca con el tope, ya
+no puede moverse y el palo cae. Los dos pesos pequeños del carrito (0,1 y 0,2) son los que le dicen "y no te alejes del
+centro".
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+print(cuando_cae([-3, -0.8, -0.1, -0.2]))
+```
+
+A los **0,26 s**: ¡el **doble** de rápido que sin pesos! Empuja hacia el lado **equivocado** (aparta el carrito de debajo
+del palo) y lo tira. El signo de un peso decide si una entrada anima o frena (ejercicio de este notebook): aquí, si
+ayuda o sabotea.
+</details>
+
+<details>
+<summary>▶ Solución Reto 4</summary>
+
+```python
+modelo, datos = taller.cargar("humanoide")
+for paso in range(200):
+    mujoco.mj_step(modelo, datos)
+velocidad = list(datos.qvel[0:3])
+print(1.25 * producto_escalar(velocidad, [1, 0, 0]))
+```
+
+Sale un número **negativo**, unos **−0,43** puntos: en ese momento el torso va un poco **hacia atrás** (cae de espaldas, NB12),
+y el producto escalar con "delante" lo castiga. Un premio por avanzar que, cayéndote de espaldas, te quita puntos: justo
+lo que queríamos.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **`datos.body("pieza").xmat`** guarda la orientación de cada pieza con 9 números; los de las posiciones 2, 5 y 8 son su
+  flecha "arriba", un **vector unitario**.
+- La **inclinación** de una pieza se mide con un producto escalar: su "arriba" · (0, 0, 1). Altura e inclinación cuentan
+  cosas distintas.
+- La observación del palo de escoba de MuJoCo: `qpos[1]`, `qvel[1]` (palo) y `qpos[0]`, `qvel[0]` (carrito).
+- Una **política lineal** (una neurona) se enchufa a MuJoCo con una función de control que escribe
+  `datos.ctrl[0] = pesos · observación`.
+
+En la práctica del NB14 abrirás esos 9 números de `xmat`: son una **matriz**, y descubrirás que sirve para **girar
+flechas**.
+"""),
+
+md(r"""## 13 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
 Has descubierto que una neurona es un producto escalar con un sesgo, y que tu política del palo de escoba era **una** neurona.
 Pero el humanoide tiene **17 motores**: necesita **17 salidas** a la vez, una por motor. ¿Y eso? Pues **17 neuronas**, cada una
 con sus 45 pesos. En el **NB14** veremos cómo se organizan todos esos pesos en una **tabla de números**, una **matriz**, y
-contaremos cuántas ruedecillas tiene la política más sencilla posible del humanoide. Spoiler: muchas más de 2.
+contaremos cuántas ruedecillas tiene la política más sencilla posible del humanoide. Spoiler: muchas más de 2. Y en su práctica
+abrirás los 9 números de `xmat` que hoy has usado como receta.
 """),
 
 ]

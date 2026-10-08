@@ -9,6 +9,10 @@ real si no encajan); capa lineal = M·x + b; la política lineal del humanoide
 5.933) aplicada a una observación inventada, recortando a ±0,4; por qué la
 búsqueda aleatoria no da abasto (0,5**782 en notación científica); dos capas
 en fila = una red (avance).
+Práctica en MuJoCo: xmat como matriz de giro 3×3 (columnas = ejes de la pieza);
+punta/centro del palo = xpos + R·(punto en la pieza), coincide con geom_xpos;
+cabeza del humanoide tras caer, igual; la política con matriz 17×45 (qpos[2:] +
+qvel) al mando del humanoide (vídeo): cae a 0,21 s frente a 0,60 s sin hacer nada.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -544,7 +548,226 @@ negativo, hacia la izquierda (números pequeños).
 </details>
 """),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: la matriz que gira las piezas
+
+En la práctica del NB13 usaste una receta misteriosa: "los números 2, 5 y 8 de `xmat` son la flecha *arriba* de la
+pieza". Hoy, que ya sabes qué es una matriz, vas a abrir esos **9 números**: son una **tabla de 3 × 3**, y MuJoCo la usa
+para algo muy concreto: **girar flechas**. Con ella (y tu `matriz_por_vector`) calcularás tú mismo dónde está la punta del
+palo de escoba y la cabeza del humanoide, como lo hace MuJoCo por dentro. Y al final pondrás **tu política con matriz**
+del apartado 8 a mover al humanoide de verdad.
+
+Tus funciones `producto_escalar`, `matriz_por_vector`, `sumar`, `capa` y `recortar` siguen vivas en este notebook.
+"""),
+
+md(r"""### Paso 1 · Nueve números son una tabla de 3 × 3
+
+Cargamos el palo de escoba y lo inclinamos **0,3 radianes** (unos 17 grados) sin que pase el tiempo. Para eso se cambia
+el ángulo en `datos.qpos[1]` y se llama a **`mujoco.mj_forward`**, que recalcula dónde queda cada pieza sin avanzar el
+reloj (es lo que hace `taller.poner_angulo` por dentro).
+
+Después leemos los 9 números de `xmat` del palo y los colocamos en una **lista de listas** (apartado 3): fila 0 = números
+0, 1, 2; fila 1 = 3, 4, 5; fila 2 = 6, 7, 8. Con un bucle anidado (apartado 4):
+"""),
+
+code(r"""import mujoco
+import taller
+
+def matriz_de(datos, pieza):
+    nueve = datos.body(pieza).xmat
+    matriz = []
+    for fila in range(3):
+        numeros_fila = []
+        for columna in range(3):
+            numeros_fila.append(round(float(nueve[3 * fila + columna]), 3))
+        matriz.append(numeros_fila)
+    return matriz
+
+modelo, datos = taller.cargar("palo_escoba")
+datos.qpos[1] = 0.3
+mujoco.mj_forward(modelo, datos)
+
+giro_palo = matriz_de(datos, "palo")
+for fila in giro_palo:
+    print(fila)"""),
+
+md(r"""(El número de la fila `f`, columna `c`, está en la posición `3 × f + c` de los nueve: la fila 1, columna 2 es la
+posición 5. Así se "aplana" una tabla en una fila larga.)
+
+Mira las **columnas**, de arriba abajo:
+
+- Columna 0: (0,955; 0; −0,296) → hacia dónde apunta el **"delante"** del palo.
+- Columna 1: (0; 1; 0) → su **"izquierda"**: no ha cambiado, porque el palo gira alrededor de ese eje (la bisagra).
+- Columna 2: (0,296; 0; 0,955) → su **"arriba"**: inclinado hacia delante. ¡Son los números 2, 5 y 8 del NB13!
+
+**Cada columna es uno de los ejes de la pieza**, visto desde el mundo. A esta matriz se le llama **matriz de rotación** (o de
+giro): describe cómo está girada la pieza.
+"""),
+
+md(r"""### Paso 2 · Matriz por vector: de "en el palo" a "en el mundo"
+
+¿Dónde está la **punta** del palo? Desde el punto de vista del propio palo es facilísimo: el palo mide 1 m y sale de su
+bisagra hacia **su** arriba, así que la punta está en (0, 0, 1) **en coordenadas del palo**. Pero eso no nos dice dónde está
+en el mundo, porque el palo está girado.
+
+Aquí entra la operación estrella: **la matriz de giro por la flecha** convierte una flecha "del palo" en una flecha "del
+mundo". Y luego se le **suma** la posición de la bisagra (`xpos`, NB12), que es desde donde sale:
+
+```
+   punto en el mundo = posición de la pieza + matriz de giro × (punto en la pieza)
+```
+"""),
+
+code(r"""bisagra = list(datos.body("palo").xpos)
+
+punta = sumar(bisagra, matriz_por_vector(giro_palo, [0, 0, 1]))
+mitad = sumar(bisagra, matriz_por_vector(giro_palo, [0, 0, 0.5]))
+print("Bisagra:              ", [round(float(x), 3) for x in bisagra])
+print("Punta (calculada):    ", [round(float(x), 3) for x in punta])
+print("Mitad (calculada):    ", [round(float(x), 3) for x in mitad])
+print("Mitad según MuJoCo:   ", [round(float(x), 3) for x in datos.geom("palo").xpos])"""),
+
+md(r"""La punta está **29,6 cm por delante** de la bisagra y a **1,455 m** de altura (la bisagra está a 0,5 m y el palo, inclinado,
+sube 0,955 m en vez de 1). Y la comprobación: MuJoCo guarda la posición del **centro** de cada forma en
+`datos.geom("nombre").xpos`, y el centro del palo, según MuJoCo, es (0,148; 0; 0,978)... **exactamente** lo que hemos
+calculado para la mitad. Así es como MuJoCo sabe dónde está cada cosa: **una matriz por un vector, y una suma**.
+"""),
+
+md(r"""### Paso 3 · ¿Dónde está la cabeza del humanoide?
+
+La cabeza del humanoide no es una pieza aparte: es una **forma** (una esfera) pegada al torso, 19 cm por encima de su
+centro. El modelo lo dice en `modelo.geom("head").pos`: es la posición de la cabeza **en coordenadas del torso**. Dejamos
+caer al humanoide 1 segundo (333 pasitos) y calculamos dónde ha ido a parar la cabeza, con la misma receta:
+"""),
+
+code(r"""modelo, datos = taller.cargar("humanoide")
+for paso in range(333):
+    mujoco.mj_step(modelo, datos)
+
+cabeza_en_el_torso = list(modelo.geom("head").pos)
+giro_torso = matriz_de(datos, "torso")
+cabeza = sumar(list(datos.body("torso").xpos), matriz_por_vector(giro_torso, cabeza_en_el_torso))
+
+print("Cabeza en coordenadas del torso:", [float(x) for x in cabeza_en_el_torso])
+print("Cabeza en el mundo (calculada): ", [round(float(x), 3) for x in cabeza])
+print("Cabeza según MuJoCo:            ", [round(float(x), 3) for x in datos.geom("head").xpos])"""),
+
+md(r"""La cabeza está a solo **0,356 m** del suelo, 58 cm por detrás del origen: el humanoide está tumbado de espaldas. Y otra
+vez, tu cálculo coincide con el de MuJoCo hasta el milímetro. Cuando el humanoide está de pie, la matriz del torso es la
+**identidad** (unos en la diagonal, ceros fuera) y la cabeza queda justo encima; cuando se cae, la matriz gira y "se lleva"
+la cabeza con ella.
+"""),
+
+md(r"""### Paso 4 · Tu política con matriz, al mando del humanoide
+
+Y ahora, la otra cara de las matrices: la **política lineal** del apartado 8. Allí la probaste con una observación
+**inventada**. Hoy le damos la observación **de verdad**: los 45 números que el NB03 llamaba "observación básica" son, en
+MuJoCo, las posiciones de las articulaciones **sin las dos primeras** (`datos.qpos[2:]`, 22 números) seguidas de todas las
+velocidades (`datos.qvel`, 23 números). Las pegamos en una sola lista con `+` (NB09) y comprobamos el tamaño, porque la
+**regla de los tamaños** (apartado 6) manda:
+"""),
+
+code(r"""observacion = list(datos.qpos[2:]) + list(datos.qvel)
+print("Números de observación:", len(observacion), "| columnas de la matriz:", len(matriz_humanoide[0]))
+print("Motores del humanoide: ", modelo.nu, "| filas de la matriz:", len(matriz_humanoide))"""),
+
+md(r"""45 y 45, 17 y 17: **encajan**. La función de control hace exactamente lo del apartado 8, en cada pasito: matriz por
+observación más sesgos, recortar cada acción a ±0,4, y escribir las 17 en `datos.ctrl`. La `matriz_humanoide` es la de
+pesos al azar que fabricaste en el apartado 8:
+"""),
+
+code(r"""def politica_con_matriz(modelo, datos):
+    observacion = list(datos.qpos[2:]) + list(datos.qvel)
+    acciones = capa(matriz_humanoide, sesgos_humanoide, observacion)
+    for motor in range(17):
+        datos.ctrl[motor] = recortar(acciones[motor], -0.4, 0.4)
+
+modelo, datos = taller.cargar("humanoide")
+taller.video(modelo, datos, segundos=2, control=politica_con_matriz, nombre="nb14_politica_matriz");"""),
+
+md(r"""Convulsiona y se derrumba, como el robot recién nacido del NB00. Para medirlo sin vídeo: con esta política el torso baja
+de 1 m de altura a los **0,21 s**; sin hacer nada (el muñeco de trapo), a los **0,60 s**. Pesos al azar = peor que no hacer
+nada. **La matriz funciona perfectamente; lo que falta son los 782 pesos buenos.** Encontrarlos es el gran problema de las
+próximas lecciones.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1 · Los ejes forman esquinas.** Con la `giro_palo` del Paso 1, saca sus tres columnas como flechas y comprueba con
+`producto_escalar` que cada columna mide 1 (columna · columna = 1) y que dos columnas distintas son **perpendiculares**
+(su producto escalar es 0, NB13).
+
+**Reto 2 · Gira tú la gravedad.** Esta matriz gira las flechas en el plano x-z:
+
+```python
+giro = [[0.8, 0, 0.6],
+        [0,   1, 0  ],
+        [-0.6, 0, 0.8]]
+```
+
+Multiplícala por la gravedad (0, 0, −9,81). ¿Qué flecha sale? ¿Cuánto mide? Úsala como gravedad del humanoide (como en la
+práctica del NB12): ¿hacia dónde cae?
+
+**Reto 3 · Cuenta con MuJoCo.** Usa `modelo.nu` (motores), `modelo.nq` y `modelo.nv` para calcular, **sin escribir ningún
+número a mano**, las ruedecillas de la política lineal del humanoide (filas × columnas + sesgos). ¿Sale 782?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+columnas = []
+for c in range(3):
+    columnas.append([giro_palo[0][c], giro_palo[1][c], giro_palo[2][c]])
+print(producto_escalar(columnas[0], columnas[0]), producto_escalar(columnas[2], columnas[2]))
+print(producto_escalar(columnas[0], columnas[2]), producto_escalar(columnas[0], columnas[1]))
+```
+
+Las longitudes al cuadrado salen ≈ **1** (0,9996... por el redondeo a 3 decimales de `matriz_de`) y los productos entre
+columnas distintas, **0**. Los tres ejes de una pieza siempre miden 1 y forman esquinas entre sí: girar una pieza no la
+estira ni la deforma. Eso es lo que distingue a una matriz de **giro** de cualquier otra tabla de números.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+giro = [[0.8, 0, 0.6], [0, 1, 0], [-0.6, 0, 0.8]]
+nueva = matriz_por_vector(giro, [0, 0, -9.81])
+print(nueva, producto_escalar(nueva, nueva) ** 0.5)
+```
+
+Sale **(−5,886; 0; −7,848)**, que mide **9,81**: la misma gravedad, girada (un giro nunca cambia la longitud). Apunta un
+poco hacia **atrás** (x negativa), así que con `modelo.opt.gravity = nueva` el humanoide cae de espaldas y resbala hacia
+atrás, como en el Paso 4 del NB12 pero al revés.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+entradas = (modelo.nq - 2) + modelo.nv
+salidas = modelo.nu
+print(entradas, salidas, salidas * entradas + salidas)
+```
+
+(24 − 2) + 23 = **45** entradas, **17** salidas, y 17 × 45 + 17 = **782** ruedecillas. Leer los tamaños del propio modelo, en
+vez de escribirlos a mano, es lo que hacen los programas de verdad: así, si cambias de robot, todo se recalcula solo.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **`xmat`** son los 9 números de una **matriz de giro** 3 × 3; sus **columnas** son los ejes de la pieza (delante,
+  izquierda, arriba) vistos desde el mundo.
+- **Punto en el mundo = `xpos` + matriz de giro × punto en la pieza.** Es así como MuJoCo coloca cada forma; lo has
+  comprobado con `datos.geom("nombre").xpos` (el centro de una forma) y `modelo.geom("nombre").pos` (dónde está pegada).
+- **`mujoco.mj_forward`** recalcula posiciones y giros sin avanzar el tiempo.
+- La observación básica del humanoide son `qpos[2:]` + `qvel` (45 números), y una política lineal es una matriz 17 × 45
+  que escribe sus 17 acciones en `datos.ctrl`.
+
+En la práctica del NB15 descubrirás que todo esto ya venía en **arrays de NumPy**, y harás en una línea lo que hoy te ha
+costado un bucle anidado.
+"""),
+
+md(r"""## 14 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
@@ -554,8 +777,8 @@ contado sus ruedecillas: cientos, miles. Y has notado algo: nuestras funciones c
 **lentos**.
 
 En el **NB15** conocerás la herramienta que usa **todo** el mundo de la robótica y la inteligencia artificial para esto: **NumPy**,
-que hace estas operaciones decenas de veces más rápido y con una sola línea. Y como gran final, abriremos **el simulador de
-verdad** del humanoide, MuJoCo, por primera vez en el curso: veremos que su observación **es** un vector de NumPy, le
+que hace estas operaciones decenas de veces más rápido y con una sola línea. Y como gran final, manejaremos al humanoide a
+través de **Gymnasium**, la herramienta estándar para entrenar robots: veremos que su observación **es** un vector de NumPy, le
 aplicaremos **tu** política lineal... y mediremos cuántos puntos saca.
 """),
 

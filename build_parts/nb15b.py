@@ -10,6 +10,10 @@ crecimiento y decrecimiento exponencial; el número e (interés compuesto);
 e^x y sus reglas; la campana e^(-x²); decaimiento exponencial y constante de
 tiempo (el 63 %); el logaritmo como pregunta inversa (log10, log2 y bits, ln),
 sus reglas comprobadas con números, log(0) y negativos; escalas logarítmicas.
+Práctica en MuJoCo: damping = decaimiento exponencial. Disco en un raíl
+(m=1, damping 0,5 → τ=2 s): a t=τ queda 36,9 % (e^−1 = 36,8 %), posición →
+4·(1−e^(−t/2)); τ medida con la pendiente de ln(v) = 2,005 s. Péndulo con
+damping (vídeo): cada pico 62,7 % del anterior, τ de los balanceos ≈ 4,28 s.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -453,7 +457,241 @@ plt.show()
 </details>
 """),
 
-md(r"""## 8 · Posdata
+md(r"""## 8 · 🛠 Práctica en MuJoCo: lo que se apaga (y cómo medirlo con un logaritmo)
+
+En el apartado 3 dijimos que, cuando **la rapidez con que algo cambia es proporcional a lo que le queda**, sale un
+**decaimiento exponencial**. En el mundo de los robots hay un ejemplo por todas partes: el **rozamiento viscoso**
+(en inglés, *damping*), un freno que es más fuerte cuanto más deprisa te mueves, como meter la mano en la miel. MuJoCo lo
+tiene incorporado: es el atributo **`damping`** de una articulación.
+
+En esta práctica vas a:
+
+1. Lanzar un disco por un raíl con rozamiento y comprobar que su velocidad se apaga **exactamente** como e^(−t/τ).
+2. **Medir** τ con un logaritmo, como hacen los ingenieros con datos reales.
+3. Ver un **péndulo** que se va parando, y medir lo rápido que se apagan sus balanceos.
+"""),
+
+md(r"""### Paso 1 · Un disco en un raíl con rozamiento
+
+Un plano MJCF pequeño (como la pelota del NB02): un disco de **1 kg** que solo puede deslizarse a lo largo del eje x (una
+articulación `slide`, como el carrito del palo de escoba), con **`damping="0.5"`**. Lo de `contype="0" conaffinity="0"` le
+dice a MuJoCo que el disco no choque con nada (flota un pelín por encima del suelo, para que el único freno sea el damping).
+
+La física dice que, con este freno, la velocidad se apaga como e^(−t/τ) con una constante de tiempo **τ = masa / damping**
+= 1 / 0,5 = **2 segundos**. Vamos a comprobarlo. Lanzamos el disco a **2 m/s** escribiendo su velocidad inicial en
+`datos.qvel[0]`:
+"""),
+
+code(r"""import mujoco
+import taller
+
+DISCO = '''
+<mujoco>
+  <option timestep="0.01"/>
+  <worldbody>
+    <light pos="0 0 3"/>
+    <geom type="plane" size="6 1 0.1" rgba=".8 .9 .8 1"/>
+    <body name="disco" pos="0 0 0.05">
+      <joint name="rail" type="slide" axis="1 0 0" damping="0.5"/>
+      <geom type="cylinder" size="0.1 0.03" mass="1" rgba=".9 .2 .2 1" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+</mujoco>
+'''
+
+modelo, datos = taller.cargar(DISCO)
+datos.qvel[0] = 2.0                     # ¡lanzado a 2 m/s!
+print("Velocidad inicial:", datos.qvel[0], "m/s")"""),
+
+md(r"""### Paso 2 · Registrar y comparar con la fórmula
+
+Simulamos **10 segundos** (1.000 pasitos de 0,01 s) y registramos tiempo, velocidad y posición en arrays (como en la
+práctica del NB15):
+"""),
+
+code(r"""tiempos = np.zeros(1000)
+velocidades = np.zeros(1000)
+posiciones = np.zeros(1000)
+
+for paso in range(1000):
+    mujoco.mj_step(modelo, datos)
+    tiempos[paso] = datos.time
+    velocidades[paso] = datos.qvel[0]
+    posiciones[paso] = datos.qpos[0]
+
+tau = 2.0
+paso_tau = 199                          # el paso número 199 es el instante t = 2,00 s
+print("Tiempo:", round(tiempos[paso_tau], 2), "s")
+print("Velocidad que le queda:", round(velocidades[paso_tau] / 2.0 * 100, 1), "% de la inicial")
+print("La fórmula e^(−1) dice: ", round(np.exp(-1) * 100, 1), "%")"""),
+
+md(r"""**36,9 % contra 36,8 %**: tras una constante de tiempo le queda el 37 %, como prometía el apartado 3. Dibujemos la
+velocidad de MuJoCo encima de la fórmula 2 · e^(−t/2), con la función `dibujar` del principio del notebook:
+"""),
+
+code(r"""dibujar(tiempos, [(velocidades, "MuJoCo"), (2.0 * np.exp(-tiempos / tau), "fórmula 2·e^(−t/2)")],
+        "Velocidad del disco frenado por el damping")"""),
+
+md(r"""Las dos curvas van **una encima de otra**: no se distinguen. Un simulador de física y una fórmula de una línea cuentan la
+misma historia.
+
+¿Y la **posición**? El disco no recorre una distancia infinita: se va parando, y se acerca a un límite. Es la curva "que
+sube" del apartado 3, 1 − e^(−t/τ), estirada: el límite es **velocidad inicial × τ = 2 × 2 = 4 metros**:
+"""),
+
+code(r"""dibujar(tiempos, [(posiciones, "MuJoCo"), (4 * (1 - np.exp(-tiempos / tau)), "fórmula 4·(1 − e^(−t/2))")],
+        "Posición del disco: se acerca a 4 m sin llegar")
+print("Posición a los 10 s:", round(posiciones[-1], 3), "m")"""),
+
+md(r"""A los 10 s (5 τ) está en **3,973 m**: le falta menos del 1 % para los 4 m (el "ha terminado" de los 5 τ).
+"""),
+
+md(r"""### Paso 3 · Medir τ con un logaritmo
+
+Ahora el truco de verdad. Imagina que **no** conoces la fórmula τ = masa / damping: tienes un robot real, mides su
+velocidad, y quieres saber su constante de tiempo. ¿Cómo?
+
+Con el **logaritmo**. Si v = 2 · e^(−t/τ), sus reglas (apartado 4) dicen:
+
+```
+   ln(v) = ln(2) + ln(e^(−t/τ)) = ln(2) − t/τ
+```
+
+¡Una **recta** (NB04b) con pendiente **−1/τ**! Es la regla del apartado 5: una exponencial, mirada con logaritmo, es una
+recta. Dibujemos ln(v):
+"""),
+
+code(r"""dibujar(tiempos, [(np.log(velocidades), "ln(velocidad)")], "El logaritmo convierte la exponencial en una recta")"""),
+
+md(r"""Una recta perfecta. Su pendiente (NB04b: lo que sube ÷ lo que avanza) la medimos con dos puntos cualesquiera, por
+ejemplo t = 1 s (paso 99) y t = 4 s (paso 399). Y τ es menos uno dividido por la pendiente:
+"""),
+
+code(r"""a, b = 99, 399
+pendiente_log = (np.log(velocidades[b]) - np.log(velocidades[a])) / (tiempos[b] - tiempos[a])
+print("Pendiente de la recta:", round(pendiente_log, 4))
+print("τ medida:", round(-1 / pendiente_log, 3), "s   (la física decía 2)")"""),
+
+md(r"""**τ = 2,005 s**, medida solo con los datos. (El 0,005 de diferencia viene de los pasitos de 0,01 s: el simulador hace la
+cuenta a saltos, NB02, y se separa un pelín de la curva perfecta.) Esta es exactamente la forma en que un ingeniero mide la
+constante de tiempo de un motor o de un sensor: graba datos, toma logaritmos y mide una pendiente.
+"""),
+
+md(r"""### Paso 4 · Un péndulo que se va parando
+
+Ahora un péndulo: una bola de 1 kg al final de una varilla de 1 m, colgada de una bisagra con **`damping="0.5"`**. Lo soltamos
+desde **0,5 radianes** (unos 29 grados). El poste gris es solo decorado (no choca con nada, por el `contype="0"`).
+Primero, a verlo:
+"""),
+
+code(r"""PENDULO = '''
+<mujoco>
+  <option timestep="0.002"/>
+  <worldbody>
+    <light pos="0 -2 3"/>
+    <geom type="plane" size="2 2 0.1" rgba=".8 .9 .8 1"/>
+    <geom type="capsule" fromto="0 0.3 0 0 0.3 1.5" size="0.03" rgba=".4 .4 .4 1" contype="0" conaffinity="0"/>
+    <geom type="capsule" fromto="0 0.3 1.5 0 0 1.5" size="0.02" rgba=".4 .4 .4 1" contype="0" conaffinity="0"/>
+    <body name="pendulo" pos="0 0 1.5">
+      <joint name="eje" type="hinge" axis="0 1 0" damping="0.5"/>
+      <geom type="capsule" fromto="0 0 0 0 0 -1" size="0.02" mass="0.2"/>
+      <geom type="sphere" pos="0 0 -1" size="0.08" mass="1" rgba=".2 .4 .9 1"/>
+    </body>
+  </worldbody>
+</mujoco>
+'''
+
+modelo, datos = taller.cargar(PENDULO)
+datos.qpos[0] = 0.5
+taller.video(modelo, datos, segundos=8, nombre="nb15b_pendulo", seguir=False, distancia=3);"""),
+
+md(r"""Cada balanceo es más corto que el anterior. ¿Cómo de deprisa se apagan? Medimos los **picos**: el ángulo máximo de cada ida
+y vuelta. Un pico es el instante en que el péndulo deja de subir y empieza a bajar, es decir, cuando su velocidad pasa de
+**positiva** a **negativa** (o cero). Lo detectamos con un `if` que compara la velocidad de ahora con la del pasito anterior:
+"""),
+
+code(r"""modelo, datos = taller.cargar(PENDULO)
+datos.qpos[0] = 0.5
+
+picos = []
+tiempos_picos = []
+anterior = datos.qvel[0]
+for paso in range(6000):                 # 12 segundos de pasitos de 0,002 s
+    mujoco.mj_step(modelo, datos)
+    if anterior > 0 and datos.qvel[0] <= 0:
+        picos.append(datos.qpos[0])
+        tiempos_picos.append(datos.time)
+    anterior = datos.qvel[0]
+
+picos = np.array(picos)
+tiempos_picos = np.array(tiempos_picos)
+print("Tiempos de los picos:", np.round(tiempos_picos, 2))
+print("Ángulos de los picos:", np.round(picos, 4))
+print("Cada pico / el anterior:", np.round(picos[1:] / picos[:-1], 3))"""),
+
+md(r"""Un pico cada **2 segundos** (lo que tarda una ida y vuelta), y cada uno es **el 63 %** del anterior (de 62,7 % a 62,9 %): siempre la misma
+proporción. "Multiplicar por lo mismo en cada paso": ¡una exponencial! Así que sus logaritmos forman una recta, y su pendiente
+da la constante de tiempo de los balanceos:
+"""),
+
+code(r"""logs = np.log(picos)
+pendiente_log = (logs[-1] - logs[0]) / (tiempos_picos[-1] - tiempos_picos[0])
+print("τ de los balanceos:", round(-1 / pendiente_log, 2), "s")
+dibujar(tiempos_picos, [(logs, "ln(pico)")], "Los picos del péndulo, con logaritmo: una recta")"""),
+
+md(r"""**τ ≈ 4,28 s**: cada 4,28 segundos, los balanceos se quedan en el 37 % de lo que eran. Aquí no te he dado ninguna fórmula
+(la de un péndulo es más complicada que la del disco): la has **medido**, como se mide en un laboratorio. En el NB39b verás de
+dónde sale.
+"""),
+
+md(r"""### Tus retos
+
+**Reto 1 · Más freno.** Cambia el damping del disco a **1,0** (el doble). Según τ = masa / damping, ¿cuál será la nueva τ?
+¿Y hasta dónde llegará el disco? Compruébalo midiendo τ con el logaritmo y mirando la posición final.
+
+**Reto 2 · Más pesado.** Vuelve a damping 0,5, pero pon `mass="4"`. ¿Qué τ esperas? ¿Se para antes o después?
+
+**Reto 3 · ¿Cuándo baja de 0,05?** Con la τ del péndulo, calcula con un logaritmo **cuánto tiempo** tardan los balanceos en
+bajar de 0,5 a 0,05 radianes (diez veces menos). Pista: e^(−t/τ) = 0,1 → t = τ · ln(10). Compruébalo con la lista de picos.
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+τ = 1 / 1,0 = **1 s** (la mitad), y el disco llega a 2 × 1 = **2 m**. Cambia `damping="0.5"` por `damping="1.0"` en `DISCO`,
+vuelve a ejecutar las celdas del Paso 1, del registro del Paso 2 y de la medida del Paso 3: la pendiente sale ≈ −1 → **τ ≈ 1,01 s**,
+y la posición final ≈ **2,0 m**. Doble freno, la mitad de tiempo y de distancia.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+τ = 4 / 0,5 = **8 s**: cuatro veces más. Un disco más pesado tiene más **inercia** (NB02): el mismo freno le cuesta más
+pararlo, así que se apaga **más despacio** y llega mucho más lejos (2 × 8 = 16 m... ¡el suelo solo mide 12, pero como no choca
+con nada, sigue flotando!). En 10 s solo habrá pasado 1,25 τ: va por 11,4 m y aún le queda un 29 % de la velocidad, así que la recta del
+logaritmo da τ = 8,005 igual (la recta existe desde el principio).
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+t = 4,28 × ln(10) = 4,28 × 2,303 ≈ **9,85 s**. En la lista de picos: el de 7,97 s vale 0,0772 (aún por encima de 0,05) y el de
+**9,96 s** vale **0,0486** (ya por debajo). El logaritmo lo había predicho: entre 9,85 y 9,96. Esta es la pregunta típica que se
+contesta con un logaritmo: "¿**cuánto tiempo** tarda en bajar tanto?".
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **`damping`** en una articulación es un freno proporcional a la velocidad (rozamiento viscoso). Produce **decaimiento
+  exponencial**; en una articulación que desliza, τ = masa / damping.
+- Puedes dar una **velocidad inicial** escribiendo en `datos.qvel` antes de simular.
+- Con `contype="0" conaffinity="0"` una forma no choca con nada.
+- **Medir con logaritmos**: ln de algo que decae exponencialmente es una recta, y su pendiente es −1/τ. Así se mide la
+  constante de tiempo de cualquier cosa simulada (o real).
+
+En la práctica del NB16 verás que la velocidad que te da MuJoCo en `qvel` es, exactamente, la **pendiente** de la posición.
+"""),
+
+md(r"""## 9 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
