@@ -11,6 +11,9 @@ convexa, visual frente a colisión, descomposición. Python: pathlib a fondo,
 xml.etree (y por qué no basta), MjSpec (modificar, añadir, attach, delete,
 recompile, to_xml), patrón constructor (interfaz fluida, Self). Barrido de
 morfologías: empuje máximo frente a altura del CdM. Zancudo v2 guardado.
+Práctica en MuJoCo: banco de pruebas de variantes de Zancudo v2 con MjSpec (análisis de
+sensibilidad del empuje máximo: masa, kp, rozamiento con la regla del máximo, retraso y la
+trampa del historial vacío con mj_initCtrlHistory; vídeos nb50_trampa_historial y nb50_hielo).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -1380,7 +1383,281 @@ Sorpresa: basta con alargar el talón de 6 a **6,6 cm**. ¡**6 milímetros** sep
 </details>
 '''),
 
-md(r"""## 17 · Posdata
+md(r"""## 17 · 🛠 Práctica en MuJoCo: un banco de pruebas de variantes de Zancudo v2
+
+En la lección has usado `MjSpec` para **fabricar** robots. En la vida profesional se usa tanto o más para otra cosa: **modificar** un robot que ya existe y preguntarle al simulador "¿qué pasaría si...?". ¿Y si el torso pesa 3 kg más? ¿Y si los motores son más blandos? ¿Y si el suelo es hielo? ¿Y si las órdenes llegan con 50 ms de retraso?
+
+Eso se llama un **análisis de sensibilidad**: cambiar **una cosa cada vez** y medir cuánto cambia el resultado. Es lo que se hace **antes** de la aleatorización de dominio (NB55): si no sabes qué parámetros importan, no sabes cuáles aleatorizar ni cuánto.
+
+Vas a construir un banco de pruebas pequeño, en cinco piezas:
+
+1. Una función `fabricar(**cambios)` que parte de nuestro robot de trabajo, `robots/zancudo_v2.xml`, y le aplica cambios con `MjSpec`.
+2. Una función que prepara la simulación desde la postura `agachado` (un keyframe) y que esquiva una **trampa** de los motores con retraso.
+3. Un veredicto: tras un empuje, ¿Zancudo aguanta, **vuelca** o **resbala**?
+4. Una búsqueda binaria del **empuje máximo** (la de la sección 13).
+5. La tabla de sensibilidad, dos vídeos y una variante guardada en un fichero.
+
+Todo lo de hoy sale: `MjSpec` (modificar formas, motores y rozamientos), los `general` por dentro (`gainprm`, `biasprm`), el **retraso** (`delay`, `nsample`), los keyframes, y la regla del máximo de los rozamientos que viste en el NB48.
+"""),
+
+md(r"""### Paso 1 · Fabricar variantes con MjSpec
+
+La función recibe los cambios como argumentos **solo por nombre** (el `*` del P2) con valores por defecto iguales a los de Zancudo v2. Así `fabricar()` da el robot de serie y `fabricar(kp=450)` cambia solo los motores:
+
+- **Masa**: es un atributo de la forma `torso` (`spec.geom("torso").mass`).
+- **Rozamiento**: el primer número de `friction`. Lo cambiamos en los pies **y en el suelo**, porque MuJoCo combina dos formas con el **mayor** de sus rozamientos (NB48): si solo pusiéramos hielo en los pies, el suelo (μ = 1) mandaría.
+- **kp**: un `position` es un `general` con ganancia kp y sesgo (0, −kp, −kv) (sección 4), así que hay que cambiarlo en **dos** sitios: `gainprm[0]` y `biasprm[1]`.
+- **Retraso**: `delay` en segundos y `nsample`, el número de órdenes que recuerda (una más de las justas, para ir sobrados).
+"""),
+
+code(r"""from pathlib import Path
+
+ZANCUDO_V2 = Path("robots/zancudo_v2.xml")
+
+def fabricar(*, masa_torso: float = 12.0, kp: float = 300.0,
+             rozamiento: float = 1.0, retraso: float = 0.0) -> mujoco.MjModel:
+    spec = mujoco.MjSpec.from_file(str(ZANCUDO_V2))
+    spec.geom("torso").mass = masa_torso
+    for forma in ["pie_d", "pie_i", "suelo"]:
+        spec.geom(forma).friction[0] = rozamiento
+    for motor in spec.actuators:
+        motor.gainprm[0] = kp
+        motor.biasprm[1] = -kp
+        if retraso > 0:
+            motor.delay = retraso
+            motor.nsample = int(round(retraso / spec.option.timestep)) + 1
+    return spec.compile()
+
+serie = fabricar()
+print(f"de serie: {serie.body_subtreemass[0]:.1f} kg, kp = {serie.actuator_gainprm[0, 0]:.0f}, "
+      f"rozamiento del suelo = {serie.geom('suelo').friction[0]}, posturas: {[serie.key(i).name for i in range(serie.nkey)]}")
+hielo = fabricar(rozamiento=0.05, retraso=0.05)
+print(f"variante: rozamiento del suelo = {hielo.geom('suelo').friction[0]}, retraso del primer motor = "
+      f"{hielo.actuator_delay[0]} s, órdenes recordadas = {hielo.actuator_history[0, 0]}")"""),
+
+md(r"""Dos detalles:
+
+- `spec.geom(forma).friction[0] = ...` cambia **un elemento** del array del spec, sin tocar los otros dos números del rozamiento (girar y rodar). Los atributos de `MjSpec` que son vectores se pueden modificar así, en su sitio.
+- El modelo compilado guarda el retraso en `actuator_delay` y el tamaño del historial en `actuator_history` (una fila por motor: cuántas órdenes recuerda y un segundo número que no usamos). 26 órdenes × 0,002 s = 0,052 s: un pelín más que los 50 ms pedidos.
+
+### Paso 2 · Arrancar desde una postura... y la trampa del historial
+
+Para empezar desde `agachado` basta con `mj_resetDataKeyframe` (sección 3). Pero con retraso hay una trampa. El motor obedece a la orden de hace 50 ms. Al arrancar, **¿cuál es la orden de hace 50 ms?** El historial está recién creado y lleno de **ceros**: durante los primeros 50 ms, los motores obedecen a `ctrl = 0`, que para un `position` significa "**piernas rectas**". Zancudo, que empieza agachado, recibe un tirón para estirarse de golpe.
+
+Comprobémoslo antes de arreglarlo. Simulamos 1 segundo sin empujar a nadie, con y sin retraso:
+"""),
+
+code(r"""def arrancar(m: mujoco.MjModel, llenar_historial: bool = True) -> mujoco.MjData:
+    d = mujoco.MjData(m)
+    mujoco.mj_resetDataKeyframe(m, d, m.key("agachado").id)
+    if llenar_historial:
+        for motor in range(m.nu):
+            n = m.actuator_history[motor, 0]
+            if n > 0:                                    # solo los motores con retraso tienen historial
+                mujoco.mj_initCtrlHistory(m, d, motor, None, np.full((n, 1), d.ctrl[motor]))
+    return d
+
+for nombre, m_prueba, llenar in [("sin retraso", fabricar(), True),
+                                 ("retraso 50 ms, historial vacío", fabricar(retraso=0.05), False),
+                                 ("retraso 50 ms, historial lleno", fabricar(retraso=0.05), True)]:
+    d_prueba = arrancar(m_prueba, llenar)
+    for paso in range(500):
+        mujoco.mj_step(m_prueba, d_prueba)
+    print(f"{nombre:>32}: cadera a {0.865 + d_prueba.qpos[1]:.3f} m, torso girado {np.degrees(d_prueba.qpos[2]):6.1f}°")"""),
+
+md(r"""El historial vacío tumba a Zancudo **sin que nadie lo toque**: los 50 ms de "piernas rectas" le dan un tirón que lo desequilibra. Con el historial lleno, se comporta exactamente igual que sin retraso.
+
+La función nueva es **`mujoco.mj_initCtrlHistory(modelo, datos, motor, tiempos, valores)`**: rellena el historial de un motor con los valores que le des (aquí, `nsample` copias de su orden inicial, un array de forma `(n, 1)`; con `tiempos = None` conserva los instantes que ya tenía). Recuerda esta trampa para el NB55-NB61: si entrenas una política con retraso y reinicias los episodios desde posturas con el historial vacío, **cada episodio empieza con un tirón** que en el robot real no existe. Es el tipo de error que no da ningún aviso y que te puede costar días.
+
+### Paso 3 · El veredicto: aguanta, vuelca o resbala
+
+Empujamos el torso con una fuerza horizontal constante durante 3 segundos (como en la sección 13) y miramos dos cosas en cada paso:
+
+- **Vuelca** si el torso se inclina más de 0,3 rad (17°).
+- **Resbala** si el pie derecho se ha desplazado más de 3 cm de donde estaba.
+
+Devolvemos `None` si aguanta, o un texto con lo que ha pasado. Distinguirlo importa: no se arregla igual un robot que vuelca (más pie, mejor control) que uno que patina (mejores suelas).
+"""),
+
+code(r"""def veredicto(m: mujoco.MjModel, fuerza: float, segundos: float = 3.0) -> str | None:
+    d = arrancar(m)
+    torso, pie = m.body("torso").id, m.body("pie_d").id
+    x_pie = d.xpos[pie, 0]
+    for paso in range(int(round(segundos / m.opt.timestep))):
+        d.xfrc_applied[torso, 0] = fuerza
+        mujoco.mj_step(m, d)
+        if abs(d.qpos[2]) > 0.3:
+            return "vuelca"
+        if abs(d.xpos[pie, 0] - x_pie) > 0.03:
+            return "resbala"
+    return None
+
+def empuje_maximo_variante(m: mujoco.MjModel) -> tuple[float, str | None]:
+    aguanta, falla = 0.0, 60.0
+    for vuelta in range(10):
+        medio = (aguanta + falla) / 2
+        if veredicto(m, medio) is None:
+            aguanta = medio
+        else:
+            falla = medio
+    return aguanta, veredicto(m, falla)              # el empuje que aguanta, y cómo falla justo por encima
+
+print("Zancudo v2 de serie:", empuje_maximo_variante(fabricar()))"""),
+
+md(r"""Zancudo v2 agachado aguanta un empuje constante de unos **13,5 N** y, justo por encima, **vuelca**. (Algo menos que los 15,5 N de la sección 13, que empujaba a Zancudo **de pie**, con las piernas rectas: agachado, los motores-muelle ceden más.)
+
+### Paso 4 · La tabla de sensibilidad
+
+Ahora, una variante por fila, cambiando **una sola cosa** cada vez. Con un diccionario de cambios por fila, `fabricar(**cambios)` los reparte en sus argumentos por nombre (P2):
+"""),
+
+code(r"""variantes = {
+    "de serie": {},
+    "torso 9 kg": dict(masa_torso=9.0),
+    "torso 15 kg": dict(masa_torso=15.0),
+    "kp 200": dict(kp=200.0),
+    "kp 450": dict(kp=450.0),
+    "rozamiento 0,3": dict(rozamiento=0.3),
+    "hielo (0,05)": dict(rozamiento=0.05),
+    "retraso 50 ms": dict(retraso=0.05),
+}
+print(f"{'variante':>16} | {'masa':>6} | {'empuje máx':>10} | {'μ·peso':>7} | cómo falla")
+for nombre, cambios in variantes.items():
+    m_var = fabricar(**cambios)
+    empuje, como = empuje_maximo_variante(m_var)
+    peso = m_var.body_subtreemass[0] * 9.81
+    print(f"{nombre:>16} | {m_var.body_subtreemass[0]:4.1f} kg | {empuje:8.1f} N | {m_var.geom('suelo').friction[0] * peso:5.1f} N | {como}")"""),
+
+md(r"""Lee la tabla fila a fila; cada una es una lección que ya conoces:
+
+- **Más masa en el torso aguanta más** (11,2 N con 9 kg; 15,9 N con 15 kg). Es la fórmula del NB48: el empuje F a una altura h desplaza el centro de presiones F·h/W. Con más peso W, el mismo empuje lo desplaza **menos**. Un robot pesado es más difícil de tumbar (aunque más difícil de mover).
+- **Motores más duros aguantan más** (11,8 N con kp = 200; 14,9 N con kp = 450): cuanto menos ceden los "muelles", menos se inclina el cuerpo antes de frenar (la realimentación de la mochila, sección 12).
+- **El rozamiento casi no importa... hasta que importa.** Con μ = 0,3 el resultado apenas cambia (12,8 N, y sigue **volcando**). Con hielo, 0,05, se derrumba a 7,3 N y ahora **resbala**: Zancudo patina antes de volcar. El límite de Coulomb del NB48 es μ·peso = 11,6 N; patina **antes** porque, por debajo del límite, los contactos blandos dejan un deslizamiento lento (NB48) que en 3 segundos acumula los 3 cm del criterio.
+- **El retraso no cambia nada** (13,5 N). Ya lo sabes por la E5: el retraso afecta a las **órdenes**, y aquí las órdenes son constantes (la postura agachada); el PD interno del motor no tiene retraso. El retraso empezará a importar cuando haya **alguien decidiendo** en cada momento: un controlador (NB52) o una política de RL. Allí, 20-50 ms pueden ser la diferencia entre andar y caerse.
+
+Esto es un análisis de sensibilidad en miniatura: en minutos sabes que, para que Zancudo resista empujones, importan el peso, la dureza de los motores y (si el suelo resbala) las suelas; y que su retraso, **con este control**, da igual.
+
+### Paso 5 · Verlo
+
+Dos vídeos de 3 segundos. Primero, la trampa del historial (sin llenarlo, con 50 ms de retraso y nadie empujando). La función `video` de `taller` acepta unos datos ya preparados:
+"""),
+
+code(r"""import taller
+
+m_trampa = fabricar(retraso=0.05)
+fotos = taller.video(m_trampa, arrancar(m_trampa, llenar_historial=False), segundos=3, nombre="nb50_trampa_historial")"""),
+
+md(r"""Ahora Zancudo sobre **hielo** (μ = 0,05), con un empuje constante de 10 N: por debajo de su vuelco de serie (13,5 N), pero por encima de lo que aguanta en hielo (7,3 N). La función de control solo escribe la fuerza en el torso en cada paso:
+"""),
+
+code(r"""m_hielo = fabricar(rozamiento=0.05)
+torso_hielo = m_hielo.body("torso").id
+
+def empujar_10N(m, d):
+    d.xfrc_applied[torso_hielo, 0] = 10.0
+
+d_hielo = arrancar(m_hielo)
+x_inicial = d_hielo.xpos[m_hielo.body("pie_d").id, 0]
+fotos = taller.video(m_hielo, d_hielo, segundos=3, control=empujar_10N, nombre="nb50_hielo")
+print(f"el pie ha patinado {100 * (d_hielo.xpos[m_hielo.body('pie_d').id, 0] - x_inicial):.1f} cm en 3 s, "
+      f"y el torso sigue casi recto ({np.degrees(d_hielo.qpos[2]):.1f}°)")"""),
+
+md(r"""En el primero, Zancudo se estira de golpe y se va al suelo sin que nadie lo toque. En el segundo, **no vuelca**: se desliza entero, de pie, como un patinador empujado.
+
+### Paso 6 · Guardar una variante
+
+Una variante interesante se guarda como cualquier modelo, con `to_xml()` (sección 12), para reproducir el experimento otro día o pasárselo a otra persona. Guardamos la de hielo con retraso y comprobamos que el retraso viaja en el fichero:
+"""),
+
+code(r"""spec_variante = mujoco.MjSpec.from_file(str(ZANCUDO_V2))
+spec_variante.modelname = "zancudo_v2_hielo_retraso"
+for forma in ["pie_d", "pie_i", "suelo"]:
+    spec_variante.geom(forma).friction[0] = 0.05
+for motor in spec_variante.actuators:
+    motor.delay, motor.nsample = 0.05, 26
+
+carpeta = Path("practica_mujoco")
+carpeta.mkdir(exist_ok=True)
+ruta_variante = carpeta / "nb50_zancudo_hielo_retraso.xml"
+ruta_variante.write_text(spec_variante.to_xml())
+
+lineas = [linea.strip() for linea in ruta_variante.read_text().splitlines() if "delay" in linea]
+print(f"guardado {ruta_variante} ({ruta_variante.stat().st_size} bytes); {len(lineas)} motores con retraso, el primero:")
+print(lineas[0])
+recargado = mujoco.MjModel.from_xml_path(str(ruta_variante))
+print("recargado:", recargado.actuator_delay[0], "s de retraso, rozamiento del suelo", recargado.geom("suelo").friction[0])"""),
+
+md(r"""### Tus retos
+
+**R1.** En la variante de hielo, Zancudo patina a 7,3 N, por debajo del límite de Coulomb (11,6 N). El NB48 te dio herramientas contra el deslizamiento lento: añade a `fabricar` un argumento `elíptico: bool = False` que ponga `cone = elliptic` e `impratio = 10` (en `spec.option`). ¿Cuánto aguanta ahora el hielo? ¿Se acerca al límite de Coulomb?
+
+**R2.** ¿Qué kp hace falta para que Zancudo v2 agachado aguante **15 N**? Busca la respuesta con una búsqueda binaria sobre `kp` (entre 300 y 1.500), usando `veredicto`.
+
+**R3.** Combina lo peor de cada fila: torso de 9 kg, kp = 200 **y** hielo. Antes de simular, predice: ¿se suman los efectos (11,2 − 13,5) + (11,8 − 13,5) + (7,3 − 13,5)? Simula y explica.
+"""),
+
+md(r'''<details>
+<summary>▶ Solución R1</summary>
+
+```python
+def fabricar(*, masa_torso: float = 12.0, kp: float = 300.0, rozamiento: float = 1.0,
+             retraso: float = 0.0, eliptico: bool = False) -> mujoco.MjModel:
+    spec = mujoco.MjSpec.from_file(str(ZANCUDO_V2))
+    if eliptico:
+        spec.option.cone = mujoco.mjtCone.mjCONE_ELLIPTIC
+        spec.option.impratio = 10
+    ...                                              # el resto, igual que en el paso 1
+
+for eliptico in [False, True]:
+    m_r1 = fabricar(rozamiento=0.05, eliptico=eliptico)
+    print(eliptico, empuje_maximo_variante(m_r1))
+```
+
+(En el código, el argumento se llama `eliptico`, sin tilde: Python admite tildes en los nombres, pero es mala costumbre.)
+
+Con la pirámide, **7,3 N**; con el cono elíptico e `impratio = 10`, **10,8 N**, y sigue resbalando. El límite de Coulomb es 11,6 N: ahora Zancudo patina a un **94 %** del límite, casi lo que dice la física. Lo que quitaba 3,5 N era el deslizamiento **falso**, el lento, del NB48. Moraleja: si tu robot va a pisar suelos resbaladizos, la configuración del contacto no es un detalle; cambia la respuesta en un 50 %.
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+blando, duro = 300.0, 1500.0
+for vuelta in range(10):
+    medio = (blando + duro) / 2
+    if veredicto(fabricar(kp=medio), 15.0) is None:
+        duro = medio
+    else:
+        blando = medio
+print(f"kp mínimo para aguantar 15 N: {duro:.0f}")
+```
+
+Hace falta un kp de unos **464**: un 55 % más duro que el de serie para ganar solo un 11 % de empuje (de 13,5 a 15 N). Y mira la tabla: de kp = 200 a 300 (+50 %) se ganaban 1,7 N; de 300 a 450 (otro +50 %), solo 1,4 N. La mejora se va **aplanando**. Tiene sentido: un motor infinitamente duro convierte a Zancudo en una estatua rígida, y una estatua también vuelca, cuando el centro de presiones llega al borde del pie (F·h/W, NB48). La dureza solo quita la parte de "ceder"; el pie manda.
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+```python
+print(empuje_maximo_variante(fabricar(masa_torso=9.0, kp=200.0, rozamiento=0.05)))
+```
+
+La suma de efectos predice 13,5 − 2,3 − 1,7 − 6,2 ≈ **3,3 N**. La simulación da **6,6 N**, y **resbalando**. No se suman: Zancudo falla por **un** mecanismo, el que llegue antes. En hielo, el que manda es patinar, y patinar depende del rozamiento y del **peso** (μ·W), no de los motores. La variante pesa 20,6 kg (μ·W = 10,1 N) y patina a 6,6 N, casi la misma fracción del límite (65 %) que la variante de hielo de serie (7,3 de 11,6: 63 %). Lección para el NB55: los efectos de los parámetros **interactúan**; por eso se aleatorizan **todos a la vez**, y no uno cada vez.
+</details>
+'''),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- **Modificar un modelo existente con `MjSpec`**: `from_file`, cambiar atributos (`geom(...).mass`, `friction[0]`, `gainprm`/`biasprm` de un `general`, `delay`/`nsample`) y `compile()`, sin tocar el fichero original.
+- **El rozamiento de un contacto es el mayor de las dos formas**: para simular hielo hay que cambiar el suelo, no solo las suelas.
+- **La trampa del historial**: con `delay`, el historial empieza a cero; tras un reinicio hay que llenarlo con `mj_initCtrlHistory` o el robot recibe un tirón fantasma.
+- **Análisis de sensibilidad**: una variante por fila, un número que medir (empuje máximo) y **cómo** falla (vuelca o resbala). Peso y kp ayudan; el hielo cambia el modo de fallo; el retraso no importa con órdenes constantes.
+- **Guardar variantes** con `to_xml()` para reproducir los experimentos.
+
+En la práctica del **NB51** pondrás a prueba la idea central del Bloque B: medirás el **DCM** de Zancudo v2 entero mientras lo empujas, y comprobarás si se cae justo cuando el DCM sale del pie.
+"""),
+
+md(r"""## 18 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

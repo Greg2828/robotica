@@ -12,6 +12,8 @@ mj_forward, mj_step1/mj_step2. La ecuación del movimiento M q̈ + c = τ + Jᵀ
 comprobada con números (mj_fullM, qfrc_*). Energía. Python (repaso aplicado de P3/P5): type
 hints, dataclasses (frozen, slots, field, la trampa de __eq__ con arrays),
 @property, @classmethod, __repr__: una clase Simulacion. Velocidad de MuJoCo.
+Práctica en MuJoCo: banco de empujones sobre zancudo_v2 (keyframe, mjSTATE_INTEGRATION,
+xfrc_applied, bisección del umbral, el empujón como Jᵀf en la ecuación del movimiento).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -1188,9 +1190,227 @@ Ojo también con `ctrl`: no forma parte del estado físico. Aquí `reiniciar` lo
 </details>
 """),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: el banco de empujones con viaje en el tiempo
 
-Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
+Hoy has aprendido a **guardar y restaurar el estado**, a no caer en la trampa de las **vistas**, y a leer la **ecuación del movimiento** casilla a casilla. Vamos a juntar las tres cosas en una herramienta que se usa de verdad en los laboratorios de locomoción: un **banco de empujones**. La pregunta es muy concreta:
+
+> **¿Cuál es el empujón más fuerte que aguanta Zancudo, de pie y quieto, sin caerse?**
+
+La manera ingenua sería simular desde el principio para cada fuerza: dejarlo asentarse, empujar, mirar. La manera profesional es la de la sección 4: asentarlo **una sola vez**, **guardar** ese instante, y desde ahí **ramificar**: cada prueba empieza exactamente en el mismo estado, bit a bit. Así las pruebas son comparables (ninguna parte con ventaja) y no se pierde tiempo repitiendo el asentamiento.
+
+Usaremos la versión 2 de Zancudo (`robots/zancudo_v2.xml`), la que construirás pieza a pieza en el **NB50**. Por ahora te basta con saber dos cosas de ella: sus motores son **servos de posición** (NB40), que mantienen cada articulación en el ángulo que les pidas, y trae guardada una postura con nombre, **`agachado`** (un *keyframe*), que lo deja de pie con las rodillas algo dobladas.
+"""),
+
+md(r"""### Paso 1 · Cargar y asentar
+
+`mj_resetDataKeyframe(modelo, datos, 0)` pone los datos en la postura guardada número 0 (la `agachado`): su `qpos` y también sus órdenes (`ctrl`). Después dejamos pasar 2 segundos para que se asiente sobre el suelo:
+"""),
+
+code(r"""import taller
+
+banco = mujoco.MjModel.from_xml_path("robots/zancudo_v2.xml")
+partida = mujoco.MjData(banco)
+mujoco.mj_resetDataKeyframe(banco, partida, 0)          # la postura "agachado"
+for _ in range(1000):                                    # 1000 × 0,002 s = 2 s
+    mujoco.mj_step(banco, partida)
+
+TORSO = banco.body("torso").id
+print("tiempo:", round(partida.time, 3), "s   altura del torso:", round(partida.xpos[TORSO, 2], 3), "m")"""),
+
+md(r"""De pie, quieto, con la raíz del torso a unos 0,75 m del suelo. Este es el instante que vamos a **congelar**.
+
+### Paso 2 · Guardar el instante, a prueba de warmstart
+
+Usamos `mjSTATE_INTEGRATION`, el estado "bit a bit garantizado" de la sección 4 (incluye las órdenes y el warmstart):
+"""),
+
+code(r"""INTEGRACION = mujoco.mjtState.mjSTATE_INTEGRATION
+instante = np.empty(mujoco.mj_stateSize(banco, INTEGRACION))
+mujoco.mj_getState(banco, partida, instante, INTEGRACION)
+print("números guardados:", instante.size)"""),
+
+md(r"""92 números (uno más que los 91 de la tabla de la sección 4: la versión 2 tiene una restricción de igualdad, la "grúa", cuyo interruptor de encendido también forma parte del estado; la verás en el NB50).
+
+### Paso 3 · Una rama = un empujón
+
+Para empujar usamos un array de los datos que todavía no habías tocado: **`xfrc_applied`**, fuerzas externas aplicadas a los **cuerpos** (una fila por cuerpo, 6 números: fuerza x, y, z y par x, y, z). Es la "mano invisible" del experimentador. Escribimos la fuerza en la fila del torso durante `duracion` segundos, la quitamos y seguimos simulando.
+
+Fíjate en tres detalles de la sección 5: escribimos **dentro** de la memoria de C con índices (`xfrc_applied[TORSO, 0] = ...`), guardamos alturas que son números sueltos (no vistas), y al final dejamos la mano invisible a cero para no contaminar la siguiente rama:
+"""),
+
+code(r"""def empujon(fuerza: float, duracion: float = 0.1, segundos: float = 2.0) -> np.ndarray:
+    # Restaura el instante guardado, empuja el torso en x y devuelve la altura del torso en cada paso.
+    mujoco.mj_setState(banco, partida, instante, INTEGRACION)
+    inicio = partida.time
+    alturas = []
+    for _ in range(int(round(segundos / banco.opt.timestep))):
+        empujando = partida.time - inicio < duracion - 1e-9
+        partida.xfrc_applied[TORSO, 0] = fuerza if empujando else 0.0
+        mujoco.mj_step(banco, partida)
+        alturas.append(partida.xpos[TORSO, 2])           # un número suelto: no es una vista
+    partida.xfrc_applied[:] = 0.0
+    return np.array(alturas)
+
+def se_cae(fuerza: float, duracion: float = 0.1) -> bool:
+    return empujon(fuerza, duracion).min() < 0.5          # el torso por debajo de 0,5 m = en el suelo
+
+for f in [0, 50, 100, -50, -100]:
+    print(f"{f:>5} N  ->  altura mínima {empujon(f).min():.3f} m   ¿se cae? {se_cae(f)}")"""),
+
+md(r"""Con 50 N aguanta (hacia delante y hacia atrás); con 100 N, se va al suelo en las dos direcciones. El umbral está entre medias.
+
+(El `- 1e-9` es una precaución con los decimales, NB06: el tiempo se acumula sumando 0,002 muchas veces, y `0.1 - 0.1` podría salir `1e-17` en vez de 0.)
+
+### Paso 4 · ¿Determinista de verdad?
+
+Antes de buscar el umbral, comprobamos lo que justifica todo el método: dos ramas con la misma fuerza dan **exactamente** lo mismo.
+"""),
+
+code(r"""print("¿idénticas bit a bit?", np.array_equal(empujon(60), empujon(60)))"""),
+
+md(r"""### Paso 5 · Buscar el umbral por bisección
+
+¿Cómo encontrar el umbral sin probar mil fuerzas? Con la **bisección** (la búsqueda del "más alto o más bajo" de toda la vida): sabemos que 0 N aguanta y 400 N tumba; probamos la mitad y nos quedamos con la mitad del intervalo donde está el cambio. Cada prueba **parte el intervalo por la mitad**: tras 12 pruebas, 400 N se han reducido a 400 / 2¹² ≈ 0,1 N.
+"""),
+
+code(r"""import time
+
+def umbral(aguanta: float, tumba: float, duracion: float = 0.1, pruebas: int = 12) -> float:
+    for _ in range(pruebas):
+        medio = (aguanta + tumba) / 2
+        if se_cae(medio, duracion):
+            tumba = medio
+        else:
+            aguanta = medio
+    return aguanta
+
+inicio = time.perf_counter()
+delante = umbral(0, 400)
+detras = umbral(0, -400)
+print(f"aguanta hasta {delante:.1f} N hacia delante y {abs(detras):.1f} N hacia atrás")
+print(f"24 ramas de 2 s simuladas en {time.perf_counter() - inicio:.2f} s")"""),
+
+md(r"""Unos **77 N hacia delante** y unos **64 N hacia atrás**, durante una décima de segundo. Hacia atrás aguanta menos: el pie de Zancudo está adelantado respecto al tobillo (sobresale 14 cm por delante y solo 6 por detrás, NB42), así que tiene más "suelo" para frenar una caída hacia delante que hacia atrás. Es el polígono de apoyo del NB39, medido con empujones.
+
+Y todo en menos de un segundo: 24 simulaciones de 2 s cada una, sin repetir ni una vez el asentamiento.
+
+### Paso 6 · El empujón dentro de la ecuación del movimiento
+
+En la sección 7 comprobaste M q̈ + c = τ + Jᵀf con la mano invisible apagada. ¿Qué pasa si la encendemos? Restauramos el instante, ponemos 75 N, calculamos con `mj_forward` y miramos qué le falta a la ecuación:
+"""),
+
+code(r"""mujoco.mj_setState(banco, partida, instante, INTEGRACION)
+partida.xfrc_applied[TORSO, 0] = 75.0
+mujoco.mj_forward(banco, partida)
+
+M_banco = np.zeros((banco.nv, banco.nv))
+mujoco.mj_fullM(banco, partida, M_banco)
+izquierda = M_banco @ partida.qacc + partida.qfrc_bias
+derecha = partida.qfrc_actuator + partida.qfrc_passive + partida.qfrc_constraint + partida.qfrc_applied
+print("lo que falta (izquierda - derecha):", izquierda - derecha)
+print("altura del centro del torso sobre la raíz:", round(partida.xipos[TORSO, 2] - partida.xpos[TORSO, 2], 4), "m")
+partida.xfrc_applied[:] = 0.0"""),
+
+md(r"""Ya no cuadra, y lo que falta es justamente **el empujón traducido a las coordenadas de Zancudo**:
+
+- **75 N en la casilla 0** (la deslizadera `raiz_x`): la fuerza entera empuja al robot hacia delante.
+- **≈ 18,73 N·m en la casilla 2** (el giro del torso): la fuerza se aplica en el centro de masas del torso, que está 0,25 m por encima de la raíz, así que también lo hace **girar**: par = fuerza × brazo = 75 × 0,2497 ≈ 18,73 (NB37).
+- **Cero en las piernas**: el empujón al torso no retuerce directamente ninguna articulación de las piernas.
+
+Esa "traducción" de una fuerza en el espacio a fuerzas en las articulaciones es exactamente el **Jᵀf** de la ecuación. La J es el **jacobiano**, el protagonista del NB46.
+
+### Paso 7 · Verlo
+
+Dos empujones, justo por debajo y justo por encima del umbral. `taller.video` simula desde el estado actual de los datos, así que restauramos el instante y le damos un control que aplica el empujón la primera décima de segundo:
+"""),
+
+code(r"""def control_empujon(fuerza):
+    def control(modelo, datos):
+        datos.xfrc_applied[TORSO, 0] = fuerza if datos.time - instante[0] < 0.1 else 0.0
+    return control
+
+for fuerza in [70, 85]:
+    mujoco.mj_setState(banco, partida, instante, INTEGRACION)
+    taller.video(banco, partida, segundos=2.0, control=control_empujon(fuerza), nombre=f"nb45_empujon_{fuerza}")
+partida.xfrc_applied[:] = 0.0"""),
+
+md(r"""Con 70 N, Zancudo se balancea hacia delante, sus pies aguantan y vuelve; con 85 N, el balanceo pasa del punto sin retorno y cae de bruces. Fíjate en que no hace nada "inteligente": sus servos solo mantienen la postura. Todo lo que aguanta es gracias a la forma de sus pies.
+
+(`instante[0]` es el tiempo guardado: en `mjSTATE_INTEGRATION`, como en `FULLPHYSICS`, el tiempo va el primero.)
+"""),
+
+md(r"""### Tus retos
+
+**R1.** ¿Importa la **fuerza** o el **impulso** (fuerza × duración, NB37)? Busca el umbral hacia delante con duraciones de 0,05, 0,1 y 0,2 s y calcula fuerza × duración en cada caso.
+
+**R2.** Sustituye el viaje en el tiempo por un **gemelo**: `copy.copy(partida)` (sección 5) justo después del asentamiento. Comprueba que simular 500 pasos en el original y en el gemelo da el mismo `qpos` bit a bit.
+
+**R3.** ¿Por qué `mjSTATE_INTEGRATION` y no `mjSTATE_FULLPHYSICS`? Guarda el instante con `FULLPHYSICS`, simula 300 pasos, anota `qpos`, restaura y simula otros 300. ¿Sale idéntico?
+"""),
+
+md(r"""<details>
+<summary>▶ Solución R1</summary>
+
+```python
+for duracion in [0.05, 0.1, 0.2]:
+    f = umbral(0, 400, duracion)
+    print(f"{duracion} s: {f:6.1f} N   impulso {f * duracion:.2f} N·s")
+```
+
+Sale (lo he ejecutado): **152,3 N** durante 0,05 s (7,62 N·s), **77,0 N** durante 0,1 s (7,70 N·s) y **40,0 N** durante 0,2 s (8,01 N·s). La fuerza cambia por cuatro; el impulso, apenas un 5 %. Para un empujón corto, lo que cuenta es el **impulso**: la cantidad de movimiento que le metes (NB37). Dividido por la masa, 7,7 / 23,6 ≈ **0,33 m/s**: esa es, más o menos, la velocidad máxima que Zancudo puede "absorber" sin dar un paso. Con empujones más largos el impulso tolerado sube un poco, porque los servos y el suelo tienen tiempo de reaccionar mientras dura. (Hacia atrás: 6,30, 6,37 y 6,64 N·s.)
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+import copy
+mujoco.mj_setState(banco, partida, instante, INTEGRACION)
+gemelo = copy.copy(partida)
+for _ in range(500):
+    mujoco.mj_step(banco, partida)
+    mujoco.mj_step(banco, gemelo)
+print(np.array_equal(partida.qpos, gemelo.qpos))     # True
+```
+
+`copy.copy` de un `MjData` copia **toda** su memoria de C, incluido el warmstart: es un gemelo perfecto. Es cómodo para una o dos ramas; para muchas, guardar un array de 92 números es mucho más ligero que guardar un `MjData` entero (que ocupa memoria para todos sus resultados intermedios).
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+```python
+FISICA = mujoco.mjtState.mjSTATE_FULLPHYSICS
+solo_fisica = np.empty(mujoco.mj_stateSize(banco, FISICA))      # 19 números
+mujoco.mj_setState(banco, partida, instante, INTEGRACION)
+mujoco.mj_getState(banco, partida, solo_fisica, FISICA)
+for _ in range(300):
+    mujoco.mj_step(banco, partida)
+referencia = partida.qpos.copy()
+mujoco.mj_setState(banco, partida, solo_fisica, FISICA)          # restauramos SOLO la física
+for _ in range(300):
+    mujoco.mj_step(banco, partida)
+print(np.array_equal(referencia, partida.qpos), np.abs(referencia - partida.qpos).max())
+```
+
+**No** sale idéntico: `False`, con una diferencia de unos **3 × 10⁻¹⁶**. Al restaurar solo la física, el warmstart que quedaba en `partida` era el del paso 300, no el del instante guardado, y el solucionador de contactos (con Zancudo apoyado, trabaja en cada paso) arrancó desde otro sitio. Una diferencia ridícula... pero en una bisección, una diferencia ridícula justo en el umbral puede cambiar un "aguanta" por un "se cae". Con `INTEGRATION`, ese problema no existe.
+</details>
+"""),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- **`mj_resetDataKeyframe`** carga una postura guardada en el modelo (`qpos` y `ctrl`).
+- **`mj_getState` / `mj_setState` con `mjSTATE_INTEGRATION`** permiten **ramificar** una simulación: todas las pruebas parten del mismo instante, bit a bit. La versión con solo la física difiere en el último decimal por el warmstart.
+- **`xfrc_applied`** es la mano invisible: fuerzas y pares externos sobre cada cuerpo. Hay que ponerla a cero al acabar.
+- Una **bisección** sobre simulaciones deterministas encuentra umbrales en una docena de pruebas: Zancudo aguanta unos 77 N hacia delante y 64 N hacia atrás durante 0,1 s, que son unos 7,7 y 6,4 N·s de impulso.
+- Un empujón entra en la ecuación del movimiento como **Jᵀf**: una fuerza en el espacio se convierte en fuerzas y pares en cada coordenada generalizada.
+
+En la práctica del NB46 calcularás tú ese **jacobiano** con `mj_jac` y lo usarás para que el pie de Zancudo dibuje la figura que tú le digas.
+"""),
+
+md(r"""## 14 · Posdata
+
+Si algo no ha quedado claro (también en la práctica en MuJoCo), dime el **apartado** y la **frase exacta** y lo reescribo.
 
 En el **NB46** seguimos dentro de MuJoCo con la **cinemática**: cómo se describen posiciones y giros en 3D (matrices de rotación, cuaterniones de verdad, ángulos de Euler), qué es un **jacobiano** (la J de la ecuación de hoy) y cómo se usa para la **cinemática inversa**: "quiero el pie aquí; ¿qué ángulos pongo?". Y en el hilo de Python: NumPy para álgebra lineal (aplicando lo del P6 y el P7), funciones puras, docstrings profesionales y pruebas con pytest.
 """),

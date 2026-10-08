@@ -11,6 +11,9 @@ calculado (linealización por realimentación, ω y ζ) y espacio de la tarea
 (Jᵀ·F + gravedad, con orientación del pie por el jacobiano de rotación).
 Barrido de velocidades. El modelo equivocado (+30 % de masa): el par calculado
 pierde su ventaja. GIF del pie dibujando un círculo.
+Práctica en MuJoCo: Zancudo v2 entero (grúa, eq_active0) marcha en el aire con servos de
+posición; la ley del actuador general; prealimentación con mj_inverse desplazando la consigna;
+robustez frente a un modelo +30 %; vídeo.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -870,9 +873,274 @@ Error RMS de unos **11 mm** (máximo, 18 mm): un poco más que el círculo, porq
 </details>
 '''),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: servos que saben física (Zancudo entero)
 
-Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
+Todo lo de hoy lo has hecho con una pierna suelta y **motores de par**. Pero muchos robots reales (y nuestro Zancudo v2, el del NB50) no tienen motores de par: tienen **servos de posición**, a los que solo les puedes decir "ponte en este ángulo". ¿Se puede aprovechar la dinámica inversa con ellos?
+
+Sí, y es lo que hacen muchísimos robots comerciales: se llama **prealimentación** (*feedforward*). La idea, en una frase: si sabes qué par va a hacer falta, **le cambias la consigna al servo** para que, al intentar corregir el "error" que tú le inventas, empuje justo con ese par. Hoy lo harás con Zancudo **entero** (las dos piernas a la vez, colgado de su grúa) y vas a descubrir algo que la sección 8 dejó en el aire: la prealimentación con servos es **mucho más robusta** a un modelo equivocado que el par calculado puro.
+
+En el NB46 viste que los servos de Zancudo llegaban tarde (4,4 cm de error en el pie) y lo arreglaste con un truco de tiempo. Hoy lo arreglarás con física.
+"""),
+
+md(r"""### Paso 1 · ¿Qué hace exactamente un servo de Zancudo v2?
+
+Sus actuadores son de tipo `general` (NB50), con tres números en el modelo: la ganancia (`gainprm`) y el sesgo (`biasprm`). La fuerza que hacen es:
+
+```
+   fuerza = gainprm[0] · ctrl  +  biasprm[0]  +  biasprm[1] · q  +  biasprm[2] · q̇
+          =      300  · ctrl  +       0      −       300  · q  −       20  · q̇
+          =  300 · (ctrl − q)  −  20 · q̇
+```
+
+Un muelle de 300 N·m/rad hacia la consigna, más un amortiguador de 20 N·m·s/rad. Comprobémoslo con un estado cualquiera:
+"""),
+
+code(r"""import taller
+
+zv2 = mujoco.MjModel.from_xml_path("robots/zancudo_v2.xml")
+zv2.eq_active0[0] = 1                    # la grúa, encendida por defecto en todos los MjData de este modelo
+print("gainprm:", zv2.actuator_gainprm[0, :3], "  biasprm:", zv2.actuator_biasprm[0, :3])
+
+d = mujoco.MjData(zv2)
+mujoco.mj_resetDataKeyframe(zv2, d, 1)   # "colgado"
+d.qvel[3:] = [1.0, -2.0, 0.5, 0.0, 0.3, -1.0]
+d.ctrl[:] = d.qpos[3:] + 0.1
+mujoco.mj_forward(zv2, d)
+a_mano = 300 * (d.ctrl - d.qpos[3:]) - 20 * d.qvel[3:]
+print("a mano:", a_mano)
+print("MuJoCo:", d.actuator_force)
+print("¿grúa encendida?", d.eq_active)"""),
+
+md(r"""Coinciden. (Fíjate en `eq_active0`: es el valor **inicial** de `eq_active` que copia cada `MjData` nuevo. Cambiándolo en el modelo, todos los datos que creemos, incluidos los de la función `simular` de la sección 3, nacen con la grúa puesta.)
+
+Y fíjate en el **−20 · q̇**: el amortiguador frena **cualquier** velocidad, también la que tú le pides. Si quieres que la cadera se mueva a 1 rad/s, el servo te está frenando con 20 N·m. Ese es el origen principal del retraso que viste en el NB46.
+
+### Paso 2 · El truco de la consigna desplazada
+
+Queremos que el servo haga un par total τ (el que dice `mj_inverse`). Despejando de la fórmula, cuando la articulación va justo por la trayectoria (q = q_d, q̇ = q̇_d):
+
+```
+   τ = 300 · (ctrl − q_d) − 20 · q̇_d      →      ctrl = q_d + (τ + 20 · q̇_d) / 300
+```
+
+Es decir: le pedimos al servo un ángulo **un poco desplazado** respecto al que queremos, justo lo necesario para que su muelle empuje con el par que hace falta (y compense su propio amortiguador). Y si la pierna se desvía de la trayectoria, el muelle de 300 sigue ahí para corregir: **realimentación** de propina.
+
+### Paso 3 · La trayectoria: marchar en el aire
+
+Las dos piernas se balancean a la vez, en **contrafase** (cuando una va hacia delante, la otra va hacia atrás), como al marchar. Es una dataclass congelada con el método `en(t)`, así que **cumple el protocolo `Trayectoria`** de la sección 3 sin heredar de nada:
+"""),
+
+code(r"""@dataclass(frozen=True)
+class MarchaAire:
+    frecuencia: float
+    centro: tuple[float, float, float] = (0.5, -1.0, 0.5)     # la postura "colgado"
+    amplitud: tuple[float, float, float] = (0.4, 0.4, 0.0)    # cadera y rodilla; el tobillo, quieto
+
+    def en(self, t: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        w = 2 * np.pi * self.frecuencia
+        c, a = np.array(self.centro), np.array(self.amplitud)
+        partes = []
+        for desfase in (0.0, np.pi):                            # derecha, izquierda (media vuelta después)
+            s, co = np.sin(w * t + desfase), np.cos(w * t + desfase)
+            partes.append((c + a * s, a * w * co, -a * w**2 * s))
+        return tuple(np.concatenate([partes[0][i], partes[1][i]]) for i in range(3))
+
+q, qd, qdd = MarchaAire(1.0).en(0.1)
+print("ángulos deseados a t = 0,1 s:", q)"""),
+
+md(r"""Seis ángulos: las tres articulaciones de la pierna derecha y las tres de la izquierda.
+
+### Paso 4 · Dos estrategias, de la familia `Controlador`
+
+Las dos heredan de la clase abstracta de la sección 3 y devuelven el vector `ctrl`. La diferencia es que aquí `ctrl` son **consignas de ángulo**, no pares:
+
+- **`ServoSolo`**: le da al servo el ángulo deseado, sin más. Lo que haría cualquiera.
+- **`ServoPrealimentado`**: calcula con `mj_inverse` (con su **propio** modelo interno y sus propios datos, como `ParCalculado`) el par que hace falta para la aceleración deseada, y desplaza la consigna. La raíz está sujeta por la grúa, así que le pedimos aceleración cero.
+"""),
+
+code(r'''KP_SERVO, KD_SERVO = 300.0, 20.0
+
+class ServoSolo(Controlador):
+    def __init__(self, trayectoria: Trayectoria):
+        self.trayectoria = trayectoria
+    def __call__(self, modelo, datos):
+        return self.trayectoria.en(datos.time)[0]
+    def __repr__(self):
+        return "ServoSolo()"
+
+class ServoPrealimentado(Controlador):
+    def __init__(self, trayectoria: Trayectoria, modelo_interno: mujoco.MjModel):
+        self.trayectoria = trayectoria
+        self.modelo_interno = modelo_interno
+        self.trabajo = mujoco.MjData(modelo_interno)
+    def __call__(self, modelo, datos):
+        q, qd, qdd = self.trayectoria.en(datos.time)
+        self.trabajo.qpos[:] = datos.qpos
+        self.trabajo.qvel[:] = datos.qvel
+        self.trabajo.qacc[:3] = 0.0                     # la raíz, quieta (la sujeta la grúa)
+        self.trabajo.qacc[3:] = qdd                     # las piernas, la aceleración de la trayectoria
+        mujoco.mj_inverse(self.modelo_interno, self.trabajo)
+        tau = self.trabajo.qfrc_inverse[3:]             # el par que necesita cada articulación
+        return q + (tau + KD_SERVO * qd) / KP_SERVO     # la consigna desplazada
+    def __repr__(self):
+        return "ServoPrealimentado()"'''),
+
+md(r"""Para medir, reutilizamos la función `simular` de la sección 3 (¡ahí está la gracia de haberla escrito genérica!), con un *callback* `al_paso` que apunta los pares reales de los motores. El error lo medimos en caderas y rodillas, a partir del primer segundo:
+"""),
+
+code(r"""def marchar(fabrica_controlador, frecuencia: float, segundos: float = 4.0) -> tuple[float, float]:
+    trayectoria = MarchaAire(frecuencia)
+    q0, qd0, _ = trayectoria.en(0.0)
+    q_inicial = np.concatenate([np.zeros(3), q0])                 # raíz en su sitio + piernas sobre la trayectoria
+    qd_inicial = np.concatenate([np.zeros(3), qd0])
+    pares = []
+    registro = simular(zv2, fabrica_controlador(trayectoria), segundos, q_inicial, qd_inicial,
+                       al_paso=lambda datos: pares.append(datos.actuator_force.copy()))
+    despues = registro.tiempo > 1.0
+    deseadas = np.array([trayectoria.en(t)[0] for t in registro.tiempo[despues]])
+    errores = registro.qpos[despues][:, 3:] - deseadas
+    rms = float(np.sqrt(np.mean(errores[:, [0, 1, 3, 4]] ** 2)))   # caderas y rodillas
+    return rms, float(np.abs(np.array(pares)[despues]).max())
+
+estrategias = {
+    "servo solo": ServoSolo,
+    "servo prealimentado": lambda tr: ServoPrealimentado(tr, zv2),
+}
+print(f"{'':<22}" + "".join(f"{f:>16} Hz" for f in [0.5, 1.0, 2.0]))
+for nombre, fabrica in estrategias.items():
+    filas = [marchar(fabrica, f) for f in [0.5, 1.0, 2.0]]
+    print(f"{nombre:<22}" + "".join(f"  {e:.4f} rad {p:5.1f} N·m" for e, p in filas))"""),
+
+md(r"""Cada casilla es "error RMS, par máximo". Léelo despacio:
+
+- **Servo solo**: 0,061 rad a 0,5 Hz, 0,128 a 1 Hz y **0,314 rad (18°)** a 2 Hz. Va siempre por detrás, y cuanto más rápido, peor (sobre todo por el amortiguador que frena el movimiento pedido, y por la inercia a 2 Hz).
+- **Servo prealimentado**: **0,0002**, **0,0009** y **0,0037 rad**. Entre **85 y 300 veces menos error**, con los mismos servos y los mismos motores. Lo único que ha cambiado es **qué ángulo** les pedimos.
+- **El par máximo** es prácticamente el mismo en las dos estrategias (≈ 107 N·m a 2 Hz, dentro de los ±150 que admite Zancudo). La prealimentación no "empuja más fuerte": empuja **a tiempo**.
+
+### Paso 5 · La prueba de la sección 8: un modelo equivocado
+
+Ahora el controlador cree que las piezas pesan un 30 % más de lo que pesan. En la sección 8, eso hundía al par calculado. ¿Y aquí?
+"""),
+
+code(r"""zv2_equivocado = mujoco.MjModel.from_xml_path("robots/zancudo_v2.xml")
+zv2_equivocado.eq_active0[0] = 1
+zv2_equivocado.body_mass[:] *= 1.3
+zv2_equivocado.body_inertia[:] *= 1.3
+
+for f in [0.5, 1.0, 2.0]:
+    e_bien, _ = marchar(lambda tr: ServoPrealimentado(tr, zv2), f)
+    e_mal, _ = marchar(lambda tr: ServoPrealimentado(tr, zv2_equivocado), f)
+    e_solo, _ = marchar(ServoSolo, f)
+    print(f"{f} Hz:  modelo bien {e_bien:.4f}   modelo +30 % {e_mal:.4f}   servo solo {e_solo:.4f} rad")"""),
+
+md(r"""Con el modelo equivocado, el error sube (de 0,0002 a 0,005 a 0,5 Hz; a 0,053 a 2 Hz), pero sigue siendo **entre 6 y 13 veces mejor** que el servo solo. Para comparar: un par calculado puro con las ganancias de la sección 6 sobre este mismo Zancudo (es el reto R1) pasa de 0,0004 a **0,076 rad** con el mismo +30 %: **15 veces peor** que la prealimentación equivocada.
+
+¿Por qué esta robustez? Porque aquí hay **dos** cosas trabajando juntas:
+
+1. La **prealimentación** pone el grueso del par, a tiempo, gracias al modelo. Si el modelo se equivoca un 30 %, se equivoca en un 30 % del par... pero acierta en el 70 % restante.
+2. La **realimentación** rígida del servo (300 N·m/rad) corrige lo que el modelo no ha previsto.
+
+El par calculado puro, en cambio, confía en el modelo **también** para convertir sus correcciones en pares (las multiplica por la M equivocada). Esta combinación, "**prealimentación con el modelo + realimentación rígida**", es la receta estándar de los brazos industriales y de muchos robots con patas. Y es una respuesta muy buena para la pregunta de entrevista "¿cómo usarías el modelo si no te fías del todo de él?".
+
+### Paso 6 · Verlo
+
+Zancudo marchando en el aire a 1 Hz con los servos prealimentados:
+"""),
+
+code(r"""marcha = MarchaAire(1.0)
+d = mujoco.MjData(zv2)
+q0, qd0, _ = marcha.en(0.0)
+d.qpos[3:], d.qvel[3:] = q0, qd0
+mujoco.mj_forward(zv2, d)
+prealimentado = ServoPrealimentado(marcha, zv2)
+
+def control_marcha(modelo, datos):
+    datos.ctrl[:] = prealimentado(modelo, datos)
+
+_ = taller.video(zv2, d, segundos=3.0, control=control_marcha, nombre="nb47_marcha_prealimentada", distancia=2.4)"""),
+
+md(r"""(Aquí `taller.video` llama al control **antes** de `mj_step`, sin `mj_step1`: el controlador ve los datos calculados en el paso anterior. Para un controlador que solo lee `qpos` y `qvel` y llama a `mj_inverse` con sus propios datos, da igual: no usa nada "desfasado" de `datos`.)
+"""),
+
+md(r"""### Tus retos
+
+**R1.** Convierte los servos de una **copia** de Zancudo v2 en **motores de par** cambiando sus parámetros (`gainprm[:, 0] = 1`, `biasprm[:, :3] = 0`, `ctrlrange = ±150`) y escribe un `ParCalculadoZancudo` (como el de la sección 6, pero con la raíz a aceleración cero y devolviendo solo `qfrc_inverse[3:]`). Mide el error a 0,5, 1 y 2 Hz con el modelo bien y con el +30 %.
+
+**R2.** ¿Qué parte del retraso del servo solo viene del **amortiguador**? Prueba una tercera estrategia que solo compense el amortiguador: `ctrl = q_d + 20 · q̇_d / 300`, sin `mj_inverse`.
+
+**R3.** Sube a **3 Hz**. ¿Siguen cabiendo los pares en los ±150 N·m? ¿Qué pasa con el error si no caben?
+"""),
+
+md(r"""<details>
+<summary>▶ Solución R1</summary>
+
+```python
+zv2_par = mujoco.MjModel.from_xml_path("robots/zancudo_v2.xml")
+zv2_par.eq_active0[0] = 1
+zv2_par.actuator_gainprm[:, 0] = 1.0           # fuerza = 1 · ctrl
+zv2_par.actuator_biasprm[:, :3] = 0.0          # sin muelle ni amortiguador
+zv2_par.actuator_ctrlrange[:] = [-150, 150]    # ctrl ahora son N·m
+
+class ParCalculadoZancudo(Controlador):
+    def __init__(self, trayectoria, modelo_interno, kp=100.0, kd=20.0):
+        self.trayectoria, self.modelo_interno = trayectoria, modelo_interno
+        self.trabajo = mujoco.MjData(modelo_interno)
+        self.kp, self.kd = kp, kd
+    def __call__(self, modelo, datos):
+        q, qd, qdd = self.trayectoria.en(datos.time)
+        self.trabajo.qpos[:], self.trabajo.qvel[:] = datos.qpos, datos.qvel
+        self.trabajo.qacc[:3] = 0.0
+        self.trabajo.qacc[3:] = qdd + self.kp * (q - datos.qpos[3:]) + self.kd * (qd - datos.qvel[3:])
+        mujoco.mj_inverse(self.modelo_interno, self.trabajo)
+        return self.trabajo.qfrc_inverse[3:].copy()
+```
+
+Para medirlo, `marchar` usa `zv2`: hazle una copia que reciba el modelo como argumento, o cambia temporalmente `zv2` por `zv2_par`. Resultados (ejecutado): con el modelo bien, **0,0004 / 0,0014 / 0,0034 rad**, casi igual que la prealimentación; con el +30 % (modelo interno = `zv2_equivocado`), **0,076 / 0,093 / 0,164 rad**: peor que la prealimentación equivocada en todas las frecuencias, y a 0,5 Hz incluso **peor que el servo solo** (0,076 frente a 0,061). Es la sección 8 otra vez, en el robot entero. Subir kp a 400 (y kd a 40) apenas cambia el caso bueno (0,0003 / 0,0009 / 0,0030).
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+class ServoConAmortiguador(Controlador):
+    def __init__(self, trayectoria):
+        self.trayectoria = trayectoria
+    def __call__(self, modelo, datos):
+        q, qd, _ = self.trayectoria.en(datos.time)
+        return q + KD_SERVO * qd / KP_SERVO
+
+for f in [0.5, 1.0, 2.0]:
+    print(f, marchar(ServoConAmortiguador, f))
+```
+
+Resultado (ejecutado): **0,0156 / 0,0342 / 0,187 rad** a 0,5 / 1 / 2 Hz. Comparado con el servo solo (0,061 / 0,128 / 0,314), a frecuencias bajas desaparecen **tres cuartas partes** del error solo con esto: ahí casi todo el retraso es el amortiguador frenando la velocidad pedida. A 2 Hz ya no basta (sigue en 0,19 rad, 50 veces más que la prealimentación completa): aparecen la inercia (que crece con la frecuencia al cuadrado, sección 3) y la gravedad, y para eso hace falta el modelo completo.
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+```python
+for nombre, fabrica in estrategias.items():
+    print(nombre, marchar(fabrica, 3.0))
+```
+
+Resultado (ejecutado): el par máximo llega a **150 N·m** en las dos estrategias: los motores **saturan** (`forcerange` del actuador). A 3 Hz las aceleraciones son (3/2)² = 2,25 veces las de 2 Hz, y el par necesario ya no cabe. El servo solo se va a 0,381 rad, y el prealimentado, de 0,0037 a **0,084 rad**: 23 veces más que a 2 Hz. Cuando el motor satura, la prealimentación ya no puede dar el par que pide el modelo, y el error crece de golpe: es el ejercicio E4, ahora con Zancudo entero. Ninguna estrategia de control puede sacar más par del que tiene el motor; la solución es pedir trayectorias más suaves (NB51).
+</details>
+"""),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- Los actuadores **`general`** con sesgo afín son servos de posición: fuerza = gainprm·ctrl + biasprm·(1, q, q̇). Puedes comprobarlo con `actuator_force` y **convertirlos** en motores de par cambiando esos números.
+- **`eq_active0`** decide si una restricción (la grúa) nace encendida en cada `MjData`.
+- **`mj_inverse`** sirve también con servos de posición: desplazando la consigna, ctrl = q_d + (τ + kd·q̇_d)/kp, el servo entrega el par de la dinámica inversa. Con Zancudo entero, el error baja entre 85 y 300 veces.
+- **Prealimentación + realimentación rígida** es mucho más robusta a un modelo equivocado que el par calculado puro.
+
+En la práctica del NB48 bajarás a Zancudo de la grúa y estudiarás lo único que lo sostiene cuando está en el suelo: los **contactos**. Lo pondrás de pie sobre un suelo blando, ajustando `solref` y `solimp`, y medirás cuánto se hunde.
+"""),
+
+md(r"""## 14 · Posdata
+
+Si algo no ha quedado claro (también en la práctica en MuJoCo), dime el **apartado** y la **frase exacta** y lo reescribo.
 
 En el **NB48** abrimos la caja negra de los **contactos**: cómo detecta MuJoCo qué toca qué, cómo calcula las fuerzas de contacto (el modelo "blando" de `solref` y `solimp`), el rozamiento y su cono, los distintos solucionadores, y cómo medir las fuerzas de reacción del suelo y el **centro de presiones** (el ZMP del NB39, ¡medido de verdad!). En Python, repasaremos en acción lo del P3 y el P4: generadores e iteradores, `NamedTuple` e `itertools`.
 """),

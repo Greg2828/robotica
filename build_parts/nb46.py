@@ -16,6 +16,9 @@ pinv, lstsq, svd, cond), funciones puras (P2), docstrings estilo NumPy,
 numpy.typing y alias de tipo (P5),
 %%writefile, un módulo cinematica.py con tests de pytest (parametrize,
 assert_allclose, pruebas con azar sembrado).
+Práctica en MuJoCo: el pie de Zancudo v2 (colgado de la grúa) da un paso en el aire: trayectoria
+→ tabla de IK amortiguada pura, pie plano por suma de ángulos (xquat/xmat), servos con física
+(error de seguimiento medido) y el truco del adelanto; vídeo.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -1304,9 +1307,281 @@ Si cambias `mj_forward` por `mj_kinematics` en `jacobiano`, el jacobiano sale a 
 </details>
 '''),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: el pie de Zancudo da un paso en el aire (con física)
 
-Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
+En la sección 9, el tobillo dibujó un círculo **sin física**: colocábamos los ángulos y hacíamos una foto. Un robot de verdad no funciona así. La cinemática inversa le dice al controlador **qué ángulos** quiere; luego unos **motores** tienen que llevar las articulaciones hasta ahí, con su masa, su inercia y su retraso. Hoy vas a cerrar ese hueco:
+
+1. Diseñarás la **trayectoria de un paso** para el tobillo (un arco hacia delante, una recta hacia atrás).
+2. La convertirás en una **tabla de ángulos** con tu IK amortiguada, más una regla de rotaciones para que el **pie vaya siempre plano**.
+3. Se la darás a los **servos** de Zancudo, con la física encendida, y medirás **cuánto se queda atrás** el pie real.
+4. Lo arreglarás con un truco de una línea, y lo verás en vídeo.
+
+Usamos la versión 2 de Zancudo (`robots/zancudo_v2.xml`, la del NB50), que tiene dos cosas útiles: **servos de posición** (NB40: les das un ángulo en `ctrl` y lo persiguen) y una **grúa**, una restricción de igualdad que sujeta el torso en el aire (también del NB50: hoy solo la encendemos).
+"""),
+
+md(r"""### Paso 1 · Zancudo colgado, con un site en el tobillo
+
+Le añadimos el site `tobillo_d` igual que en la sección 5 (con el mismo `assert` defensivo), cargamos la postura guardada `colgado` (la número 1) y **encendemos la grúa** escribiendo en `eq_active`, que forma parte de los datos:
+"""),
+
+code(r"""import taller
+
+texto_v2 = Path("robots/zancudo_v2.xml").read_text(encoding="utf-8")
+buscado = '<body name="pie_d" pos="0 0 -0.4">'
+assert texto_v2.count(buscado) == 1
+texto_v2 = texto_v2.replace(buscado, buscado + '\n<site name="tobillo_d"/>')
+
+zv2 = mujoco.MjModel.from_xml_string(texto_v2)
+dv2 = mujoco.MjData(zv2)
+TOB2 = zv2.site("tobillo_d").id
+PIE2 = zv2.body("pie_d").id
+
+def colgar(datos_v2: mujoco.MjData) -> None:
+    mujoco.mj_resetDataKeyframe(zv2, datos_v2, 1)     # postura "colgado"
+    datos_v2.eq_active[0] = 1                          # grúa encendida: el torso no se mueve
+    mujoco.mj_forward(zv2, datos_v2)
+
+colgar(dv2)
+CADERA2 = dv2.body("muslo_d").xpos.copy()             # .copy(): una foto, no una vista (NB45)
+print("cadera derecha: ", CADERA2)
+print("tobillo derecho:", dv2.site_xpos[TOB2].round(3), "  (a", round(CADERA2[2] - dv2.site_xpos[TOB2][2], 3), "m por debajo de la cadera)")"""),
+
+md(r"""El tobillo cuelga 0,70 m por debajo de la cadera, a unos 16 cm del suelo: la pierna puede moverse libremente sin tocar nada.
+
+### Paso 2 · La trayectoria de un paso
+
+Un paso tiene dos fases. En la de **vuelo**, el pie va de atrás (−15 cm) a delante (+15 cm) por un **arco** de 8 cm de alto (medio seno: sube y baja suave). En la de **apoyo**, vuelve de delante a atrás en **línea recta**, que es lo que hace el pie apoyado en el suelo mientras el cuerpo avanza por encima. La `fase` va de 0 a 1 a lo largo del paso:
+"""),
+
+code(r"""def objetivo_paso(fase: float) -> np.ndarray:
+    # Punto del tobillo (en el mundo) para una fase entre 0 y 1 del paso.
+    if fase < 0.5:                                   # vuelo: arco hacia delante
+        s = fase / 0.5
+        x, z = -0.15 + 0.30 * s, 0.08 * np.sin(np.pi * s)
+    else:                                            # apoyo: recta hacia atrás
+        s = (fase - 0.5) / 0.5
+        x, z = 0.15 - 0.30 * s, 0.0
+    return CADERA2 + np.array([x, 0.0, -0.70 + z])
+
+N_PUNTOS = 100
+camino = np.array([objetivo_paso(k / N_PUNTOS) for k in range(N_PUNTOS)])
+plt.figure(figsize=(6, 2.5))
+plt.plot(camino[:, 0], camino[:, 2], ".-")
+plt.gca().set_aspect("equal")
+plt.xlabel("x (m)"); plt.ylabel("z (m)"); plt.title("el camino que queremos para el tobillo")
+plt.grid(alpha=0.3)
+plt.show()"""),
+
+md(r"""### Paso 3 · De camino a tabla de ángulos: IK amortiguada, en función pura
+
+Resolvemos la IK para los 100 puntos, **arrancando cada uno desde la solución del anterior** (como en el círculo). Esta vez la escribimos **pura** (sección 10): usa sus propios datos de trabajo, `trabajo`, y no toca `dv2`:
+"""),
+
+code(r"""def ik_tobillo(objetivo: np.ndarray, q_inicial: np.ndarray, lam: float = 0.05,
+               tolerancia: float = 1e-6, max_iter: int = 50) -> tuple[np.ndarray, float, int]:
+    # Devuelve (cadera, rodilla), el error final y las iteraciones. No modifica nada de fuera.
+    trabajo = mujoco.MjData(zv2)
+    trabajo.qpos[:] = q_inicial
+    Jp = np.zeros((3, zv2.nv))
+    for iteracion in range(1, max_iter + 1):
+        mujoco.mj_forward(zv2, trabajo)
+        error = (objetivo - trabajo.site_xpos[TOB2])[FILAS]
+        if np.linalg.norm(error) < tolerancia:
+            break
+        mujoco.mj_jacSite(zv2, trabajo, Jp, None, TOB2)
+        J2 = Jp[FILAS][:, COLUMNAS]
+        trabajo.qpos[COLUMNAS] += J2.T @ np.linalg.solve(J2 @ J2.T + lam**2 * np.eye(2), error)
+    return trabajo.qpos[COLUMNAS].copy(), float(np.linalg.norm(error)), iteracion
+
+q = dv2.qpos.copy()
+tabla, iters, errs = [], [], []
+for punto in camino:
+    angulos, err, it = ik_tobillo(punto, q)
+    q[COLUMNAS] = angulos                            # arranque en caliente para el siguiente punto
+    tabla.append(angulos); iters.append(it); errs.append(err)
+tabla = np.array(tabla)
+print("forma de la tabla:", tabla.shape, "  (100 puntos × cadera, rodilla)")
+print("iteraciones por punto: de", min(iters), "a", max(iters), f"   error máximo: {max(errs):.1e} m")
+print("la cadera va de", tabla[:, 0].min().round(3), "a", tabla[:, 0].max().round(3), "rad;  la rodilla de",
+      tabla[:, 1].min().round(3), "a", tabla[:, 1].max().round(3))"""),
+
+md(r"""`FILAS` y `COLUMNAS` son las de la sección 9 (x y z; cadera y rodilla derechas): la versión 2 tiene las articulaciones en el mismo orden que la 1.
+
+### Paso 4 · El pie plano: una regla de rotaciones
+
+¿Y el tobillo? Queremos el pie **paralelo al suelo** en todo el paso. En una cadena plana, los giros alrededor del mismo eje **se suman** (sección 2: componer giros alrededor de un mismo eje = sumar ángulos; ahí sí conmutan). El pie está inclinado cadera + rodilla + tobillo, así que basta con:
+
+```
+   tobillo = −(cadera + rodilla)
+```
+
+Comprobémoslo con un punto de la tabla, leyendo la orientación del pie de su **cuaternión** (sección 4). Para un giro alrededor de y, el cuaternión es (cos θ/2, 0, sen θ/2, 0), así que el ángulo es θ = 2 · atan2(y, w):
+"""),
+
+code(r"""def inclinacion_pie(datos_v2: mujoco.MjData) -> float:
+    w, x, y, z = datos_v2.xquat[PIE2]                # MuJoCo: (w, x, y, z)
+    return float(np.degrees(2 * np.arctan2(y, w)))
+
+prueba = mujoco.MjData(zv2)
+colgar(prueba)
+cadera, rodilla = tabla[30]
+prueba.qpos[3:6] = [cadera, rodilla, -(cadera + rodilla)]
+mujoco.mj_forward(zv2, prueba)
+print(f"cadera {cadera:.3f}, rodilla {rodilla:.3f}, tobillo {-(cadera + rodilla):.3f} rad  ->  pie inclinado {inclinacion_pie(prueba):.2e} grados")
+print("matriz de rotación del pie:\n", prueba.xmat[PIE2].reshape(3, 3).round(6))"""),
+
+md(r"""Inclinación prácticamente cero, y la matriz de rotación del pie es la **identidad**: sus ejes coinciden con los del mundo. El pie va plano.
+
+### Paso 5 · Ahora con física: ¿llega el pie a tiempo?
+
+Hasta aquí todo era cinemática. Ahora encendemos la física: en cada pasito, miramos en qué fase del paso estamos, leemos de la tabla los ángulos que tocan y se los damos a los **servos** de la pierna derecha (`ctrl[0:3]`: cadera, rodilla y tobillo). Un paso dura `periodo` segundos. Simulamos 3 s y medimos, a partir del primer segundo (cuando ya se ha olvidado la postura de partida), la distancia entre donde **queríamos** el tobillo y donde **está**:
+
+El parámetro `adelanto` lo usaremos en el paso siguiente: de momento vale 0.
+"""),
+
+code(r"""def angulos_en(t: float, periodo: float) -> tuple[float, float, float]:
+    k = int((t % periodo) / periodo * N_PUNTOS) % N_PUNTOS
+    cadera, rodilla = tabla[k]
+    return cadera, rodilla, -(cadera + rodilla)
+
+def seguir_paso(periodo: float = 1.0, adelanto: float = 0.0, segundos: float = 3.0):
+    colgar(dv2)
+    errores, real, inclinaciones = [], [], []
+    while dv2.time < segundos:
+        dv2.ctrl[0:3] = angulos_en(dv2.time + adelanto, periodo)
+        mujoco.mj_step(zv2, dv2)
+        if dv2.time > 1.0:
+            querido = objetivo_paso((dv2.time % periodo) / periodo)
+            errores.append(np.linalg.norm(querido - dv2.site_xpos[TOB2]))
+            real.append(dv2.site_xpos[TOB2].copy())
+            inclinaciones.append(abs(inclinacion_pie(dv2)))
+    return np.array(errores), np.array(real), max(inclinaciones)
+
+errores_0, real_0, incl_0 = seguir_paso()
+print(f"error medio {100 * errores_0.mean():.1f} cm,  máximo {100 * errores_0.max():.1f} cm,  pie inclinado como mucho {incl_0:.1f}°")"""),
+
+md(r"""¡Unos **4,4 cm de error medio** y más de **7 cm** en el peor momento! La IK era perfecta (una millonésima de metro), pero el pie real **llega tarde**. Es la diferencia entre **cinemática** (dónde quieres estar) y **dinámica** (lo que cuesta llegar): el servo de posición es un muelle con amortiguador (NB40) que solo empuja **cuando ya hay error**, así que siempre va por detrás de una referencia que se mueve. (El pie, en cambio, sí va casi plano: como mucho 2,7°.)
+
+### Paso 6 · El truco: pedir el futuro
+
+Si el servo llega tarde, pidámosle **el punto de un poco más adelante**: en vez de los ángulos de la fase actual, los de dentro de `adelanto` segundos. Probemos varios:
+"""),
+
+code(r"""for adelanto in [0.0, 0.02, 0.05, 0.08, 0.10]:
+    e, _, _ = seguir_paso(adelanto=adelanto)
+    print(f"adelanto {adelanto:.2f} s  ->  error medio {100 * e.mean():.1f} cm,  máximo {100 * e.max():.1f} cm")"""),
+
+md(r"""Con **0,08 s de adelanto**, el error medio baja de 4,4 cm a **1,1 cm**: cuatro veces menos, con una sola línea de código. Pasado ese punto, vuelve a subir (con 0,10 s el pie ya llega **antes** de tiempo). Es lo mismo que haces al pasarle un balón a alguien que corre: no apuntas a donde está, sino a donde **va a estar**.
+
+¿Es un truco serio? Es la versión más simple de una idea que sí lo es: compensar el retraso de un sistema. La forma profesional de hacerlo es calcular **qué par necesita el motor** para seguir la trayectoria con su masa y su inercia: la **dinámica inversa**, el tema del NB47.
+
+Pero ojo, que aquí hay una sorpresa. Dibujemos dos cosas: a la izquierda, el **camino** que recorre el tobillo en el espacio (x frente a z); a la derecha, su posición x a lo largo del **tiempo**, durante un paso:
+"""),
+
+code(r"""_, real_8, incl_8 = seguir_paso(adelanto=0.08)
+tiempos = 1.0 + zv2.opt.timestep * np.arange(1, len(real_0) + 1)     # los instantes en que medimos
+un_paso = tiempos < 2.0
+x_deseada = np.array([objetivo_paso(t % 1.0)[0] for t in tiempos])
+
+fig, (izq, der) = plt.subplots(1, 2, figsize=(12, 3.2))
+izq.plot(camino[:, 0], camino[:, 2], "k--", label="deseado (IK)")
+izq.plot(real_0[:, 0], real_0[:, 2], lw=4, alpha=0.5, label="servos, sin adelanto")
+izq.plot(real_8[:, 0], real_8[:, 2], label="servos, adelanto 0,08 s")
+izq.set_aspect("equal"); izq.set_xlabel("x (m)"); izq.set_ylabel("z (m)"); izq.set_title("el camino")
+der.plot(tiempos[un_paso], x_deseada[un_paso], "k--", label="deseado")
+der.plot(tiempos[un_paso], real_0[un_paso, 0], lw=4, alpha=0.5, label="sin adelanto")
+der.plot(tiempos[un_paso], real_8[un_paso, 0], label="adelanto 0,08 s")
+der.set_xlabel("tiempo (s)"); der.set_ylabel("x del tobillo (m)"); der.set_title("el horario")
+for eje in (izq, der):
+    eje.legend(fontsize=8); eje.grid(alpha=0.3)
+plt.show()"""),
+
+md(r"""**Izquierda: los dos caminos reales son el mismo** (la línea gruesa y la fina se tapan). El adelanto **no cambia por dónde pasa** el pie: solo **cuándo** pasa. Como el paso se repite igual una y otra vez, pedir los ángulos 0,08 s antes solo desplaza todo el movimiento en el tiempo.
+
+**Derecha: ahí está la diferencia.** Sin adelanto, la curva real va **retrasada** respecto a la deseada; con adelanto, casi encima. La mayor parte del error de 4,4 cm era **retraso**, no forma.
+
+Lo que el adelanto **no** arregla es la forma: el arco real sube algo menos de lo pedido y las esquinas salen **redondeadas** (el pie no da la vuelta en seco, ni hacia atrás ni hacia delante). Una trayectoria con **esquinas** pide aceleraciones enormes que ningún motor con masa puede dar. En el NB51 diseñarás trayectorias del pie sin esquinas, y en el NB47 verás cómo pedirle a cada motor el par que hace falta en vez de esperar a que el error lo empuje.
+
+### Paso 7 · Verlo
+
+Zancudo, colgado de la grúa, dando pasos en el aire con la pierna derecha (adelanto 0,08 s). La cámara sigue al torso:
+"""),
+
+code(r"""def control_paso(m, d):
+    d.ctrl[0:3] = angulos_en(d.time + 0.08, 1.0)
+
+colgar(dv2)
+_ = taller.video(zv2, dv2, segundos=3.0, control=control_paso, nombre="nb46_paso_en_el_aire", distancia=2.2)"""),
+
+md(r"""### Tus retos
+
+**R1.** En lugar del adelanto, prueba servos más **duros**. Las ganancias de los servos están en el modelo: `zv2.actuator_gainprm[:, 0]` (la kp) y `zv2.actuator_biasprm[:, 1:3]` (−kp y −kd). Mide el error medio y máximo, sin adelanto, con (kp, kd) = (300, 20), (1000, 40) y (3000, 90). Deja el modelo como estaba al acabar.
+
+**R2.** ¿Y si el paso es más **lento**? Repite la medida sin adelanto con un periodo de 2 s.
+
+**R3.** Haz que la pierna **izquierda** también camine en el aire, medio paso desfasada (cuando la derecha está en vuelo, la izquierda está en apoyo). Pista: la tabla sirve para las dos piernas (están a la misma altura); solo cambia la fase y los índices de `ctrl`.
+"""),
+
+md(r"""<details>
+<summary>▶ Solución R1</summary>
+
+```python
+def poner_ganancias(kp: float, kd: float) -> None:
+    zv2.actuator_gainprm[:, 0] = kp
+    zv2.actuator_biasprm[:, 1] = -kp
+    zv2.actuator_biasprm[:, 2] = -kd
+
+for kp, kd in [(300, 20), (1000, 40), (3000, 90)]:
+    poner_ganancias(kp, kd)
+    e, _, _ = seguir_paso()
+    print(kp, kd, f"medio {100 * e.mean():.1f} cm, máximo {100 * e.max():.1f} cm")
+poner_ganancias(300, 20)                       # el modelo, como estaba
+```
+
+Resultado (ejecutado): **4,4 / 7,2 cm** con kp = 300; **2,9 / 4,2 cm** con kp = 1000; **2,3 / 3,1 cm** con kp = 3000. Diez veces más rigidez da menos mejora que el adelanto de 0,08 s con los servos blandos (1,1 cm de media). Y unos servos muy duros tienen un precio en un robot de verdad: pares más bruscos, más vibraciones y menos tolerancia a los golpes (NB40). Fíjate en que hemos cambiado el **modelo** (`zv2`) sin recargarlo: los arrays de `MjModel` también se pueden escribir, y el cambio vale para todos los `MjData` (NB45).
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+e, _, _ = seguir_paso(periodo=2.0)
+print(f"medio {100 * e.mean():.1f} cm, máximo {100 * e.max():.1f} cm")
+```
+
+Unos **2,4 cm de media y 4,2 de máximo**: la mitad que con el paso de 1 s. Un movimiento más lento pide menos velocidad, y el retraso del servo (que es más o menos un **tiempo** fijo) se traduce en menos distancia. Moraleja para el NB51: las trayectorias rápidas necesitan controladores que piensen en la dinámica.
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+```python
+def control_dos_piernas(m, d):
+    d.ctrl[0:3] = angulos_en(d.time + 0.08, 1.0)          # derecha
+    d.ctrl[3:6] = angulos_en(d.time + 0.08 + 0.5, 1.0)    # izquierda, medio periodo después
+
+colgar(dv2)
+taller.video(zv2, dv2, segundos=3.0, control=control_dos_piernas, nombre="nb46_r3_dos_piernas", distancia=2.2)
+```
+
+Las piernas se alternan como al andar: es exactamente el patrón de un paso de marcha, pero con el torso sujeto. Lo que falta para andar de verdad es lo difícil: soltar la grúa y **no caerse**, que es el trabajo del NB51 y el NB52.
+</details>
+"""),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- Una **trayectoria** del pie se convierte en una **tabla de ángulos** resolviendo la IK punto a punto, con arranque en caliente (3-7 iteraciones por punto).
+- Las orientaciones se **suman** en una cadena plana: `tobillo = −(cadera + rodilla)` deja el pie plano, comprobado con `xquat` y `xmat`.
+- **`eq_active`** enciende o apaga una restricción de igualdad desde los datos (la grúa), y **`mj_resetDataKeyframe`** carga posturas guardadas.
+- La IK dice **dónde**; los **servos** tienen que **llegar**, y llegan tarde: 4,4 cm de error medio con la física encendida. Pedirles el futuro (0,08 s de adelanto) lo baja a 1,1 cm.
+- Los parámetros del modelo (`actuator_gainprm`, `actuator_biasprm`) se pueden cambiar en caliente para experimentar.
+
+En la práctica del NB47 sustituirás el truco del adelanto por la herramienta de verdad: calcularás con `mj_inverse` el par exacto que necesita cada motor para que el pie siga su camino.
+"""),
+
+md(r"""## 14 · Posdata
+
+Si algo no ha quedado claro (también en la práctica en MuJoCo), dime el **apartado** y la **frase exacta** y lo reescribo.
 
 En el **NB47** usaremos todo esto para **controlar** con el modelo: la **dinámica inversa** (`mj_inverse`: ¿qué pares necesito para esta aceleración?), la **compensación de la gravedad**, el **par calculado** y el **control en el espacio de la tarea** (mover el pie directamente, con el jacobiano). Y en Python: clases abstractas y protocolos para diseñar una familia de **controladores** intercambiables.
 """),
