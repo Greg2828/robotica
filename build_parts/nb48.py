@@ -11,7 +11,9 @@ Rozamiento: Coulomb, plano inclinado (umbral arctan μ), deslizamiento lento
 Solucionadores PGS/CG/Newton. Fuerzas: mj_contactForce (marco del contacto,
 signo), fuerza total = peso, cfrc_ext. Centro de presiones (ZMP medido),
 empujones crecientes: x_cdp = x_cdm + F·h/W, vuelco entre 15 y 16 N.
-Contactos y sim-to-real.
+Contactos y sim-to-real. Práctica en MuJoCo: catálogo de suelos blandos
+para Zancudo v2 (priority/solmix, geom_solref/solimp, hundimiento con
+contact.dist, umbral de empuje por bisección, cama elástica; vídeo nb48_barro).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -771,9 +773,181 @@ En los **12** casos coinciden. Desliza: μ = 0,3 a partir de 20°; μ = 0,5 a pa
 </details>
 '''),
 
-md(r"""## 12 · Posdata
+md(r"""## 12 · 🛠 Práctica en MuJoCo: Zancudo sobre suelos blandos
 
-Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
+Hasta ahora, Zancudo siempre ha pisado un suelo "de baldosa": el contacto por defecto, duro, que apenas se deja atravesar medio milímetro. Pero los robots de verdad pisan césped, alfombras, colchonetas, arena... y lo que aprendiste en las secciones 3 y 4 (`solref`, `solimp`) es justo la herramienta para simularlos. En la práctica vas a construir un **catálogo de suelos** para Zancudo v2 (el del Bloque A) y a medir, para cada uno, tres cosas:
+
+1. cuánto se **hunden** sus pies (en reposo y como mucho);
+2. si es capaz de **seguir de pie** él solo;
+3. qué **empuje** constante aguanta antes de volcar (la medida de la sección 8, ahora con búsqueda binaria).
+
+Es un experimento típico de **robustez**: antes de llevar un robot a un sitio nuevo, se comprueba en simulación cómo le afecta el suelo.
+
+### Paso 1 · ¿Quién manda en un contacto?
+
+Un contacto lo forman **dos** geometrías (el pie y el suelo), y cada una tiene su propio `solref`. ¿Cuál usa MuJoCo? Por defecto, una **mezcla** de los dos (una media pesada con el atributo `solmix`, que vale 1 en las dos: la media normal). Si queremos que **mande el suelo**, le damos más **prioridad** (`priority`): entonces el contacto usa los parámetros de la geometría con la prioridad más alta, sin mezclar. Lo comprobamos con un suelo de `timeconst` 0,1 s (los pies siguen con el 0,02 de serie):
+"""),
+
+code(r"""ZV2 = "robots/zancudo_v2.xml"
+
+def con_suelo(solref=None, solimp=None, prioridad: int = 1) -> mujoco.MjModel:
+    m = mujoco.MjModel.from_xml_path(ZV2)
+    suelo = m.geom("suelo").id
+    m.geom_priority[suelo] = prioridad
+    if solref is not None:
+        m.geom_solref[suelo] = solref
+    if solimp is not None:
+        m.geom_solimp[suelo] = solimp
+    return m
+
+def asentar(m: mujoco.MjModel, segundos: float = 2.0, empuje: float = 0.0):
+    "Zancudo agachado, con un empuje constante en el torso. Devuelve (datos, ¿de pie?, hundimiento máximo en m)."
+    d = mujoco.MjData(m)
+    mujoco.mj_resetDataKeyframe(m, d, m.key("agachado").id)
+    mujoco.mj_forward(m, d)
+    hundimiento_max = 0.0
+    while d.time < segundos:
+        d.xfrc_applied[m.body("torso").id, 0] = empuje
+        mujoco.mj_step(m, d)
+        if d.ncon:
+            hundimiento_max = max(hundimiento_max, -d.contact.dist[:d.ncon].min())
+        if abs(d.qpos[2]) > 0.6:                      # torso inclinado más de 34°: caído
+            return d, False, hundimiento_max
+    return d, True, hundimiento_max
+
+def hundimiento(d: mujoco.MjData) -> float:
+    "Lo más hondo que está metido ahora un contacto, en mm (la distancia es negativa al atravesarse)."
+    return -1000 * d.contact.dist[:d.ncon].min()
+
+for nombre, prioridad, solref in [("suelo de serie", 1, None), ("suelo 0,1 s SIN prioridad", 0, [0.1, 1]),
+                                  ("suelo 0,1 s CON prioridad", 1, [0.1, 1]), ("los dos a 0,06 s", 1, [0.06, 1])]:
+    d, _, _ = asentar(con_suelo(solref, prioridad=prioridad))
+    print(f"{nombre:>26}: hundido {hundimiento(d):6.3f} mm")"""),
+
+md(r"""Sin prioridad, el suelo de 0,1 s y el pie de 0,02 s se **mezclan**: la media es 0,06 s, y por eso da **exactamente** lo mismo que poner 0,06 en los dos. Con prioridad, manda el suelo: 10,5 mm. En un proyecto real conviene decidir **explícitamente** quién manda (si no, cambiar las suelas del robot cambiaría también "el suelo"). (`geom_priority`, `geom_solref` y `geom_solimp` son arrays del modelo, una fila por geometría: se pueden cambiar desde Python sin tocar el `.xml`, como `body_mass` en el NB35; en el NB50 lo harás de forma más limpia con `MjSpec`.)
+
+### Paso 2 · El catálogo de suelos
+
+Cinco suelos, del más duro al más blando. Para ablandar tocamos los dos mandos de la sección 3: **`timeconst`** (cuánto tarda el contacto en corregir la penetración) y **`solimp`** (con un `dmin` bajo y un `width` grande, el contacto empieza muy blando y se endurece poco a poco, como una espuma):
+"""),
+
+code(r"""SOLIMP_SERIE = [0.9, 0.95, 0.001, 0.5, 2]
+ESPUMA = [0.1, 0.95, 0.05, 0.5, 2]              # empieza blandísimo (0,1) y llega a 0,95 a los 5 cm
+suelos = {
+    "baldosa":         ([0.02, 1], SOLIMP_SERIE),
+    "goma":            ([0.05, 1], SOLIMP_SERIE),
+    "colchoneta":      ([0.1, 1], SOLIMP_SERIE),
+    "espuma":          ([0.1, 1], ESPUMA),
+    "barro":           ([0.3, 1], SOLIMP_SERIE),
+}
+
+def umbral_de_empuje(m: mujoco.MjModel, alto: float = 40.0, iteraciones: int = 10) -> float:
+    "El mayor empuje constante (N) que aguanta 3 s, por búsqueda binaria (E3)."
+    bajo = 0.0
+    for _ in range(iteraciones):
+        medio = (bajo + alto) / 2
+        if asentar(m, 3.0, medio)[1]:
+            bajo = medio
+        else:
+            alto = medio
+    return bajo
+
+inicio = time.perf_counter()
+print(f"{'suelo':>11} | en reposo | máximo  | cadera  | ¿de pie? | aguanta")
+for nombre, (solref, solimp) in suelos.items():
+    m = con_suelo(solref, solimp)
+    d, de_pie_solo, maximo = asentar(m)
+    aguanta = umbral_de_empuje(m) if de_pie_solo else 0.0
+    print(f"{nombre:>11} | {hundimiento(d):6.1f} mm | {1000 * maximo:5.1f} mm | {0.865 + d.qpos[1]:.3f} m | "
+          f"{'sí' if de_pie_solo else 'NO':>8} | {aguanta:5.1f} N")
+print(f"({time.perf_counter() - inicio:.1f} s)")"""),
+
+md(r"""Léelo fila a fila:
+
+- **Baldosa** (el suelo de serie): medio milímetro, y aguanta un empuje de unos 13,6 N (lo mismo que mediste con el Zancudo v1 en la sección 8, entre 15 y 16 N, en el mismo orden).
+- **Goma** y **colchoneta**: los pies se hunden 2 y 10 mm... y el empuje que aguanta baja a 11,5 N con la goma y a **menos de la mitad** (5,2 N) con la colchoneta. ¿Por qué? En la sección 8 viste que, para resistir un empuje, el suelo carga cada vez más la **punta** del pie. En un suelo blando, cargar la punta la **hunde**: el pie se inclina, el robot se inclina con él, y el centro de masas avanza antes. Un suelo blando es como unos tobillos blandos.
+- **Espuma**: se hunde varios centímetros (el `solimp` blando deja que el contacto ceda mucho al principio), pero sigue de pie.
+- **Barro** (`timeconst` 0,3 s): se hunde 7 cm y **Zancudo vuelca solo**, sin que nadie lo toque.
+
+Míralo en el barro:
+"""),
+
+code(r"""import taller
+m_barro = con_suelo(*suelos["barro"])
+d_barro = mujoco.MjData(m_barro)
+mujoco.mj_resetDataKeyframe(m_barro, d_barro, m_barro.key("agachado").id)
+mujoco.mj_forward(m_barro, d_barro)
+_ = taller.video(m_barro, d_barro, segundos=2.5, nombre="nb48_barro", distancia=2.5)"""),
+
+md(r"""Los pies van desapareciendo en el suelo y el robot acaba tumbado hacia delante. Ojo con la lección de **simulación**: un barro de verdad no se comporta así (se deforma, se queda con la forma del pie, "chupa"); MuJoCo solo tiene muelles con amortiguador. Para **robustez** sirve (un suelo que cede); para simular barro de verdad harían falta otras herramientas (terrenos deformables, partículas).
+
+### Tus retos
+
+**Reto 1.** La documentación dice que `timeconst` debe ser al menos **el doble del pasito**. ¿Qué pasa si no? Mide el hundimiento en reposo con suelos de `timeconst` 0,001; 0,002; 0,004 y 0,008 s (pasito: 0,002 s).
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+for timeconst in [0.001, 0.002, 0.004, 0.008]:
+    d, _, _ = asentar(con_suelo([timeconst, 1]))
+    print(f"timeconst {timeconst}: {hundimiento(d):.3f} mm")
+```
+
+Los tres primeros dan **lo mismo** (0,031 mm) y solo el de 0,008 cambia (0,122 mm). MuJoCo no te deja ir por debajo de 2 pasitos (0,004 s): si lo pides, usa 0,004 **sin avisar** (es un mecanismo de seguridad que se puede desactivar con el `flag` `refsafe`, pero casi nunca es buena idea). Si quieres un contacto más duro, tienes que bajar el pasito.
+</details>
+
+**Reto 2.** Una **cama elástica**: suelta a Zancudo desde la postura `colgado` (los pies 10 cm por encima del suelo) sobre la colchoneta con `dampratio` 1; 0,3 y 0,1. Cuenta cuántas veces **aterriza** (un pie pasa de no tocar a tocar; usa los sensores de tacto del P4) en 3 s, y si acaba de pie.
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+for dampratio in [1, 0.3, 0.1]:
+    m = con_suelo([0.1, dampratio])
+    d = mujoco.MjData(m)
+    mujoco.mj_resetDataKeyframe(m, d, m.key("colgado").id)
+    tactos = [m.sensor("tacto_d").adr[0], m.sensor("tacto_i").adr[0]]
+    antes, aterrizajes = False, 0
+    while d.time < 3.0:
+        mujoco.mj_step(m, d)
+        ahora = d.sensordata[tactos].sum() > 0
+        aterrizajes += ahora and not antes
+        antes = ahora
+    print(f"dampratio {dampratio}: {aterrizajes} aterrizajes, {'de pie' if abs(d.qpos[2]) < 0.6 else 'CAÍDO'}")
+```
+
+Con 1, **un** aterrizaje (amortiguamiento crítico: no rebota); con 0,3, **4** (rebota y se calma); con 0,1, **12** botes, y acaba **caído**. Fíjate en `aterrizajes += ahora and not antes`: un booleano se suma como 0 o 1.
+</details>
+
+**Reto 3.** ★ Diseña un suelo de **césped**: que los pies se hundan entre 3 y 6 mm en reposo y que Zancudo aguante, al menos, 8 N de empuje. Busca un `timeconst` (con `dampratio` 1 y el `solimp` de serie) que lo cumpla, probando valores entre 0,02 y 0,1.
+
+<details>
+<summary>▶ Solución</summary>
+
+```python
+for timeconst in [0.03, 0.04, 0.05, 0.06, 0.07]:
+    m = con_suelo([timeconst, 1])
+    d, _, _ = asentar(m)
+    print(f"{timeconst}: hundido {hundimiento(d):.1f} mm, aguanta {umbral_de_empuje(m):.1f} N")
+```
+
+Hundido 1,6; 2,9; 4,4; 6,2 y 8,2 mm, y aguanta 9,8; 8,5; 7,3; 6,6 y 6,0 N. **No hay ninguno** que cumpla las dos cosas: con 0,04 aguanta 8,5 N, pero solo se hunde 2,9 mm; con 0,05 ya se hunde 4,4 mm, pero aguanta 7,3 N. Las dos especificaciones **tiran en sentidos contrarios** (más blando = más hundido = menos estable), y la ventana pedida está justo en medio. Es una situación muy real: o se relaja un requisito, o se cambia otro mando (prueba a endurecer el `solimp`, o la rigidez de los servos, P3). Saber decir "con este modelo, no se puede; y este es el motivo" también es ingeniería.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **Quién manda en un contacto**: por defecto, la **mezcla** de los parámetros de las dos geometrías (`solmix`); con **`priority`**, la de mayor prioridad. Comprobado: suelo 0,1 + pie 0,02 sin prioridad = 0,06.
+- A fabricar suelos con **`geom_solref`** y **`geom_solimp`** desde Python, y a medir el hundimiento con **`contact.dist`**.
+- Que un suelo blando hace al robot **menos estable** frente a empujones (el pie se hunde por la punta) y, si es lo bastante blando, lo tumba solo.
+- Que `timeconst` por debajo de **2 pasitos** se recorta en silencio, y que `dampratio` < 1 convierte el suelo en una cama elástica.
+
+En la práctica del **NB49** pondrás a prueba el **tiempo**: medirás, en tu propio Zancudo, el error y la velocidad de cada integrador con distintos pasitos, para elegir la combinación con la que entrenarías.
+"""),
+
+md(r"""## 13 · Posdata
+
+Si algo no ha quedado claro (también en la práctica en MuJoCo), dime el **apartado** y la **frase exacta** y lo reescribo.
 
 En el **NB49** cerramos el "motor" de MuJoCo con el **tiempo**: los integradores (Euler, implícito, RK4), cómo elegir el **pasito**, cuándo y por qué una simulación **explota**, el **determinismo**, y cómo hacer que todo vaya **más rápido** (medir con un perfilador, simular muchos robots en paralelo). En Python: **decoradores**, **gestores de contexto** (`with`), `functools` y **multiproceso**.
 """),

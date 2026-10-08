@@ -9,6 +9,9 @@ fase de arranque. Trayectorias del pie en el aire (lineal, cúbica, quíntica;
 bulto vertical con velocidad nula). Comprobación en MuJoCo con un LIPM de verdad:
 en bucle abierto el plan diverge; con realimentación del DCM se sigue al
 milímetro y aguanta un empujón.
+Práctica en MuJoCo: ¿obedece Zancudo al DCM? DCM del robot entero (subtree_com +
+mj_subtreeVel) bajo empujones; la frontera de caída coincide con los bordes del pie
+(13,5 cm frente a 14; -5,6 frente a -6); vídeo nb51_dcm_se_cae.
 Python: NumPy vectorizado a fondo (ufuncs, medir bucle frente a vector,
 broadcasting, máscaras, searchsorted, numpy.typing) y matplotlib profesional
 (interfaz orientada a objetos, anatomía Figure/Axes, funciones que reciben ax,
@@ -1452,7 +1455,233 @@ Y comparado con la capturabilidad (apartado 7: 0,19 m/s sin pasos), 0,21 m/s est
 </details>
 '''),
 
-md(r"""## 17 · Posdata
+md(r"""## 17 · 🛠 Práctica en MuJoCo: ¿obedece Zancudo al DCM?
+
+Toda la lección se ha apoyado en una idea: **el DCM decide**. Si el DCM (ξ = x + v/ω) se queda dentro del pie, el tobillo puede frenar la caída sin dar ningún paso; si se sale, ya no hay tobillo que valga: o das un paso o te caes. Lo hemos comprobado con una **bola**, que es un LIPM perfecto por construcción.
+
+Pero Zancudo **no** es una bola: tiene piernas con masa, su centro de masas sube y baja, sus motores son muelles que ceden, y sus pies son cápsulas que pueden rodar. ¿Sigue valiendo la regla? Es la pregunta que se hace cualquier ingeniero antes de fiarse de un modelo simplificado: **¿cuánto se parece el robot de verdad al modelo?**
+
+En la práctica del NB45 montaste un banco de empujones y encontraste **dónde** está el umbral de caída de Zancudo. Hoy vas a ver **por qué** está ahí. El plan:
+
+1. Dejar a Zancudo v2 asentado en la postura `agachado` y guardar ese estado.
+2. Medir **su** ω y **sus** bordes del pie (no los "digamos 5 cm" del apartado 7).
+3. Darle empujones cortos y seguir su DCM en cada paso de la simulación.
+4. Buscar el empujón más fuerte que aguanta, hacia delante y hacia atrás, y mirar **dónde llegó su DCM**.
+5. Verlo en una gráfica y en un vídeo.
+"""),
+
+md(r"""### Paso 1 · Zancudo asentado
+
+Empezamos desde el keyframe `agachado` y dejamos que pase 1 segundo para que los motores-muelle se asienten (NB50: bajan un poco bajo el peso). Ese estado será el punto de partida de **todos** los empujones: lo copiamos con `mj_copyData` (NB45), así cada prueba empieza exactamente igual.
+"""),
+
+code(r"""z_v2 = mujoco.MjModel.from_xml_path("robots/zancudo_v2.xml")
+asentado = mujoco.MjData(z_v2)
+mujoco.mj_resetDataKeyframe(z_v2, asentado, z_v2.key("agachado").id)
+for paso in range(500):                                  # 1 segundo
+    mujoco.mj_step(z_v2, asentado)
+mujoco.mj_forward(z_v2, asentado)
+
+TORSO, PIE = z_v2.body("torso").id, z_v2.body("pie_d").id
+z_cdm = asentado.subtree_com[TORSO][2]
+omega_z = np.sqrt(g / z_cdm)
+x_cdm = asentado.subtree_com[TORSO][0] - asentado.xpos[PIE][0]       # CdM respecto al tobillo
+print(f"altura del CdM: {z_cdm:.3f} m  →  ω = {omega_z:.3f} 1/s")
+print(f"el CdM está {100 * x_cdm:.1f} cm por delante del tobillo")"""),
+
+md(r"""### Paso 2 · Los bordes del pie
+
+¿Dónde están la punta y el talón? El pie de Zancudo es una **cápsula** tumbada: un segmento con media esfera en cada punta. Sobre un suelo plano, toca el suelo por la línea de abajo del segmento, así que los puntos de apoyo extremos son los **extremos del segmento** (no los de las semiesferas). El modelo guarda el centro de la forma (`geom_pos`, respecto al tobillo) y su media longitud (`geom_size[1]`):
+"""),
+
+code(r"""forma_pie = z_v2.geom("pie_d")
+centro, media = forma_pie.pos[0], forma_pie.size[1]
+PUNTA, TALON = centro + media, centro - media
+print(f"centro del pie: {100 * centro:.0f} cm por delante del tobillo; media longitud {100 * media:.0f} cm")
+print(f"punta: {100 * PUNTA:+.0f} cm   talón: {100 * TALON:+.0f} cm")
+print(f"margen del DCM al empezar: {100 * (PUNTA - x_cdm):.1f} cm hacia delante, {100 * (x_cdm - TALON):.1f} cm hacia atrás")"""),
+
+md(r"""(Funciona porque la cápsula está girada para quedar tumbada a lo largo de x: su `pos` es el centro del segmento en el marco del pie, y en la postura `agachado` el pie está plano, así que el marco del pie y el del tobillo coinciden en x. Si el pie estuviera inclinado, habría que usar `geom_xpos` y `geom_xmat`, NB46.)
+
+Así que Zancudo tiene mucho más pie que los 5 cm que supusimos en el apartado 7: **11 cm** de margen hacia delante y **9 cm** hacia atrás.
+
+### Paso 3 · Empujar y seguir el DCM
+
+La función `empujon` copia el estado asentado, empuja el torso con una fuerza horizontal F durante `duracion` segundos (con `xfrc_applied`, como en el apartado 12) y, en cada paso, calcula el DCM **del robot entero**: la posición y la velocidad del centro de masas de todo el árbol que cuelga del torso.
+
+- La posición del CdM ya la teníamos: `subtree_com`.
+- Su velocidad está en **`subtree_linvel`**, pero MuJoCo no la calcula en cada paso (cuesta tiempo y casi nunca hace falta). Hay que pedírsela con **`mujoco.mj_subtreeVel(modelo, datos)`**, otra de esas funciones "de una pieza" del NB45.
+
+Devuelve si se ha caído (el torso pasa de 0,3 rad, como en el NB50) y la trayectoria del DCM respecto al tobillo, como array de NumPy:
+"""),
+
+code(r"""def empujon(fuerza: float, duracion: float = 0.1, segundos: float = 4.0) -> tuple[bool, np.ndarray]:
+    dz = mujoco.MjData(z_v2)
+    mujoco.mj_copyData(dz, z_v2, asentado)
+    inicio = dz.time
+    dcm = []
+    for paso in range(int(round(segundos / z_v2.opt.timestep))):
+        dz.xfrc_applied[TORSO, 0] = fuerza if dz.time - inicio < duracion else 0.0
+        mujoco.mj_step(z_v2, dz)
+        mujoco.mj_subtreeVel(z_v2, dz)
+        dcm.append(dz.subtree_com[TORSO][0] + dz.subtree_linvel[TORSO][0] / omega_z - dz.xpos[PIE][0])
+        if abs(dz.qpos[2]) > 0.3:
+            return True, np.array(dcm)
+    return False, np.array(dcm)
+
+for fuerza in [40, 100, -40, -100]:
+    cae, dcm = empujon(fuerza)
+    print(f"empujón de {fuerza:+4d} N durante 0,1 s: {'SE CAE ' if cae else 'aguanta'}   "
+          f"DCM entre {100 * dcm.min():+.1f} y {100 * dcm.max():+.1f} cm")"""),
+
+md(r"""Con 40 N, el DCM se mueve unos centímetros, se queda **dentro** del pie y Zancudo aguanta. Con 100 N, el DCM llega **más allá de la punta** (o del talón) y Zancudo se cae. Hasta aquí, lo esperado. La pregunta fina es **dónde está la frontera**.
+
+### Paso 4 · La frontera, con búsqueda binaria
+
+Buscamos el empujón más fuerte que aguanta en cada sentido (12 vueltas de búsqueda binaria, como en el NB50) y miramos hasta dónde llegó el DCM en ese caso límite:
+"""),
+
+code(r"""def empujon_maximo(sentido: int) -> float:
+    aguanta, cae = 0.0, 400.0
+    for vuelta in range(12):
+        medio = (aguanta + cae) / 2
+        if empujon(sentido * medio)[0]:
+            cae = medio
+        else:
+            aguanta = medio
+    return aguanta
+
+limites = {}
+for sentido, nombre, borde in [(+1, "delante", PUNTA), (-1, "detrás", TALON)]:
+    fuerza = empujon_maximo(sentido)
+    _, dcm = empujon(sentido * fuerza)
+    extremo = dcm.max() if sentido > 0 else dcm.min()
+    limites[nombre] = sentido * fuerza
+    print(f"hacia {nombre:>7}: aguanta hasta {fuerza:5.1f} N · 0,1 s;  su DCM llegó a {100 * extremo:+.1f} cm;  "
+          f"el borde del pie está en {100 * borde:+.0f} cm")"""),
+
+md(r"""**Zancudo obedece al DCM, al milímetro.** En el empujón más fuerte que aguanta hacia delante (unos 70 N durante 0,1 s), su DCM llega a **13,5 cm**, y la punta está a 14. Hacia atrás (unos 67 N), llega a **−5,6 cm**, y el talón está a −6. Medio centímetro de diferencia, con un robot de 9 articulaciones, piernas pesadas y motores que ceden.
+
+Es un resultado importante: el LIPM, que parecía una simplificación de pizarra, describe **exactamente** la frontera entre caerse y no caerse de un robot "de verdad", cuando se mide con el DCM del robot completo. Por eso los humanoides reales controlan el DCM.
+
+(¿Por qué las fuerzas límite se parecen tanto, 70 y 67 N, si el margen delante es de 11 cm y detrás de 9? Porque la fuerza no se traduce en DCM de forma sencilla: durante el propio empujón, el suelo también empuja, y lo hace distinto según el sentido. Lo verás en el R1. Lo que **no** depende de esos detalles es la frontera: el borde del pie.)
+
+(Si comparas con el NB45, allí el umbral salía en 77 N: aquel banco partía de otro estado y daba por caído al robot cuando el torso bajaba de 0,5 m en 2 s. El umbral exacto depende del criterio; la frontera del DCM, no.)
+
+### Paso 5 · Verlo
+
+La gráfica clave: el DCM frente al tiempo, en los dos casos límite de cada lado (el que aguanta y uno un 5 % más fuerte), con los bordes del pie como líneas. Usamos la interfaz orientada a objetos de matplotlib del apartado 5:
+"""),
+
+code(r"""fig, ax = plt.subplots(figsize=(9, 4.5))
+for nombre, color in [("delante", "tab:blue"), ("detrás", "tab:orange")]:
+    for factor, linea in [(1.0, "-"), (1.05, "--")]:
+        cae, dcm = empujon(limites[nombre] * factor)
+        tiempo = np.arange(1, len(dcm) + 1) * z_v2.opt.timestep
+        etiqueta = f"{limites[nombre] * factor:+.0f} N: {'se cae' if cae else 'aguanta'}"
+        ax.plot(tiempo, 100 * dcm, color=color, linestyle=linea, label=etiqueta)
+for borde, texto in [(PUNTA, "punta"), (TALON, "talón")]:
+    ax.axhline(100 * borde, color="k", linewidth=1)
+    ax.text(1.2, 100 * borde + 0.6, texto)
+ax.axvspan(0, 0.1, color="gray", alpha=0.2)
+ax.set(xlim=(0, 4), ylim=(-15, 25), xlabel="tiempo (s)", ylabel="DCM respecto al tobillo (cm)",
+       title="Zancudo de verdad: el DCM decide si se cae")
+ax.legend(loc="upper right")
+ax.grid(alpha=0.3)
+plt.show()"""),
+
+md(r"""La franja gris es el empujón. Las líneas continuas (aguanta) llegan **justo** al borde del pie y se quedan ahí, pegadas, casi un segundo y medio (Zancudo haciendo equilibrio sobre la punta o el talón, como un lápiz casi vertical), hasta que vuelven; las discontinuas (un 5 % más) lo **cruzan** y se disparan: esa es la mitad divergente del apartado 6, en un robot entero. Una frontera nítida, justo donde dice la teoría.
+
+Y el vídeo del caso que se cae hacia delante (empujón un 5 % por encima del límite). Fíjate en el momento en que el talón se despega: es cuando el DCM cruza la punta. `taller.video` necesita una función de control que empuje durante la primera décima:
+"""),
+
+code(r"""import taller
+
+d_video = mujoco.MjData(z_v2)
+mujoco.mj_copyData(d_video, z_v2, asentado)
+inicio_video = d_video.time
+
+def golpe(modelo, datos):
+    datos.xfrc_applied[TORSO, 0] = 1.05 * limites["delante"] if datos.time - inicio_video < 0.1 else 0.0
+
+fotos = taller.video(z_v2, d_video, segundos=3, control=golpe, nombre="nb51_dcm_se_cae")"""),
+
+md(r"""### Tus retos
+
+**R1.** El empujón límite hacia delante es de unos 70 N durante 0,1 s: un **impulso** F·Δt = 7 N·s (en la práctica del NB45 viste que, en golpes cortos, lo que cuenta es el impulso). Predícelo con el LIPM: el DCM empieza en x₀ y, tras un golpe instantáneo que da a **todo** el robot una velocidad Δv = impulso / masa, pasa a x₀ + Δv/ω. ¿Qué impulso lo deja justo en la punta? Compruébalo con un golpe de 0,01 s. ¿Coincide? ¿Por qué no?
+
+**R2.** Con `MjSpec` (NB50), alarga la **puntera** de los dos pies 5 cm (la media longitud de la cápsula de 0,10 a 0,125 m, y su centro de 0,04 a 0,065, para que el talón no cambie). Repite la búsqueda hacia delante. ¿Hasta dónde llega ahora el DCM en el caso límite?
+
+**R3.** En el apartado 7 supusimos r = 5 cm y salía que Zancudo aguanta, solo con el tobillo, 0,19 m/s. Con los márgenes **medidos** hoy, ¿qué velocidad máxima predice la fórmula ξ = x + v/ω ≤ punta, partiendo del CdM asentado?
+"""),
+
+md(r'''<details>
+<summary>▶ Solución R1</summary>
+
+```python
+masa_z = z_v2.body_subtreemass[TORSO]
+print("predicción LIPM:", masa_z * omega_z * (PUNTA - x_cdm), "N·s")
+
+aguanta, cae = 0.0, 3000.0
+for vuelta in range(14):
+    medio = (aguanta + cae) / 2
+    if empujon(medio, duracion=0.01)[0]:
+        cae = medio
+    else:
+        aguanta = medio
+print(f"medido con Δt = 0,01 s: F máx = {aguanta:.0f} N, impulso = {aguanta * 0.01:.2f} N·s")
+```
+
+La predicción da 23,6 · 3,75 · 0,111 ≈ **9,8 N·s**. Lo medido: unos 699 N durante 0,01 s, **7,0 N·s** (el mismo impulso que con 70 N durante 0,1 s). La predicción se pasa un 40 %.
+
+¿Por qué falla? Porque supone que el golpe da su velocidad a **todo** el robot. Pero empujamos el **torso**, a casi 1 metro del suelo, y los pies están sujetos por el rozamiento: el robot no se traslada entero, **gira** alrededor de los pies, y el suelo devuelve parte del golpe con una fuerza de rozamiento hacia atrás. El CdM recibe menos velocidad que impulso / masa. La regla del DCM sigue valiendo (lo has visto en el paso 4: la frontera está en la punta); lo que falla es el cálculo de **cuánto mueve un golpe el DCM**, que depende de dónde y cómo se empuja.
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+spec_pie = mujoco.MjSpec.from_file("robots/zancudo_v2.xml")
+for lado in ["d", "i"]:
+    forma = spec_pie.geom(f"pie_{lado}")
+    forma.size[1], forma.pos[0] = 0.125, 0.065
+z_v2 = spec_pie.compile()                     # empujon() y empujon_maximo() usan z_v2: lo cambiamos...
+asentado = mujoco.MjData(z_v2)                # ...y volvemos a asentarlo
+mujoco.mj_resetDataKeyframe(z_v2, asentado, z_v2.key("agachado").id)
+for paso in range(500):
+    mujoco.mj_step(z_v2, asentado)
+mujoco.mj_forward(z_v2, asentado)
+
+fuerza = empujon_maximo(+1)
+print(fuerza, empujon(fuerza)[1].max())
+```
+
+Ahora aguanta **104 N** (antes 70: un 49 % más con un pie un 25 % más largo) y, en el caso límite, el DCM llega a **18,2 cm**, con la punta en 19. La frontera se ha movido **con el pie**: otra confirmación de la regla.
+
+(Ojo: este código cambia las variables globales `z_v2` y `asentado`. Si después quieres volver al Zancudo normal, vuelve a ejecutar el paso 1. Es el problema de las funciones que leen variables globales, NB23: en una librería, `empujon` recibiría el modelo y el estado como argumentos.)
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+ξ = x + v/ω ≤ punta  →  v ≤ ω · (punta − x) = 3,75 · (0,14 − 0,029) ≈ **0,42 m/s** hacia delante, y 3,75 · (0,029 + 0,06) ≈ **0,33 m/s** hacia atrás.
+
+Con los pies de verdad de Zancudo, el tobillo solo frena el **doble** de lo que suponíamos con r = 5 cm (0,19 m/s). Sigue siendo poco: un empujón como el de alguien que tropieza contigo por la calle es de 0,5-1 m/s. Para eso, como dice la lección, hay que **dar pasos**.
+</details>
+'''),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- **Medir el DCM de un robot entero**: `subtree_com` (posición) y `subtree_linvel` (velocidad, que hay que pedir con **`mj_subtreeVel`**), con el ω de su altura real.
+- **Leer la geometría del modelo** para sacar números físicos: los extremos del pie salen de `geom_pos` y `geom_size` de la cápsula.
+- **Partir siempre del mismo estado** con `mj_copyData`: un estado asentado como "punto de partida" de muchos experimentos.
+- **Golpes con `xfrc_applied` y búsqueda binaria de la frontera**, y que un golpe en el torso mueve el DCM menos de lo que diría impulso / masa: el suelo también empuja.
+- **El veredicto**: el robot completo, con piernas, motores blandos y pies de cápsula, se cae justo cuando su DCM cruza el borde del pie. El LIPM no es solo de pizarra.
+
+En la práctica del **NB52** usarás la librería `andar` para algo que el notebook no hace: medir **cuánto retraso** de los motores aguanta la marcha clásica antes de caerse.
+"""),
+
+md(r"""## 18 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
