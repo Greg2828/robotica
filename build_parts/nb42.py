@@ -10,6 +10,11 @@ Actuadores motor (gear) vs position (kp, kv: un PD dentro, NB40) con
 forcerange; defaults; site + sensores; leer un error de MuJoCo; guardar en
 robots/zancudo.xml y cargar con from_xml_path. Pruebas: masas, CdM, de pie,
 empujones con xfrc_applied (100 N aguanta, 200 N cae), agachado. Visor.
+Práctica en MuJoCo (§15): ampliar el plano con replace — pies con <touch> (site con
+volumen; suman el peso), suelo inclinado con euler (radianes), tobillos a
+−inclinación en qpos y ctrl; rampas 0-20° con rozamiento 1 y 0,2: pies miden
+peso·cos θ, hielo resbala entre 10° y 15° (atan 0,2 = 11,3°); vídeo; retos:
+límite con 0,5, rozamiento solo en los pies (manda el mayor), cuesta arriba.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -596,7 +601,228 @@ foto(m, d, camara="lado", ancho=350, alto=350)
 </details>
 """),
 
-md(r"""## 15 · Posdata
+md(r"""## 15 · 🛠 Práctica en MuJoCo: Zancudo sale de casa (rampa, hielo y pies que sienten)
+
+Hasta ahora Zancudo solo ha pisado un suelo plano y bien agarrado. En esta práctica vas a **ampliar su plano** con tres cosas que no
+tiene, y que vas a necesitar en cuanto quieras sacarlo del laboratorio:
+
+1. **Pies que sienten**: un sensor de **tacto** en cada planta (la práctica del NB41 te enseñó cómo).
+2. Un suelo **inclinado**: una rampa, usando un atributo nuevo, **`euler`**, para girar una pieza.
+3. Un suelo **resbaladizo**: cambiar el **rozamiento**.
+
+Y con todo eso harás un experimento de física de los de pizarra, pero con tu robot: ¿en qué rampa empieza a **resbalar**?
+"""),
+
+md(r"""### Paso 1 · Pies con tacto
+
+No reescribimos a Zancudo: partimos del texto de `zancudo()` y lo **ampliamos** con `replace` (NB20). En cada pie, justo antes de su
+`<geom>`, un `site` invisible con la misma forma que el pie pero algo más gordo (el volumen del sensor de tacto); y en `<sensor>`, un `touch`
+por pie:
+"""),
+
+code(r"""import math
+import taller
+
+def con_tacto(texto):
+    for lado in ["d", "i"]:
+        texto = texto.replace(f'<geom name="pie_{lado}"',
+            f'<site name="planta_{lado}" type="capsule" fromto="-0.06 0 -0.03  0.14 0 -0.03" size="0.045" rgba="0 0 0 0"/>\n'
+            f'            <geom name="pie_{lado}"')
+    return texto.replace('<gyro name="giroscopo" site="imu"/>',
+                         '<gyro name="giroscopo" site="imu"/>\n'
+                         '    <touch name="tacto_d" site="planta_d"/>\n'
+                         '    <touch name="tacto_i" site="planta_i"/>')"""),
+
+md(r"""Primera prueba, en el suelo plano de siempre: Zancudo de pie 2 segundos. Si los sensores están bien puestos, entre los dos pies deben
+medir **su peso** (23,6 kg × 9,81):
+"""),
+
+code(r"""modelo_t = mujoco.MjModel.from_xml_string(con_tacto(zancudo()))
+datos_t = mujoco.MjData(modelo_t)
+for i in range(1000):
+    mujoco.mj_step(modelo_t, datos_t)
+
+derecho, izquierdo = datos_t.sensor("tacto_d").data[0], datos_t.sensor("tacto_i").data[0]
+print(f"sensores: {modelo_t.nsensor} | pie derecho {derecho:.1f} N + izquierdo {izquierdo:.1f} N = {derecho + izquierdo:.1f} N")
+print(f"peso: {modelo_t.body_mass.sum() * 9.81:.1f} N")"""),
+
+md(r"""Cuatro sensores (los dos de la IMU y los dos nuevos), y los pies se reparten el peso **a partes iguales**, hasta el decimal. El plano
+ampliado funciona.
+
+### Paso 2 · La rampa: girar una pieza con `euler`
+
+Hasta ahora todas las formas estaban "rectas". Para inclinar algo, MJCF tiene varios atributos de **orientación**. El más fácil de leer es
+**`euler`**: tres ángulos de giro, alrededor de x, de y y de z (los ángulos de Euler, NB36). Como Zancudo tiene `<compiler angle="radian"/>`,
+van en **radianes**.
+
+Inclinamos el **suelo** girándolo alrededor del eje y. Con un ángulo positivo, la rampa **baja hacia delante** (hacia +x): Zancudo estará
+de pie en una cuesta abajo. Y aprovechamos para poder cambiar el **rozamiento** de todo (está en `<default>`, sección 8):
+"""),
+
+code(r"""def zancudo_rampa(grados, rozamiento=1.0):
+    texto = con_tacto(zancudo())
+    texto = texto.replace('<geom name="suelo" type="plane"',
+                          f'<geom name="suelo" euler="0 {math.radians(grados)} 0" type="plane"')
+    return texto.replace('friction="1 0.005 0.0001"', f'friction="{rozamiento} 0.005 0.0001"')"""),
+
+md(r"""Falta un detalle: si Zancudo está recto con los tobillos a 0, sus pies quedan **horizontales** y en la rampa solo apoyarían la
+punta. Hay que doblar los **tobillos** lo mismo que la rampa, para que la planta quede **paralela** al suelo. Con el eje `0 -1 0` de sus
+bisagras, eso es un ángulo de tobillo de **−inclinación**. Lo ponemos a la vez en la postura de salida (`qpos`) y en el objetivo de los
+motores (`ctrl`), y lo soltamos 3 cm por encima, para que caiga suavemente sobre la rampa:
+"""),
+
+code(r"""def en_la_rampa(grados, rozamiento=1.0):
+    modelo_r = mujoco.MjModel.from_xml_string(zancudo_rampa(grados, rozamiento))
+    datos_r = mujoco.MjData(modelo_r)
+    tobillo = -math.radians(grados)
+    datos_r.ctrl[:] = [0, 0, tobillo, 0, 0, tobillo]      # cadera, rodilla, tobillo (derecha), y lo mismo (izquierda)
+    datos_r.qpos[[5, 8]] = tobillo                        # los dos tobillos ya doblados al empezar
+    datos_r.qpos[1] = 0.03                                # 3 cm más arriba
+    mujoco.mj_forward(modelo_r, datos_r)
+    return modelo_r, datos_r"""),
+
+md(r"""(`datos_r.qpos[[5, 8]]` elige las posiciones 5 y 8 a la vez, NB27: los tobillos derecho e izquierdo, según el orden de la sección 8.)
+
+### Paso 3 · El experimento: ¿resbala?
+
+Una función que deja a Zancudo 3 segundos en la rampa y mide tres cosas:
+
+- **cuánto resbala**: lo que avanza el torso **entre el segundo 1 y el 3** (el primer segundo es para que se asiente);
+- la fuerza que miden los **pies** al final;
+- y si se ha caído (el torso con una inclinación de más de medio radián).
+"""),
+
+code(r"""def probar_rampa(grados, rozamiento=1.0, segundos=3):
+    modelo_r, datos_r = en_la_rampa(grados, rozamiento)
+    for i in range(round(segundos / 0.002)):
+        mujoco.mj_step(modelo_r, datos_r)
+        if i == 499:                                      # al cumplir 1 segundo
+            x_al_segundo = datos_r.qpos[0]
+    resbala = datos_r.qpos[0] - x_al_segundo
+    tacto = datos_r.sensor("tacto_d").data[0] + datos_r.sensor("tacto_i").data[0]
+    caido = abs(datos_r.qpos[2]) > 0.5
+    return resbala, tacto, caido"""),
+
+md(r"""Y ahora, rampas de 0 a 20 grados, con el rozamiento normal (1) y con uno de **hielo** (0,2). Al lado, una columna con lo que dice la
+física de pizarra: en una rampa, el suelo empuja **perpendicular** a su superficie con el peso × cos(inclinación) (NB37: la parte del peso
+que "aprieta" contra la rampa; la otra parte, peso × sin(inclinación), es la que tira cuesta abajo):
+"""),
+
+code(r"""peso_z = modelo_t.body_mass.sum() * 9.81
+print("rampa | rozamiento 1: resbala, pies | hielo 0,2: resbala, pies | peso × cos")
+for grados in [0, 5, 10, 15, 20]:
+    r1, t1, c1 = probar_rampa(grados, 1.0)
+    r2, t2, c2 = probar_rampa(grados, 0.2)
+    print(f"  {grados:2d}° |      {r1 * 100:6.1f} cm, {t1:5.1f} N{' CAÍDO' if c1 else ''}"
+          f" |   {r2 * 100:7.1f} cm, {t2:5.1f} N{' CAÍDO' if c2 else ''}"
+          f" | {peso_z * math.cos(math.radians(grados)):5.1f} N")"""),
+
+md(r"""Léelo con calma, que tiene dos lecciones de física:
+
+1. **Los pies miden peso × cos(inclinación)**, al decimal, mientras no resbala: 231,5 N en llano, 217,6 N a 20°. (Con hielo a 10° se
+   desvía un pelín, 227,5 en vez de 228,0: ya está empezando a deslizarse muy despacio.) En una rampa, el suelo
+   aprieta **menos** que en llano. Tus sensores de tacto acaban de verificar una fórmula de libro.
+2. **Con rozamiento 1**, Zancudo aguanta en todas: en 2 segundos se desliza como mucho centímetro y medio (el contacto "blando" de MuJoCo,
+   NB38, cede un poquito, y en rampa ese poquito va cuesta abajo). **Con hielo (0,2)**, aguanta a 5° y a 10°... y a **15°** se va cuesta abajo: varios metros en 2 segundos, se cae y los pies
+   dejan de tocar el suelo (0 N).
+
+¿Por qué justo entre 10° y 15°? La regla de pizarra del rozamiento: un objeto apoyado en una rampa **no resbala** mientras
+el rozamiento sea mayor que la **tangente** de la inclinación (rozamiento ≥ tan(inclinación); la tangente es el cociente seno ÷ coseno,
+NB36). Con 0,2, el ángulo límite es:
+"""),
+
+code(r"""print(f"ángulo límite con rozamiento 0,2: {math.degrees(math.atan(0.2)):.1f}°")"""),
+
+md(r"""**11,3°**: justo entre 10 (aguanta) y 15 (resbala). MuJoCo y la fórmula están de acuerdo.
+
+### Paso 4 · Míralo
+
+Zancudo en una rampa helada de 15°. Usamos el `video` del taller (el de las primeras prácticas), que sigue al torso con la cámara:
+"""),
+
+code(r"""modelo_v, datos_v = en_la_rampa(15, 0.2)
+taller.video(modelo_v, datos_v, segundos=2.5, nombre="nb42_zancudo_hielo", distancia=3);"""),
+
+md(r"""Es el resbalón clásico en el hielo: los pies se le van **hacia delante**, cuesta abajo, el torso se queda atrás, y en menos de un segundo
+Zancudo cae **de espaldas** (el giro del torso llega a −1,3 rad, unos 75°). Después sigue bajando la rampa tumbado, cada vez más deprisa:
+la parte del peso que tira cuesta abajo no tiene quien la frene. Nada de esto lo ha programado nadie: tú solo has cambiado **dos
+atributos** del plano.
+
+### Tus retos
+
+**Reto 1.** Con un rozamiento de **0,5**, ¿cuál es el ángulo límite según la fórmula? Compruébalo con `probar_rampa` en rampas de 20, 25,
+30 y 35 grados. (Los tobillos de Zancudo llegan a 45°, así que caben.)
+
+**Reto 2.** Pon el rozamiento bajo **solo en los pies**: en vez de cambiar el `<default>`, añade `friction="0.2 0.005 0.0001"` a las
+`<geom>` de los pies (y deja el suelo con 1). En una rampa de 15°, ¿resbala? Pista: la práctica del NB35, Reto 1.
+
+**Reto 3.** Gira la rampa **al revés** (cuesta arriba: `grados` negativo) con rozamiento 1, en −10° y −20°. ¿Se sostiene igual de bien?
+¿Cuánto miden los pies?
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+print(f"límite: {math.degrees(math.atan(0.5)):.1f}°")
+for grados in [20, 25, 30, 35]:
+    resbala, tacto, caido = probar_rampa(grados, 0.5)
+    print(grados, f"{resbala * 100:.1f} cm", "CAÍDO" if caido else "")
+```
+
+La fórmula dice **26,6°**. Medido: a 20° y 25° resbala solo 2-3 cm en 2 segundos (el poquito de siempre); a 30° y 35°, más de 3 metros, y se cae. El límite de MuJoCo cae entre 25 y
+30, justo donde dice la fórmula. (MuJoCo usa un modelo de rozamiento con un "cono" de fricción, que con este rozamiento coincide con la
+regla de pizarra.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+texto = zancudo_rampa(15)                                        # suelo y todo con rozamiento 1
+for lado in ["d", "i"]:
+    texto = texto.replace(f'<geom name="pie_{lado}"', f'<geom name="pie_{lado}" friction="0.2 0.005 0.0001"')
+modelo_r = mujoco.MjModel.from_xml_string(texto)
+datos_r = mujoco.MjData(modelo_r)
+datos_r.ctrl[:] = [0, 0, -math.radians(15), 0, 0, -math.radians(15)]
+datos_r.qpos[[5, 8]] = -math.radians(15)
+datos_r.qpos[1] = 0.03
+for i in range(1500):
+    mujoco.mj_step(modelo_r, datos_r)
+print(f"x final: {datos_r.qpos[0]:.3f} m")
+```
+
+**No** resbala: en 3 segundos avanza 1,9 cm, lo mismo que con todo a rozamiento 1. Para el contacto pie-suelo, MuJoCo usa el **mayor** de los dos rozamientos,
+y el suelo tiene 1 (lo viste con Hopper en la práctica del NB35). Unos zapatos resbaladizos no bastan en MuJoCo: para hacer hielo, el
+**suelo** tiene que resbalar. (Si quieres que mande el de una forma concreta, MJCF tiene `priority` en las geoms: la de prioridad más alta
+impone su rozamiento.)
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+for grados in [-10, -20]:
+    resbala, tacto, caido = probar_rampa(grados)
+    print(grados, f"resbala {resbala * 100:.1f} cm | pies {tacto:.1f} N", "CAÍDO" if caido else "")
+```
+
+Se sostiene igual de bien, y los pies miden lo mismo que cuesta abajo (cos(−20°) = cos(20°): el seno cambia de signo, el coseno no).
+Ahora lo poco que resbala es **hacia atrás** (x negativa): cuesta abajo es hacia −x. La función `en_la_rampa` sirve sin cambios porque
+el tobillo se dobla con `-math.radians(grados)`, que con grados negativos es un ángulo positivo: la punta del pie sube, como la rampa.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **Ampliar** un plano que ya tienes con `replace`, sin reescribirlo: sensores nuevos, atributos nuevos.
+- **`euler`**: orientar una pieza (o el suelo) con tres ángulos; en radianes si el `compiler` lo dice.
+- Sensores **`touch`** en un `site` con volumen: los pies miden el peso en llano y **peso × cos(inclinación)** en una rampa.
+- El **rozamiento** decide si resbala: sin resbalar mientras rozamiento ≥ tan(inclinación); y en un contacto manda el **mayor** de los dos.
+- Colocar un robot en una postura inicial que encaje con el terreno (`qpos` y `ctrl` a la vez).
+
+En el NB43, Zancudo deja de estar quieto: con todo lo de hoy (su plano, sus sensores, su suelo), aprenderá a **andar**.
+"""),
+
+md(r"""## 16 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

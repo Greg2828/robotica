@@ -11,6 +11,11 @@ Entrenamiento corto en la Pi con y sin VecNormalize. El entrenamiento largo
 (1M pasos, hecho antes con un script mostrado): registro, carga, examen,
 distancia, GIF. Walker2d-v5 (6 motores): lo mismo, defecto vs afinado,
 formas raras de andar. Script para Colab.
+Práctica en MuJoCo (§12): leer el plano hopper.xml de Gymnasium (compiler degree +
+inertiafromgeom: masa del torso = densidad × volumen), copia modificada con
+xml_file (ruta absoluta) → rozamiento del pie 2,0→1,5→1,0 hunde al campeón;
+body_mass/body_inertia + mj_setConst → torso ×1,1 ya lo derrumba; retos: regla del
+máximo del rozamiento, gear 150-250, masa_al_azar (aleatorización del dominio).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -623,7 +628,230 @@ Sale aproximadamente `(227.6, 133.9, 1.82)`: dura unos 134 pasos (1,07 s) y reco
 </details>
 """),
 
-md(r"""## 12 · Posdata
+md(r"""## 12 · 🛠 Práctica en MuJoCo: abre el plano de Hopper y cámbiale el cuerpo
+
+Hoy has usado Hopper como una caja cerrada: `gym.make("Hopper-v5")` y a entrenar. Pero detrás de ese nombre hay un **plano MJCF**,
+un fichero de texto como los que escribiste en las prácticas anteriores (NB02, NB11, NB20). En esta práctica vas a:
+
+1. **leer** el plano de verdad de Hopper (el que usan miles de investigadores);
+2. hacer una **copia modificada** (otro rozamiento en el pie) y dársela a Gymnasium;
+3. cambiar la **masa** del torso directamente en el modelo cargado;
+4. y ver qué le pasa al **campeón** de la sección 6 (3.559 puntos) cuando su cuerpo deja de ser exactamente el suyo.
+
+No vamos a entrenar nada: solo examinar una política ya entrenada en cuerpos un poco distintos. Así que es rápido.
+"""),
+
+md(r"""### Paso 1 · Dónde vive el plano
+
+Gymnasium guarda los planos de sus robots dentro de su propia carpeta de instalación, en `envs/mujoco/assets/`. Con `Path` (NB26) y
+el atributo `__file__` del módulo (la ruta del fichero de Python del que se cargó, NB23) lo encontramos y lo leemos entero como texto:
+"""),
+
+code(r"""import gymnasium
+
+ruta_plano = Path(gymnasium.__file__).parent / "envs" / "mujoco" / "assets" / "hopper.xml"
+plano_hopper = ruta_plano.read_text()
+print(ruta_plano.name, "tiene", len(plano_hopper.splitlines()), "líneas")"""),
+
+md(r"""Imprimirlo entero ocuparía mucho; filtramos las líneas que nos interesan hoy: las de las **piezas** (`<body`), los **ajustes
+generales** (`<compiler`, `<option`), los **rozamientos** y los **motores** (`gear=`):
+"""),
+
+code(r"""for linea in plano_hopper.splitlines():
+    if any(palabra in linea for palabra in ["<compiler", "<option", "<body", "friction=", "gear="]):
+        print(linea.strip()[:120])"""),
+
+md(r"""Léelo con lo que ya sabes:
+
+- **`<compiler angle="degree" inertiafromgeom="true"/>`**: los ángulos de este plano van en **grados** (fíjate en el `range="-150 0"` de
+  las rodillas), y las masas e inercias se **calculan a partir de las formas** (`inertiafromgeom`): ninguna pieza lleva `mass`.
+- **`<option integrator="RK4" timestep="0.002"/>`**: el pasito de física de 0,002 s (la sección 2 decía que el robot decide uno de
+  cada 4: 4 × 0,002 = 0,008 s).
+- Las cuatro piezas, anidadas: `torso` → `thigh` → `leg` → `foot`.
+- **`friction`**: el torso, el muslo y la pierna llevan 0,9, pero el **pie** lleva **2,0**. Un pie muy agarrado al suelo, como una suela de goma.
+- **`gear="200.0"`**: los tres motores de par, × 200, como vimos en la sección 2.
+
+¿De dónde salen entonces los 3,67 kg del torso? Del **volumen** de su cápsula (radio 0,05 m, medio largo 0,2 m: un cilindro de 0,4 m más
+dos medias esferas) por la densidad por defecto de MuJoCo, la del **agua** (1.000 kg/m³). Comprobémoslo:
+"""),
+
+code(r"""import math
+
+radio, medio_largo = 0.05, 0.2
+volumen = math.pi * radio ** 2 * (2 * medio_largo) + 4 / 3 * math.pi * radio ** 3     # cilindro + 2 medias esferas
+print(f"a mano: {1000 * volumen:.3f} kg   |   MuJoCo: {modelo_mujoco.body_mass[1]:.3f} kg")"""),
+
+md(r"""Iguales. El "plano de IKEA" no es magia: es un texto con números que puedes leer, comprobar... y **cambiar**.
+
+### Paso 2 · Una copia del plano con otro pie
+
+Vamos a fabricar un Hopper con el pie **menos agarrado**: rozamiento 1,5 o 1,0 en vez de 2,0. Con `replace` (NB20) cambiamos ese trozo de
+texto, guardamos la copia en un fichero de la carpeta `practica_mujoco` (la de las prácticas, NB26) y se la damos a Gymnasium con el
+argumento **`xml_file`**: "usa este plano en vez del tuyo". Todo lo demás del entorno (observación, recompensa, condiciones de "sano") sigue igual.
+"""),
+
+code(r"""CARPETA_PRACTICA = Path("practica_mujoco")
+CARPETA_PRACTICA.mkdir(exist_ok=True)
+
+def hopper_con_plano(texto, nombre):
+    ruta = CARPETA_PRACTICA / f"nb35_{nombre}.xml"
+    ruta.write_text(texto)
+    return gym.make("Hopper-v5", xml_file=str(ruta.resolve()))      # ruta ABSOLUTA (ver abajo)"""),
+
+md(r"""Un detalle con trampa: `.resolve()` convierte la ruta en **absoluta** (desde la raíz del disco, NB26). Si le das a Gymnasium una ruta
+relativa como `practica_mujoco/nb35_x.xml`, ¡la busca dentro de **su** carpeta `assets`, no en la tuya! (Lo dice su código: solo trata
+como "tuya" una ruta que empiece por `/` o por `.`.)
+
+Primero, una prueba de cordura: con el plano **sin tocar**, el campeón debe sacar exactamente lo mismo que en la sección 6.
+Después, el pie con 1,5 y con 1,0 (10 episodios cada uno, con el `jugar_episodios` de la sección 3):
+"""),
+
+code(r"""for rozamiento in ["2.0", "1.5", "1.0"]:
+    texto = plano_hopper.replace('friction="2.0"', f'friction="{rozamiento}"')
+    entorno = hopper_con_plano(texto, f"pie_{rozamiento}")
+    r, d, x = jugar_episodios(entorno, politica_hopper)
+    print(f"rozamiento del pie {rozamiento}: retorno {r:7.1f} | dura {d:6.1f} pasos | recorre {x:5.2f} m")"""),
+
+md(r"""Con el plano original, los mismos **3.559** puntos de la sección 6: la copia es idéntica y el método funciona. Pero con el pie a
+**1,5**, el campeón se hunde a **579** puntos y se cae en unos 177 pasos; con **1,0**, a **412**. Un pie solo "algo menos
+agarrado" (todavía más que el torso y las piernas) y la política que andaba 20 metros no aguanta ni un segundo y medio.
+
+¿Por qué tanto? Porque el campeón aprendió a saltar **con ese pie exacto**. Sus saltitos rasantes (sección 6) empujan el suelo
+muy en diagonal, y eso solo funciona si el pie no patina. Nadie le dijo que el rozamiento podía cambiar, y no lo cambió nunca en
+un millón de pasos de entrenamiento.
+"""),
+
+md(r"""### Paso 3 · Cambiar el modelo ya cargado: la masa del torso
+
+No siempre hace falta reescribir el plano. Muchos números del modelo se pueden cambiar **en caliente**, en el `MjModel` ya cargado:
+`body_mass` (las masas), `body_inertia` (las inercias de giro), `geom_friction` (los rozamientos)... Es lo que hacen los
+programas de entrenamiento para variar el robot de un episodio a otro sin recargar nada.
+
+Vamos a hacer el torso más ligero o más pesado. Dos cuidados:
+
+- Si una pieza pesa el doble, también cuesta el doble hacerla **girar**: hay que multiplicar su **inercia** por lo mismo (NB37).
+- Después de tocar masas o inercias hay que llamar a **`mujoco.mj_setConst`**, que recalcula algunas cantidades que MuJoCo
+  guarda precalculadas a partir de ellas. Sin esa llamada, parte de los cálculos seguiría usando la masa vieja.
+"""),
+
+code(r"""hopper_pesado = gym.make("Hopper-v5")
+modelo_p, datos_p = hopper_pesado.unwrapped.model, hopper_pesado.unwrapped.data
+torso = modelo_p.body("torso").id
+masa_original = modelo_p.body_mass[torso]
+inercia_original = modelo_p.body_inertia[torso].copy()      # .copy(): una copia, no una referencia (NB21)
+
+def poner_masa_torso(factor):
+    modelo_p.body_mass[torso] = masa_original * factor
+    modelo_p.body_inertia[torso] = inercia_original * factor
+    mujoco.mj_setConst(modelo_p, datos_p)"""),
+
+md(r"""Y ahora, el campeón con el torso del 60 % al 140 % de su masa (5 episodios por masa, para que no tarde):"""),
+
+code(r"""factores = [0.6, 0.8, 0.9, 1.0, 1.1, 1.2, 1.4]
+notas_masa = []
+for factor in factores:
+    poner_masa_torso(factor)
+    r, d, x = jugar_episodios(hopper_pesado, politica_hopper, n=5)
+    notas_masa.append(r)
+    print(f"torso × {factor:.1f} ({modelo_p.body_mass[torso]:.2f} kg): retorno {r:7.1f} | dura {d:6.1f} pasos | recorre {x:5.2f} m")
+poner_masa_torso(1.0)                                       # lo dejamos como estaba
+
+plt.figure(figsize=(6, 3.5))
+plt.plot(factores, notas_masa, "o-")
+plt.axvline(1.0, color="gray", ls="--", lw=1)
+plt.xlabel("masa del torso (× la original)")
+plt.ylabel("retorno medio (5 episodios)")
+plt.title("El campeón en cuerpos un poco distintos")
+plt.grid(alpha=0.3)
+plt.show()"""),
+
+md(r"""(`modelo_p.body("torso").id` busca el número de la pieza por su nombre, como `mj_name2id`, NB21.)
+
+La gráfica tiene una forma muy reveladora:
+
+- **Más ligero** (× 0,6 a × 0,9) sigue funcionando, incluso algo mejor (los 1.000 pasos en los 5 episodios): un torso que pesa menos es
+  más fácil de lanzar con los mismos motores.
+- **Solo un 10 % más pesado** (× 1,1: unos 370 gramos más en un robot de 15,8 kg) y se **derrumba**: de unos 3.500 a 1.286 puntos, cayéndose
+  en unos 330 pasos. Con × 1,2, 888; con × 1,4, 649.
+
+Una política entrenada en **un solo cuerpo** funciona en ese cuerpo y en poco más. Un robot real nunca es igual que su plano: las
+piezas pesan algo distinto, los motores dan algo más o menos de par, el suelo agarra según el día. Esta es la raíz del **reality gap**
+(NB02), y su remedio más usado ya lo has intuido: **variar** el cuerpo (masas, rozamientos, motores) durante el entrenamiento, para que
+la política aprenda a funcionar en **todos**. Se llama **aleatorización del dominio** (*domain randomization*), y lo verás de nuevo en el NB41.
+
+### Tus retos
+
+**Reto 1.** Pon el rozamiento del pie a **0,5** (en vez de 1,0). ¿Saca menos que con 1,0? Antes de ejecutarlo, apuesta. Pista: mira el
+rozamiento del suelo (`floor`) en el plano.
+
+**Reto 2.** Cambia la fuerza de los motores: `gear="200.0"` → 150, 180, 220 y 250. ¿Le sienta mejor que le den **más** fuerza?
+
+**Reto 3.** Escribe una función `masa_al_azar(rng)` que ponga el torso a una masa al azar entre × 0,8 y × 1,2 (con un generador
+`np.random.default_rng`, NB28) y llámala 5 veces imprimiendo la masa. Es la pieza básica de la aleatorización del dominio: en un
+entrenamiento de verdad, se llamaría en cada `reset`.
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+texto = plano_hopper.replace('friction="2.0"', 'friction="0.5"')
+print(jugar_episodios(hopper_con_plano(texto, "pie_0.5"), politica_hopper))
+```
+
+Sale **exactamente lo mismo** que con 1,0 (411,7 puntos, 141,7 pasos, 2,17 m), hasta el último decimal. ¿Por qué? Cuando dos formas se
+tocan, MuJoCo usa como rozamiento del contacto el **mayor** de los dos. El suelo tiene 1 (el valor por defecto, porque `floor` no dice
+`friction`), así que con el pie a 1,0, a 0,5 o a 0,1 el contacto pie-suelo siempre tiene 1. Para hacer un suelo de **hielo** hay que
+bajar el rozamiento **de los dos**. (Lo puedes comprobar con un contacto cualquiera: `datos.contact[i].friction`.) Son esas reglas de
+"letra pequeña" del simulador las que hay que conocer para no sacar conclusiones falsas.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+for gear in ["150.0", "180.0", "220.0", "250.0"]:
+    texto = plano_hopper.replace('gear="200.0"', f'gear="{gear}"')
+    print(gear, jugar_episodios(hopper_con_plano(texto, f"gear_{gear}"), politica_hopper))
+```
+
+Medido: con **150** se cae enseguida (387 puntos) y con **180** también (672). Con **220** va incluso **mejor** que el original (3.725
+puntos, los 1.000 pasos en los 10 episodios) y con **250** algo peor (3.415: se cae en algún episodio). Los motores más débiles no
+llegan a dar los saltos que la política "espera"; un poco más de fuerza le sobra, pero demasiada también la descoloca: sus órdenes
+producen movimientos más bruscos de lo que aprendió. La política está afinada para **su** robot.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+def masa_al_azar(rng):
+    poner_masa_torso(rng.uniform(0.8, 1.2))
+
+rng = np.random.default_rng(0)
+for i in range(5):
+    masa_al_azar(rng)
+    print(f"{modelo_p.body_mass[torso]:.3f} kg")
+poner_masa_torso(1.0)
+```
+
+Cinco masas distintas, entre 3,0 y 4,1 kg. Metida en el `reset` de un envoltorio de Gymnasium (NB25), cada episodio de entrenamiento
+tendría un torso distinto, y PPO tendría que encontrar una forma de saltar que funcione con **todos**. Ese entrenamiento es largo (un
+millón de pasos o más, sección 6): es trabajo para Colab o para el script de la sección 9.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Los robots de Gymnasium son **planos MJCF** en `gymnasium/envs/mujoco/assets/`: se pueden leer y copiar.
+- `<compiler angle="degree" inertiafromgeom="true">`: grados en vez de radianes, y masas calculadas con la **densidad** (1.000 kg/m³).
+- **`gym.make(..., xml_file=ruta_absoluta)`**: el mismo entorno con **tu** plano.
+- Cambiar el modelo en caliente: **`body_mass`**, **`body_inertia`** y después **`mj_setConst`**.
+- El rozamiento de un contacto es el **mayor** de los de las dos formas.
+- Una política entrenada en un cuerpo exacto es **frágil** ante cambios pequeños del cuerpo: la semilla de la aleatorización del dominio.
+
+En la práctica del NB36 serás tú quien mueva a Walker2d: lo usarás como una **marioneta**, poniendo a mano los ángulos de sus articulaciones.
+"""),
+
+md(r"""## 13 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

@@ -14,6 +14,12 @@ nombre). Sensores de fuerza: el suelo empuja a Hopper con 96 + 59 = 155 N.
 Retrasos: PD rígido + 20-30 ms → oscila/explota. RL: la política del NB35 con
 ruido en la observación se hunde (3.559 → 2.873 → 829); remedios: entrenar con
 ruido y retrasos (aleatorizar), información privilegiada (profesor-alumno).
+Práctica en MuJoCo (§11): sentidos para el Hopper campeón — plano con site imu +
+site planta (volumen) y <sensor> jointpos(noise=metadato)/accelerometer/gyro/touch,
+xml_file; sensordata va un pasito por detrás de qpos (mj_forward lo iguala); tacto:
+picos ~17× el peso, ~3/4 del tiempo en el aire, fuerza media = peso; acelerómetro
+inútil como inclinómetro al saltar; retos: integrar el gyro (sesgo→deriva),
+umbral/histéresis de contacto, leer_sensores con sensor_noise/adr/dim.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -596,7 +602,283 @@ Con el ruido **solo en las velocidades**, la política aguanta **mucho mejor** q
 </details>
 """),
 
-md(r"""## 11 · Posdata
+md(r"""## 11 · 🛠 Práctica en MuJoCo: ponle sentidos al campeón
+
+En la sección 4 pegaste una IMU a un péndulo. Ahora vas a hacer lo mismo con un robot de verdad: el **Hopper campeón** del NB35. Le
+añadirás a su plano MJCF los sensores típicos de un robot con patas (un **codificador**, una **IMU** y un sensor de **tacto** en el pie), lo
+pondrás a saltar con su política entrenada y leerás lo que sienten sus sensores mientras salta.
+
+Descubrirás tres cosas que no se ven mirando `qpos`: que los sensores de MuJoCo van **un pasito por detrás**, que el suelo golpea el pie
+con **muchas veces** el peso del robot, y que mientras salta, el acelerómetro **no sirve** como inclinómetro.
+"""),
+
+md(r"""### Paso 1 · Añadir sensores al plano
+
+Como en la práctica del NB35, leemos el plano de Hopper que trae Gymnasium (un texto) y le hacemos cambios con `replace`. Primero, dos
+**sitios** (`site`, sección 4):
+
+- `imu`, en el torso, 10 cm por encima de su centro: ahí irán el acelerómetro y el giróscopo.
+- `planta`, en el pie: una cápsula **invisible** (`rgba` con opacidad 0) con la misma forma que el pie pero algo más gorda. Un sensor de
+  tacto (`touch`) suma las fuerzas de todos los contactos que caen **dentro del volumen** de su sitio; por eso este sitio tiene tamaño
+  y envuelve el pie.
+"""),
+
+code(r"""from pathlib import Path
+
+plano = (Path(gym.__file__).parent / "envs" / "mujoco" / "assets" / "hopper.xml").read_text()
+
+plano = plano.replace('<geom friction="0.9" name="torso_geom"',
+                      '<site name="imu" pos="0 0 0.1" size="0.03"/>\n      <geom friction="0.9" name="torso_geom"')
+plano = plano.replace('name="foot_geom" size="0.06 0.195" type="capsule"/>',
+                      'name="foot_geom" size="0.06 0.195" type="capsule"/>\n'
+                      '            <site name="planta" type="capsule" pos="-0.065 0 0.1" '
+                      'quat="0.70710678118654757 0 -0.70710678118654746 0" size="0.07 0.2" rgba="0 0 0 0"/>')"""),
+
+md(r"""(La `pos` y el `quat` de la planta son los mismos que los de la `foot_geom` del plano: copiados de ahí. El `quat` es la orientación que
+tumba la cápsula, como un `euler`, NB36; solo hay que copiarlo.)
+
+Y la sección `<sensor>`, justo antes del cierre `</mujoco>`. Cuatro sensores:
+
+- **`jointpos`**: el **codificador** de la rodilla (`leg_joint`). Le ponemos `noise="0.002"`: enseguida veremos qué hace eso.
+- **`accelerometer`** y **`gyro`** en el sitio `imu`: la IMU.
+- **`touch`** en la planta: la fuerza con la que el suelo empuja el pie.
+"""),
+
+code(r"""sensores = '''
+  <sensor>
+    <jointpos name="codificador_rodilla" joint="leg_joint" noise="0.002"/>
+    <accelerometer name="acelerometro" site="imu"/>
+    <gyro name="giroscopo" site="imu"/>
+    <touch name="tacto_pie" site="planta"/>
+  </sensor>
+</mujoco>'''
+plano = plano.replace("</mujoco>", sensores)
+
+carpeta = Path("practica_mujoco")
+carpeta.mkdir(exist_ok=True)
+ruta_sensores = carpeta / "nb41_hopper_sensores.xml"
+ruta_sensores.write_text(plano)
+
+hopper_s = gym.make("Hopper-v5", xml_file=str(ruta_sensores.resolve()))    # ruta absoluta (práctica del NB35)
+modelo_s, datos_s = hopper_s.unwrapped.model, hopper_s.unwrapped.data
+print("sensores:", modelo_s.nsensor, "| números que escriben:", modelo_s.nsensordata)
+print("cuántos números da cada uno:", modelo_s.sensor_dim)
+print("ruido declarado de cada uno:", modelo_s.sensor_noise)"""),
+
+md(r"""- **4 sensores** que escriben **8 números** en total en `datos.sensordata`: 1 el codificador (un ángulo), 3 el acelerómetro (x, y, z),
+  3 el giróscopo, 1 el tacto. Todos van seguidos en ese array; `datos.sensor("nombre").data` te da el trozo de cada uno.
+- El **ruido** declarado del codificador es 0,002... pero, ojo: **MuJoCo no lo añade**. Ese número es solo una **nota** guardada en el
+  modelo (`sensor_noise`) para que **tu** programa sepa cuánto ruido sumar, como hiciste a mano en la sección 4. Los sensores de MuJoCo
+  son siempre perfectos; el ruido lo pones tú.
+
+El entorno sigue siendo Hopper-v5: misma observación, misma recompensa. Los sensores son un **extra** que la política no ve.
+"""),
+
+md(r"""### Paso 2 · Un episodio con el campeón, apuntando lo que siente
+
+El campeón (el `agente` y el `normalizador` de la sección 8) salta un episodio entero en el Hopper con sensores. En cada paso apuntamos el
+tiempo, el estado exacto (`qpos`, `qvel`) y todos los sensores (`sensordata`), con `.copy()` (sección 4):
+"""),
+
+code(r"""observacion, info = hopper_s.reset(seed=0)
+tiempos, posiciones, velocidades, lecturas = [], [], [], []
+while True:
+    accion = agente.predict(normalizador.normalize_obs(observacion), deterministic=True)[0]
+    observacion, recompensa, terminado, truncado, info = hopper_s.step(accion)
+    tiempos.append(datos_s.time)
+    posiciones.append(datos_s.qpos.copy())
+    velocidades.append(datos_s.qvel.copy())
+    lecturas.append(datos_s.sensordata.copy())
+    if terminado or truncado:
+        break
+
+tiempos, posiciones, velocidades, lecturas = map(np.array, (tiempos, posiciones, velocidades, lecturas))
+print(f"{len(tiempos)} pasos, {tiempos[-1]:.2f} s, recorre {info['x_position']:.2f} m | lecturas: {lecturas.shape}")"""),
+
+md(r"""(`map(np.array, (...))` aplica `np.array` a cada una de las cuatro listas, NB23: así las convertimos todas en tablas de una vez.)
+
+Los 1.000 pasos, unos 20 metros: el campeón no nota que lleva sensores (no pesan ni ocupan nada). La tabla `lecturas` tiene una fila por
+paso y 8 columnas, en el orden de `sensordata`: [codificador | acelerómetro x, y, z | giróscopo x, y, z | tacto].
+"""),
+
+md(r"""### Paso 3 · El codificador: ¿perfecto?
+
+El codificador mide el ángulo de la rodilla, que es `qpos[4]` (raíz x, raíz z, giro del torso, cadera, **rodilla**, tobillo). Si los
+sensores de MuJoCo son perfectos, la diferencia debería ser 0:
+"""),
+
+code(r"""diferencia = lecturas[:, 0] - posiciones[:, 4]
+print(f"mayor diferencia entre el codificador y qpos: {np.abs(diferencia).max():.4f} rad")"""),
+
+md(r"""¡No es cero! Hasta 0,016 rad (casi un grado). ¿Ha añadido ruido MuJoCo? No: es otra cosa, y es muy instructiva. MuJoCo calcula los
+sensores **antes** de dar el último pasito de física (dentro de `mj_step`, primero mide, luego avanza). Así que, al acabar el paso,
+`sensordata` describe el robot de **hace un pasito** (0,002 s), y `qpos` el de ahora. En los momentos en que la rodilla gira deprisa,
+2 milisegundos son casi un grado.
+
+Compruébalo: `mj_forward` (NB45 lo verá a fondo) recalcula todo **sin avanzar el tiempo**, sensores incluidos. Después de llamarlo, el
+codificador y `qpos` deberían coincidir:
+"""),
+
+code(r"""print(f"antes de mj_forward: codificador − qpos = {datos_s.sensor('codificador_rodilla').data[0] - datos_s.qpos[4]:+.6f} rad")
+mujoco.mj_forward(modelo_s, datos_s)
+print(f"después:             codificador − qpos = {datos_s.sensor('codificador_rodilla').data[0] - datos_s.qpos[4]:+.6f} rad")"""),
+
+md(r"""Exactamente 0. Los sensores de MuJoCo no tienen ruido, pero van **un pasito por detrás**: un retraso pequeñísimo, de la familia del de la
+sección 7. Para casi todo da igual, pero si comparas sensores con `qpos` (por ejemplo, para comprobar un filtro), tienes que saberlo.
+"""),
+
+md(r"""### Paso 4 · El tacto del pie: cómo golpea el suelo
+
+Ahora el sensor más espectacular. Dibujamos la fuerza que mide el tacto durante los dos primeros segundos, con una línea en el **peso** de
+Hopper (sección 6: 155 N):
+"""),
+
+code(r"""tacto = lecturas[:, 7]
+peso = modelo_s.body_mass.sum() * 9.81
+
+plt.figure(figsize=(9, 3.5))
+plt.plot(tiempos, tacto, color="tab:brown")
+plt.axhline(peso, color="gray", ls="--", lw=1, label=f"peso ({peso:.0f} N)")
+plt.xlim(0, 2)
+plt.xlabel("tiempo (s)")
+plt.ylabel("fuerza del suelo en el pie (N)")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
+
+en_el_suelo = tacto > 0
+aterrizajes = np.sum(en_el_suelo[1:] & ~en_el_suelo[:-1])      # pasos en que pasa de "no toca" a "toca"
+print(f"fuerza máxima: {tacto.max():.0f} N = {tacto.max() / peso:.1f} veces su peso")
+print(f"fuerza media en todo el episodio: {tacto.mean():.1f} N")
+print(f"en el aire el {100 * (~en_el_suelo).mean():.0f} % del tiempo | aterrizajes: {aterrizajes}")"""),
+
+md(r"""(`en_el_suelo[1:] & ~en_el_suelo[:-1]` compara cada paso con el anterior: `~` es "no", `&` es "y", NB27. Cuenta las veces que el pie
+pasa de no tocar a tocar.)
+
+Lee la gráfica y los números:
+
+- La fuerza no es un "155 N tranquilo", como cuando estaba de pie en la sección 6: son **picos** cortos y altísimos, de hasta unas
+  **17 veces su peso** en el aterrizaje. Por eso los robots reales que saltan rompen piezas: un pie y una rodilla tienen que aguantar esos
+  golpes miles de veces (y por eso conviene premiar aterrizajes suaves, NB35 sección 8).
+- Entre pico y pico, **cero**: el pie está en el **aire**. ¡Casi tres cuartas partes del tiempo! Es la fase en el aire de la sección 1 del
+  NB35, medida.
+- Y lo más bonito: la fuerza **media** de todo el episodio es casi **exactamente su peso**. No es casualidad: si de media el suelo
+  empujase menos que el peso, Hopper iría bajando (acabaría en el suelo); si empujase más, iría subiendo (saldría volando). Para mantenerse
+  a la misma altura de media, el suelo tiene que compensar el peso **de media**, aunque lo haga a golpes. Es la segunda ley de Newton (NB37),
+  vista a lo largo de 8 segundos.
+"""),
+
+md(r"""### Paso 5 · La IMU mientras salta
+
+En la sección 4, el acelerómetro **quieto** era un inclinómetro perfecto. ¿Y en un robot que salta? Comparemos cuánto mide (el tamaño de
+su flecha, con `np.linalg.norm`, NB12) en el aire y en el suelo, con los 9,81 que mediría quieto:
+"""),
+
+code(r"""acelerometro_h = lecturas[:, 1:4]
+tamano = np.linalg.norm(acelerometro_h, axis=1)           # el tamaño de la flecha en cada paso
+print(f"quieto mediría: 9,81 | en el aire, la mitad de las veces menos de: {np.median(tamano[~en_el_suelo]):.1f}"
+      f" | en el suelo: {np.median(tamano[en_el_suelo]):.1f} m/s²")
+
+inclinacion_acel_h = np.arctan2(-acelerometro_h[:, 0], acelerometro_h[:, 2])       # la fórmula de la sección 4
+error_acel = np.sqrt(np.mean((inclinacion_acel_h - posiciones[:, 2]) ** 2))
+print(f"inclinación del torso según el acelerómetro: error medio de {error_acel:.2f} rad ({math.degrees(error_acel):.0f}°)")"""),
+
+md(r"""(`np.median` es la **mediana**: el valor que deja la mitad de los datos por debajo y la mitad por encima; con picos tan grandes, describe
+mejor lo "normal" que la media.)
+
+- En el **aire**, el acelerómetro mide muy poco: unos 3 m/s² en vez de 9,81. Recuerda la bolita con muelles: en caída libre, la bolita y
+  la caja caen juntas y los muelles no se estiran. ¡El robot siente que **no pesa**, como un astronauta! (No mide 0 exacto porque el torso
+  también gira y los motores lo zarandean.)
+- En el **suelo**, mide del orden de **37 m/s²**: casi 4 veces la gravedad, por los frenazos de los aterrizajes.
+- Y como inclinómetro, un desastre: un error medio de **1,8 rad** (unos 100°). En el aire no hay gravedad que medir y en el suelo los
+  golpes la tapan.
+
+Por eso, en un robot que corre o salta, la inclinación se estima sobre todo con el **giróscopo** (y el acelerómetro solo corrige poquito a
+poco, sección 5). Lo comprobarás en el Reto 1.
+
+### Tus retos
+
+**Reto 1.** El giróscopo, en su eje y (`lecturas[:, 5]`), mide la velocidad de giro del torso. Intégralo como en la sección 4 (empezando
+desde la inclinación inicial, `posiciones[0, 2]`) y compara con la inclinación de verdad, `posiciones[:, 2]`. Después añádele un sesgo de
+0,05 rad/s. ¿Cuánto error tiene cada uno? (Ojo: aquí cada fila es un paso del entorno, de 0,008 s.)
+
+**Reto 2.** Un sensor de tacto real tiene ruido. Súmale ruido de 5 N (`rng.normal(0, 5, ...)`) a `tacto` y vuelve a contar los aterrizajes
+con `> 0`. ¿Qué pasa? Arréglalo con un **umbral**: "toca" solo si la fuerza pasa de 30 N.
+
+**Reto 3.** Escribe una función `leer_sensores(modelo, datos, rng)` que devuelva `sensordata` con el ruido declarado de cada sensor
+(`modelo.sensor_noise`) ya sumado. Pista: `sensor_adr` dice dónde empieza cada sensor en `sensordata` y `sensor_dim` cuántos números ocupa.
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+giro = lecturas[:, 5]
+paso_h = 0.008
+for sesgo in [0.0, 0.05]:
+    estimacion = posiciones[0, 2] + np.cumsum(giro + sesgo) * paso_h
+    error = np.sqrt(np.mean((estimacion - posiciones[:, 2]) ** 2))
+    print(f"sesgo {sesgo}: error {error:.3f} rad, al final se ha ido {estimacion[-1] - posiciones[-1, 2]:+.3f} rad")
+```
+
+Sin sesgo, el giróscopo integrado sigue la inclinación con un error de solo **0,006 rad** (un tercio de grado) en los 8 segundos (no es 0
+porque el sensor va un pasito por detrás y porque sumamos de 0,008 en 0,008 s, una cadena de oro con pasos gruesos, NB07). Con el sesgo de
+0,05 rad/s, el error medio sube a **0,24 rad** y al final se ha desviado **0,41 rad**: la deriva de la sección 4 (0,05 × 8 s = 0,4). Mucho mejor que el acelerómetro, pero
+necesita que alguien le corrija la deriva poco a poco: el filtro complementario (sección 5), que en un robot que salta tira del
+acelerómetro sobre todo en los ratos tranquilos.
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+rng = np.random.default_rng(0)
+tacto_ruidoso = tacto + rng.normal(0, 5, tacto.shape)
+for nombre, toca in [("> 0", tacto_ruidoso > 0), ("> 30 N", tacto_ruidoso > 30)]:
+    print(nombre, "aterrizajes:", np.sum(toca[1:] & ~toca[:-1]))
+```
+
+Con `> 0`, el ruido hace que en el aire la "fuerza" salga positiva la mitad de las veces, y se cuentan **cientos** de aterrizajes falsos:
+el detector "parpadea" (medido: **203**, en vez de 14). Con un umbral de 30 N (seis veces el ruido) salen **16**: casi los 14 de verdad.
+Los dos de más son aterrizajes en los que la fuerza sube y baja alrededor de 30 N justo al empezar, y el detector los cuenta dos veces.
+Los robots reales detectan el contacto así, con un umbral, y para evitar ese doble conteo usan dos umbrales distintos: uno para "empieza a
+tocar" y otro más bajo para "deja de tocar". Así no parpadea justo en el borde; se llama **histéresis**.
+</details>
+
+<details>
+<summary>▶ Solución Reto 3</summary>
+
+```python
+def leer_sensores(modelo, datos, rng):
+    lectura = datos.sensordata.copy()
+    for i in range(modelo.nsensor):
+        inicio, cuantos = modelo.sensor_adr[i], modelo.sensor_dim[i]
+        lectura[inicio:inicio + cuantos] += rng.normal(0, modelo.sensor_noise[i], cuantos)
+    return lectura
+
+rng = np.random.default_rng(0)
+print(datos_s.sensordata.round(4))
+print(leer_sensores(modelo_s, datos_s, rng).round(4))
+```
+
+Solo cambia el primer número (el codificador, el único con `noise` declarado). Así se trabaja en los proyectos serios: el **plano** dice
+cuánto ruido tiene cada sensor (lo pone quien conoce el hardware) y el programa lo aplica. Pon `noise` a los otros sensores en el plano y
+la misma función les sumará el suyo, sin tocar el código.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- Añadir sensores a un plano: **`<sensor>`** con **`jointpos`**, **`accelerometer`**, **`gyro`** y **`touch`**; los de la IMU y el tacto van
+  en un **`site`** (el de `touch`, con volumen: suma los contactos que caen dentro).
+- Leerlos: `datos.sensordata` (todos seguidos), `datos.sensor("nombre").data`, y `nsensor`, `nsensordata`, `sensor_dim`, `sensor_adr`.
+- El atributo **`noise`** no añade ruido: es una nota (`sensor_noise`) para que lo sumes tú.
+- Los sensores se calculan **antes** del último pasito de `mj_step`: van 0,002 s por detrás de `qpos` (`mj_forward` los pone al día).
+- Al saltar: picos de fuerza de ~17 veces el peso, el pie en el aire casi tres cuartas partes del tiempo, fuerza media = peso, y un
+  acelerómetro que no sirve de inclinómetro.
+
+En la práctica del NB42 le pondrás pies con **tacto** a tu propio robot, Zancudo, y lo sacarás de casa: a una **rampa**, y luego al **hielo**.
+"""),
+
+md(r"""## 12 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

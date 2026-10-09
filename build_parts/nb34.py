@@ -11,6 +11,11 @@ por tramos con evaluate_policy (curva); leer el informe de verbose=1
 (approx_kl, clip_fraction, explained_variance, std...). Guardar/cargar .zip
 (pickle: confianza). Primer robot MuJoCo: InvertedPendulum-v5 entrenado y
 filmado en GIF.
+Práctica en MuJoCo (§14): SB3 en TU palo de escoba MuJoCo (PaloEscobaMuJoCoEnv del
+NB25, check_env, 32.768 pasos); examen justo (semillas 100-119) contra el PD a mano
+y la neurona de REINFORCE del NB29, contando cómo termina: SB3 nunca deja caer el
+palo pero se sale del raíl (la recompensa no paga el centro); vídeo con
+taller.video; retos: viento con qfrc_applied, recompensa con penalización x².
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -609,7 +614,230 @@ probar ajustes que ya funcionaron a otros es parte del oficio: **nunca empieces 
 </details>
 """),
 
-md(r"""## 14 · Posdata
+md(r"""## 14 · 🛠 Práctica en MuJoCo: SB3 en tu propio palo de escoba
+
+En la sección 11 entrenaste SB3 en el péndulo de MuJoCo **de Gymnasium**, que escribió otra persona. Pero tú tienes **tu propio** palo de
+escoba de MuJoCo: el de `robots/palo_escoba.xml`, que convertiste en entorno de Gymnasium en la práctica del NB25 y con el que entrenaste
+REINFORCE en la del NB29. Hoy le toca a la herramienta profesional:
+
+1. traerás tu entorno y lo pasarás por el verificador de SB3;
+2. lo entrenarás con PPO de SB3, con los ajustes por defecto (algo más de un minuto);
+3. y lo **compararás** en el mismo examen con dos controladores que ya conoces: el **PD a mano** (NB23-NB24) y la neurona de
+   **REINFORCE** (práctica del NB29).
+
+Spoiler: la comparación tiene sorpresa, y enseña algo importante sobre las recompensas.
+"""),
+
+md(r"""### Paso 1 · Tu entorno, otra vez
+
+Es la clase de la práctica del NB25, sin el dibujo (para el vídeo usaremos el `taller`). Recuerda sus reglas: observa 4 números (posición
+del carro, ángulo del palo y sus dos velocidades), actúa con 1 (la orden del motor, de −1 a 1), gana +1 por paso y pierde si el palo pasa de
+45° **o** si el carro llega al final del raíl (1,7 m). Dura 500 pasos de 0,01 s: 5 segundos.
+"""),
+
+code(r"""import mujoco
+import taller
+
+RUTA_PALO = os.path.join(os.path.dirname(taller.__file__), "robots", "palo_escoba.xml")
+
+class PaloEscobaMuJoCoEnv(gym.Env):
+    def __init__(self, viento_maximo=0.0):
+        super().__init__()
+        self.modelo = mujoco.MjModel.from_xml_path(RUTA_PALO)
+        self.datos = mujoco.MjData(self.modelo)
+        self.viento_maximo = viento_maximo
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        mujoco.mj_resetData(self.modelo, self.datos)
+        self.datos.qpos[1] = self.np_random.uniform(-0.1, 0.1)      # palo algo inclinado
+        mujoco.mj_forward(self.modelo, self.datos)
+        return self._observacion(), {}
+
+    def step(self, action):
+        self.datos.ctrl[0] = np.clip(action[0], -1.0, 1.0)
+        self.datos.qfrc_applied[1] = self.np_random.uniform(-self.viento_maximo, self.viento_maximo)   # viento
+        mujoco.mj_step(self.modelo, self.datos)
+        x, angulo = self.datos.qpos
+        terminado = bool(abs(angulo) > 0.785 or abs(x) > 1.7)
+        return self._observacion(), 0.0 if terminado else 1.0, terminado, False, {}
+
+    def _observacion(self):
+        return np.concatenate([self.datos.qpos, self.datos.qvel])
+
+gym.register(id="PaloEscobaMuJoCo-v0", entry_point=PaloEscobaMuJoCoEnv, max_episode_steps=500)
+check_env(PaloEscobaMuJoCoEnv())
+print("Tu palo de MuJoCo, registrado y verificado por SB3")"""),
+
+md(r"""(`os`, `gym`, `spaces`, `np` y `check_env` ya están importados de las secciones anteriores.)
+
+### Paso 2 · Entrenar con SB3
+
+Exactamente el código de la sección 8, cambiando el nombre del entorno: 4 copias, PPO por defecto, semilla 0. Le damos **4 lotes**
+(4 × 8.192 = 32.768 pasos de física):
+"""),
+
+code(r"""inicio = time.time()
+agente_mj = PPO("MlpPolicy", make_vec_env("PaloEscobaMuJoCo-v0", n_envs=4, seed=0), seed=0)
+agente_mj.learn(total_timesteps=32_768)
+print(f"Entrenado en {time.time() - inicio:.0f} s")"""),
+
+md(r"""### Paso 3 · El examen: tres controladores, los mismos 20 palos
+
+Para comparar de forma justa, los tres controladores juegan **los mismos** 20 episodios (las semillas 100 a 119 deciden la inclinación
+inicial de cada palo). Además de la nota, apuntamos **cómo termina** cada episodio: aguanta los 5 s, se le cae el palo, o el carro se
+sale del raíl.
+
+Cada controlador es una función que recibe la observación y devuelve la acción (como las políticas del NB35, con `lambda`, NB23):
+"""),
+
+code(r"""politica_sb3 = lambda obs: agente_mj.predict(obs, deterministic=True)[0]
+politica_pd = lambda obs: np.clip([3 * obs[1] + 0.8 * obs[3] + 0.1 * obs[0] + 0.2 * obs[2]], -1, 1)    # NB23-NB24
+politica_reinforce = lambda obs: np.clip([2.2 * obs[1] + 0.35 * obs[3]], -1, 1)                          # práctica del NB29
+
+def examen_mujoco(politica, viento=0.0, n=20):
+    entorno = gym.make("PaloEscobaMuJoCo-v0", viento_maximo=viento)
+    retornos, finales = [], []
+    for episodio in range(n):
+        observacion, info = entorno.reset(seed=100 + episodio)
+        retorno, terminado, truncado = 0.0, False, False
+        while not (terminado or truncado):
+            observacion, recompensa, terminado, truncado, info = entorno.step(politica(observacion))
+            retorno += recompensa
+        retornos.append(retorno)
+        if abs(observacion[1]) > 0.785:
+            finales.append("palo")
+        elif abs(observacion[0]) > 1.7:
+            finales.append("raíl")
+        else:
+            finales.append("aguanta")
+    return np.mean(retornos), finales"""),
+
+md(r"""Y los tres, al examen:"""),
+
+code(r"""for nombre, politica in [("SB3 (PPO)", politica_sb3), ("PD a mano", politica_pd), ("REINFORCE", politica_reinforce)]:
+    nota, finales = examen_mujoco(politica)
+    print(f"{nombre:>10}: nota {nota:5.1f} de 500 | aguanta {finales.count('aguanta'):2d} | "
+          f"se sale del raíl {finales.count('raíl'):2d} | se cae el palo {finales.count('palo'):2d}")"""),
+
+md(r"""Fíjate bien en la columna de la derecha y en la del medio:
+
+- **SB3** aprende en algo más de un minuto a **no dejar caer el palo nunca** (0 de 20), y saca casi 490 de 500. Pero en **7** de los 20
+  episodios el carro acaba **saliéndose del raíl**.
+- La neurona de **REINFORCE** del NB29 tampoco deja caer el palo, pero se sale del raíl en **14** de 20: ella ni siquiera **ve** el carro
+  (solo miraba el ángulo y su velocidad), así que no tiene forma de saber que se acerca al final.
+- El **PD a mano**, con sus cuatro números, saca un **500 perfecto**: nunca se cae y nunca se sale. Tiene dos términos para el carro
+  (0,1 · x + 0,2 · velocidad del carro) que lo devuelven suavemente al centro.
+
+¿Por qué SB3, que **sí** ve el carro, se sale? Mira la **recompensa**: +1 por paso **sin caerse**. No dice nada de "quédate en el centro".
+Para el agente, un carro en el centro y uno a 1,6 m valen lo mismo... hasta que llega a 1,7 m y se acaba. En 5 segundos, ir a la deriva
+casi nunca le cuesta nada, así que con 4 lotes de experiencia no ha aprendido a evitarlo. Es la lección del NB04 y del NB35 otra vez: **el
+agente optimiza lo que pagas**, y una recompensa que solo castiga el desastre final enseña muy despacio a evitarlo.
+
+Y otra lección, más incómoda: en un problema pequeño y bien entendido, un controlador **diseñado a mano** con cuatro números puede ganar a
+dos redes con más de 9.000 ruedecillas. El RL brilla cuando el problema es demasiado complicado para diseñarlo a mano (un robot con patas, NB35),
+no en todo.
+"""),
+
+md(r"""### Paso 4 · Míralo
+
+El agente de SB3 controlando el palo de MuJoCo con el `video` del taller, durante 5 segundos, empezando con el palo inclinado 0,08 rad. La
+función de control lee `qpos` y `qvel`, se los pasa al agente y escribe su orden en `datos.ctrl`. De paso, apunta dónde está el carro en cada
+pasito:
+"""),
+
+code(r"""modelo_palo, datos_palo = taller.cargar("palo_escoba")
+datos_palo.qpos[1] = 0.08
+mujoco.mj_forward(modelo_palo, datos_palo)
+posiciones_carro = []
+
+def control_sb3(modelo, datos):
+    observacion = np.concatenate([datos.qpos, datos.qvel])
+    datos.ctrl[0] = agente_mj.predict(observacion, deterministic=True)[0][0]
+    posiciones_carro.append(datos.qpos[0])
+
+taller.video(modelo_palo, datos_palo, segundos=5, control=control_sb3, nombre="nb34_palo_sb3", distancia=4.5, seguir=False)
+print(f"el carro llega a x = {max(posiciones_carro, key=abs):+.2f} m (el raíl acaba en ±1,8 m)")"""),
+
+md(r"""El palo no se cae en ningún momento: el carro hace sus correcciones a izquierda y derecha, muy bien. Pero fíjate en **dónde** las hace:
+el carro se va desplazando hacia la derecha a trompicones (a los 2 s ya está a unos 60 cm del centro) y, a los 5 s, llega al **tope** del
+raíl, a 1,8 m. En el examen, ese episodio habría terminado al pasar de 1,7 m. Es el defecto del Paso 3, visto con tus propios ojos.
+
+### Tus retos
+
+**Reto 1.** Examina a SB3 y al PD con **viento** (el `viento_maximo` del entorno empuja la bisagra del palo al azar en cada paso, en N·m):
+`examen_mujoco(politica, viento=v)` con v = 0,5, 1 y 2. ¿Cuál aguanta mejor?
+
+**Reto 2.** Arregla la recompensa: crea una clase hija (NB25) de `PaloEscobaMuJoCoEnv` cuyo `step` reste a la recompensa una penalización
+por estar lejos del centro, `1.0 * x²`, regístrala como `PaloCentrado-v0` y entrena otro agente igual que en el Paso 2, pero por tramos de
+2 lotes hasta 98.304 pasos, examinándolo tras cada tramo con `examen_mujoco` (que usa el entorno **original**, así que la nota es
+comparable). ¿Se sale menos del raíl? (Tarda varios minutos en la Pi: hazlo cuando tengas tiempo, o en Colab.)
+
+<details>
+<summary>▶ Solución Reto 1</summary>
+
+```python
+for viento in [0.5, 1.0, 2.0]:
+    for nombre, politica in [("SB3", politica_sb3), ("PD", politica_pd)]:
+        nota, finales = examen_mujoco(politica, viento=viento)
+        print(f"viento {viento}: {nombre:>3} nota {nota:5.1f} | raíl {finales.count('raíl'):2d} | palo {finales.count('palo'):2d}")
+```
+
+Medido: el PD saca **500** con 0,5 y con 1, y 471 con 2 (se sale del raíl 4 veces). SB3 baja a 477 y 469 (se sale del raíl 8 y 10 veces) y,
+con 2, a **406**: se sale 12 veces y **se le cae el palo** 3. El viento empuja el carro a la deriva más deprisa, y el agente que no aprendió a
+volver al centro lo paga. Ojo, como siempre: una semilla de entrenamiento y 20 episodios; es una pista, no una ley (NB34, sección 10).
+</details>
+
+<details>
+<summary>▶ Solución Reto 2</summary>
+
+```python
+class PaloCentrado(PaloEscobaMuJoCoEnv):
+    def step(self, action):
+        observacion, recompensa, terminado, truncado, info = super().step(action)
+        if not terminado:
+            recompensa = recompensa - 1.0 * observacion[0] ** 2     # castigo por alejarse del centro
+        return observacion, recompensa, terminado, truncado, info
+
+gym.register(id="PaloCentrado-v0", entry_point=PaloCentrado, max_episode_steps=500)
+agente_centrado = PPO("MlpPolicy", make_vec_env("PaloCentrado-v0", n_envs=4, seed=0), seed=0)
+for tramo in range(6):
+    agente_centrado.learn(total_timesteps=16_384, reset_num_timesteps=False)
+    nota, finales = examen_mujoco(lambda obs: agente_centrado.predict(obs, deterministic=True)[0])
+    print(agente_centrado.num_timesteps, round(nota, 1), "raíl", finales.count("raíl"), "palo", finales.count("palo"))
+```
+
+Medido (y lo mismo con el entorno original, para comparar):
+
+| pasos | con penalización: nota, raíl, palo | original: nota, raíl, palo |
+|---|---|---|
+| 32.768 | 269,7 · 0 · **20** | 486,8 · 7 · 0 |
+| 49.152 | 355,5 · 0 · 19 | 448,8 · 14 · 0 |
+| 65.536 | 495,5 · 0 · 5 | 448,8 · 7 · 0 |
+| 81.920 | **500 · 0 · 0** | 480,2 · 6 · 0 |
+| 98.304 | 500 · 0 · 0 | 500 · 0 · 0 |
+
+Al principio, la penalización **estorba**: con 32.768 pasos el agente nuevo deja caer el palo en los 20 episodios (aprender a la vez
+"no lo tires" y "no te alejes" es más difícil). Pero **desde el principio no se sale nunca del raíl**, y a los 81.920 pasos ya es
+perfecto, mientras que el original todavía se sale 6 veces y necesita 98.304 para llegar al 500. Moldear la recompensa no es gratis ni
+mágico: cambia **qué** aprende primero. (Y, como siempre, con una sola semilla.) Lo verás a fondo en el NB44.
+</details>
+
+### Qué has aprendido de MuJoCo hoy
+
+- **Tu** entorno de MuJoCo (un `gym.Env` con `MjModel`/`MjData` dentro) funciona con SB3 **sin cambiar nada**: verificador, `make_vec_env`,
+  `PPO`, `predict`.
+- `datos.qfrc_applied` como **perturbación** (viento) para examinar la robustez.
+- Usar un agente de SB3 como función de control de una simulación de MuJoCo (`taller.video` con `control=`).
+- Comparar con un examen justo (mismas semillas) y mirar **cómo** falla cada controlador, no solo la nota.
+- La recompensa manda: si no paga "quédate en el centro", el agente no lo aprende (o lo aprende muy despacio).
+
+En la práctica del NB35 abrirás el **plano MJCF de Hopper** por dentro, le cambiarás el cuerpo y verás qué le pasa a un campeón entrenado.
+"""),
+
+md(r"""## 15 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
