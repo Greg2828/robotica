@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "locomocion"
+version = "0.1.0"
+description = "Entorno de locomoción 3D de Zancudo para aprendizaje por refuerzo (curso de robótica, NB54)"
+requires-python = ">=3.10"
+dependencies = [
+    "mujoco>=3.1",
+    "gymnasium>=1.0",
+    "numpy",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+entrenar = ["stable-baselines3>=2.3", "torch"]
+pruebas = ["pytest"]
+
+[project.scripts]
+locomocion = "locomocion.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+locomocion = ["robots/*.xml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

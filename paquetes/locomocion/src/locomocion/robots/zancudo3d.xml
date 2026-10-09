@@ -1,0 +1,93 @@
+<mujoco model="zancudo3d">
+  <compiler angle="radian"/>
+
+  <option integrator="implicitfast"/>
+
+  <size nkey="1"/>
+
+  <visual>
+    <headlight ambient="0.4 0.4 0.4" diffuse="0.6 0.6 0.6"/>
+  </visual>
+
+  <default>
+    <joint armature="0.01" damping="1"/>
+  </default>
+
+  <asset>
+    <texture type="skybox" colorspace="auto" name="cielo" builtin="gradient" rgb1="0.5 0.6 0.7" rgb2="0.1 0.1 0.15" width="200" height="1200"/>
+    <texture type="2d" colorspace="auto" name="cuadros" builtin="checker" rgb1="0.75 0.8 0.75" rgb2="0.45 0.5 0.45" width="300" height="300"/>
+    <material name="suelo" texture="cuadros" texrepeat="10 10"/>
+  </asset>
+
+  <worldbody>
+    <geom name="suelo" size="20 20 0.1" type="plane" material="suelo"/>
+    <light pos="0 0 3" type="directional"/>
+    <body name="torso" pos="0 0 0.865">
+      <joint name="raiz" type="free" armature="0" damping="0"/>
+      <geom name="torso" size="0.08 0.2" pos="0 0 0.25" quat="0 1 0 0" type="capsule" mass="12"/>
+      <geom name="pelvis" size="0.05 0.1" quat="0.707107 0.707107 0 0" type="capsule" contype="0" conaffinity="0" mass="0"/>
+      <site name="imu" pos="0 0 0.3"/>
+      <camera name="frente" quat="0.5 0.5 0.5 0.5" pos="3 0 0.2" mode="trackcom"/>
+      <camera name="lado" quat="0.707107 0.707107 0 0" pos="0 -3 0.2" mode="trackcom"/>
+      <body name="muslo_d" pos="0 -0.1 0">
+        <joint name="cadera_giro_d" range="-0.5 0.5"/>
+        <joint name="cadera_lado_d" range="-0.5 0.5" axis="1 0 0"/>
+        <joint name="cadera_d" range="-1.57 1.57" axis="0 -1 0"/>
+        <geom size="0.05 0.2" pos="0 0 -0.2" type="capsule" rgba="0.85 0.55 0.25 1" mass="3"/>
+        <body name="pierna_d" pos="0 0 -0.4">
+          <joint name="rodilla_d" range="-2.6 0" axis="0 -1 0"/>
+          <geom size="0.04 0.2" pos="0 0 -0.2" type="capsule" rgba="0.85 0.55 0.25 1" mass="2"/>
+          <body name="pie_d" pos="0 0 -0.4">
+            <joint name="tobillo_d" range="-0.78 0.78" axis="0 -1 0"/>
+            <joint name="tobillo_lado_d" range="-0.4 0.4" axis="1 0 0"/>
+            <geom name="pie_d" size="0.1 0.04 0.015" pos="0.04 0 -0.05" type="box" rgba="0.85 0.55 0.25 1" mass="0.8"/>
+            <site name="planta_d" size="0.11 0.05 0.03" pos="0.04 0 -0.065" type="box" rgba="0 0 0 0"/>
+          </body>
+        </body>
+      </body>
+      <body name="muslo_i" pos="0 0.1 0">
+        <joint name="cadera_giro_i" range="-0.5 0.5"/>
+        <joint name="cadera_lado_i" range="-0.5 0.5" axis="1 0 0"/>
+        <joint name="cadera_i" range="-1.57 1.57" axis="0 -1 0"/>
+        <geom size="0.05 0.2" pos="0 0 -0.2" type="capsule" rgba="0.6 0.4 0.7 1" mass="3"/>
+        <body name="pierna_i" pos="0 0 -0.4">
+          <joint name="rodilla_i" range="-2.6 0" axis="0 -1 0"/>
+          <geom size="0.04 0.2" pos="0 0 -0.2" type="capsule" rgba="0.6 0.4 0.7 1" mass="2"/>
+          <body name="pie_i" pos="0 0 -0.4">
+            <joint name="tobillo_i" range="-0.78 0.78" axis="0 -1 0"/>
+            <joint name="tobillo_lado_i" range="-0.4 0.4" axis="1 0 0"/>
+            <geom name="pie_i" size="0.1 0.04 0.015" pos="0.04 0 -0.05" type="box" rgba="0.6 0.4 0.7 1" mass="0.8"/>
+            <site name="planta_i" size="0.11 0.05 0.03" pos="0.04 0 -0.065" type="box" rgba="0 0 0 0"/>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <general name="m_cadera_giro_d" joint="cadera_giro_d" ctrlrange="-0.5 0.5" forcerange="-150 150" biastype="affine" gainprm="3000" biasprm="0 -3000 -90"/>
+    <general name="m_cadera_lado_d" joint="cadera_lado_d" ctrlrange="-0.5 0.5" forcerange="-150 150" biastype="affine" gainprm="3000" biasprm="0 -3000 -90"/>
+    <general name="m_cadera_d" joint="cadera_d" ctrlrange="-1.57 1.57" forcerange="-150 150" biastype="affine" gainprm="3000" biasprm="0 -3000 -90"/>
+    <general name="m_rodilla_d" joint="rodilla_d" ctrlrange="-2.6 0" forcerange="-150 150" biastype="affine" gainprm="3000" biasprm="0 -3000 -90"/>
+    <general name="m_tobillo_d" joint="tobillo_d" ctrlrange="-0.78 0.78" forcerange="-150 150" biastype="affine" gainprm="3000" biasprm="0 -3000 -90"/>
+    <general name="m_tobillo_lado_d" joint="tobillo_lado_d" ctrlrange="-0.4 0.4" forcerange="-150 150" biastype="affine" gainprm="3000" biasprm="0 -3000 -90"/>
+    <general name="m_cadera_giro_i" joint="cadera_giro_i" ctrlrange="-0.5 0.5" forcerange="-150 150" biastype="affine" gainprm="3000" biasprm="0 -3000 -90"/>
+    <general name="m_cadera_lado_i" joint="cadera_lado_i" ctrlrange="-0.5 0.5" forcerange="-150 150" biastype="affine" gainprm="3000" biasprm="0 -3000 -90"/>
+    <general name="m_cadera_i" joint="cadera_i" ctrlrange="-1.57 1.57" forcerange="-150 150" biastype="affine" gainprm="3000" biasprm="0 -3000 -90"/>
+    <general name="m_rodilla_i" joint="rodilla_i" ctrlrange="-2.6 0" forcerange="-150 150" biastype="affine" gainprm="3000" biasprm="0 -3000 -90"/>
+    <general name="m_tobillo_i" joint="tobillo_i" ctrlrange="-0.78 0.78" forcerange="-150 150" biastype="affine" gainprm="3000" biasprm="0 -3000 -90"/>
+    <general name="m_tobillo_lado_i" joint="tobillo_lado_i" ctrlrange="-0.4 0.4" forcerange="-150 150" biastype="affine" gainprm="3000" biasprm="0 -3000 -90"/>
+  </actuator>
+
+  <sensor>
+    <touch site="planta_d" name="tacto_d"/>
+    <touch site="planta_i" name="tacto_i"/>
+    <gyro site="imu" name="giroscopo"/>
+    <accelerometer site="imu" name="acelerometro"/>
+    <framequat objtype="site" objname="imu" name="orientacion"/>
+  </sensor>
+
+  <keyframe>
+    <key name="agachado" qpos="0 0 0.767066 1 0 0 0 0 0 0.5 -1 0.5 0 0 0 0.5 -1 0.5 0" ctrl="0 0 0.5 -1 0.5 0 0 0 0.5 -1 0.5 0"/>
+  </keyframe>
+</mujoco>

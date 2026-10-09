@@ -29,3 +29,11 @@ notebooks/assets/practicas/
 # Log de errores de MuJoCo
 MUJOCO_LOG.TXT
 notebooks/MUJOCO_LOG.TXT
+
+# NB54: entrenamientos (los modelos grandes se quedan aquí; el elegido se copia a notebooks/modelos/)
+trabajo_nb54/**/*.zip
+trabajo_nb54/**/*.pkl
+# Paquetes instalables (paquetes/): restos de construcción y de pytest
+paquetes/*/build/
+paquetes/*/src/*.egg-info/
+.pytest_cache/

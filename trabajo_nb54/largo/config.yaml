@@ -1,0 +1,43 @@
+nombre: zancudo3d_andar
+simulacion:
+  paso: 0.005
+  decimacion: 4
+  kp: 300.0
+  kv: 10.0
+  escala_accion: 0.3
+comandos:
+  vx:
+  - -0.3
+  - 0.6
+  vy:
+  - -0.2
+  - 0.2
+  giro:
+  - -0.5
+  - 0.5
+  prob_quieto: 0.1
+recompensa:
+  pesos:
+    seguir_velocidad: 1.0
+    seguir_giro: 1.0
+    avance: 1.0
+    vivo: 0.15
+    contacto_fase: 0.5
+    pie_en_el_aire: 2.0
+    velocidad_vertical: -2.0
+    balanceo: -0.05
+    orientacion: -1.0
+    altura: -10.0
+    par: -1.0e-05
+    accion_brusca: -0.01
+    caderas: -1.0
+  sigma: 0.25
+  altura_objetivo: 0.75
+  periodo_paso: 0.8
+  aire_objetivo: 0.3
+episodio:
+  duracion: 10.0
+  altura_minima: 0.45
+  inclinacion_maxima: 1.0
+  ruido_articulaciones: 0.05
+  ruido_velocidades: 0.1

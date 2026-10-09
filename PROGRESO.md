@@ -1,5 +1,14 @@
 # Progreso
 
+## ▶ PARA RETOMAR (2026-10-09) · NB54 A MEDIAS
+- Prácticas de MuJoCo en NB00→NB53: ✅ COMPLETAS (ver PLAN_PRACTICAS_MUJOCO.md).
+- **NB54 · Entorno de locomoción profesional 3D: EN CURSO, SIN VERIFICAR.** Guardado tal cual se paró:
+  build_parts/nb54.py, build_parts/nb54_locomocion/ (fuente del paquete), build_parts/nb54_sincronizar.sh,
+  paquetes/ (paquete instalable `locomocion`, CLI `python -m locomocion -v entrenar`), notebooks/NB54_*.ipynb,
+  notebooks/modelos/zancudo3d_andar/ (modelo provisional). El entrenamiento LARGO (trabajo_nb54/largo) se
+  interrumpió: hay que relanzarlo. Falta: tests pytest, entrenamiento largo, ejecutar NB54 (EXIT 0) y revisar cifras.
+  Dile a Claude: **«sigamos con el NB54»**.
+
 ## ▶ PARA RETOMAR (2026-10-08) · PRÁCTICAS EN MUJOCO EN CADA NOTEBOOK
 - Petición de Gregori (2026-10-07): **cada notebook, desde el NB00, cierra con «🛠 Práctica en MuJoCo»** a su
   nivel. Plan, itinerario, convenciones y estado: **PLAN_PRACTICAS_MUJOCO.md**. Herramienta: notebooks/taller.py;

@@ -1,0 +1,17 @@
+{
+  "n_entornos": 16,
+  "n_pasos": 256,
+  "lote": 1024,
+  "epocas": 5,
+  "tasa_aprendizaje": 0.0003,
+  "gamma": 0.99,
+  "lambda_gae": 0.95,
+  "entropia": 0.0,
+  "log_std_inicial": -1.0,
+  "red": [
+    256,
+    128
+  ],
+  "hilos_torch": 2,
+  "semilla": 0
+}

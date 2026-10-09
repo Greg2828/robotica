@@ -1,0 +1,7 @@
+03:58:29 INFO    locomocion.entrenamiento: entrenando 20000000 pasos con 16 entornos (semilla 0) → trabajo_nb54/largo
+03:58:55 INFO    locomocion.entrenamiento: pasos 40960 | recompensa 2.05 | duración 108 | seguir_velocidad 0.999 | 1575 pasos/s
+03:59:21 INFO    locomocion.entrenamiento: pasos 81920 | recompensa 2.56 | duración 113 | seguir_velocidad 1.143 | 1563 pasos/s
+03:59:47 INFO    locomocion.entrenamiento: pasos 122880 | recompensa 2.59 | duración 119 | seguir_velocidad 1.182 | 1572 pasos/s
+04:00:12 INFO    locomocion.entrenamiento: pasos 163840 | recompensa 3.08 | duración 139 | seguir_velocidad 1.401 | 1577 pasos/s
+04:00:36 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (200704 pasos)
+04:00:38 INFO    locomocion.entrenamiento: pasos 204800 | recompensa 5.89 | duración 252 | seguir_velocidad 2.814 | 1588 pasos/s
