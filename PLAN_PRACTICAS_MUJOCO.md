@@ -94,3 +94,12 @@
 - [x] NB02 · suelta una pelota (MuJoCo reproduce la tabla a mano)
 - [x] NB03 · dale una mente al humanoide · NB03b · los números del humanoide · NB04 · ponle nota (recompensa real) · NB04b · ¿acierta tu fórmula? · NB05b · MuJoCo desde la terminal
 - [x] Parte 1 NB05-NB11b · print del modelo · variables · tu bucle · detectar la caída · grabar y dibujar · caida(gravedad) · palo de escoba en MJCF (4 ruedecillas por el raíl) · leer un script real
+- [x] Parte 2 NB12-NB19 · vectores/xmat/producto escalar · damping · ndarray · qvel como pendiente · ganancia por gradiente · energía (datos.energy) · imitar al maestro PD · red al volante
+- [x] Parte 3 NB20-NB27 · f-strings MJCF · nombres→ids · errores · taller.py abierto · clase Simulacion · gym.Env propio · ficheros/script · tests del simulador
+- [x] Parte 4 NB28-NB35 · semillas · log-probabilidades · REINFORCE en MuJoCo · crítico/descuento · PyTorch · actor-crítico simétrico · PPO desde cero · SB3 en tu palo · Hopper modificado
+- [x] Parte 5 NB36-NB43 · hombro con motor · CdM 3D · energía · muelles · LIPM · PD · sensores MJCF · Zancudo en rampas/hielo · campeón en un mundo cambiado
+- [x] Parte 6 NB44-NB53 + puente NB44p1-p7 · recompensa por dentro · banco de empujones · servos con dinámica inversa · contactos · integradores (temblor del tobillo en zancudo.xml con Euler) · variantes MjSpec · paso en el aire · retraso de actuadores · Zancudo se mece
+
+**✅ PLAN COMPLETO (2026-10-09): los 70 notebooks NB00→NB53 cierran con «🛠 Práctica en MuJoCo», todos EXIT 0.**
+Nota: NB43 corregido — las caídas de «quieto» en semillas 0 y 2 son inestabilidad numérica (Euler, dt 0,002), no azar; ver práctica del NB49.
+Siguiente: NB54 (entorno 3D profesional), que ya nace con su práctica.
