@@ -8,6 +8,10 @@ azar). Entrenamiento corto en vivo. Entrenamientos largos (entrenar_zancudo.py,
 4 en paralelo en la Pi): registro, curvas, examen del mejor, GIF, forma de
 andar. Robustez: empujones (xfrc_applied) y ruido en la observación (entrenado
 con y sin ruido). Lo que falta para andar "bonito" → Parte 6.
+Práctica en MuJoCo: ¿y si cambia el mundo? El campeón con el modelo modificado en
+el sitio (geom_friction, body_mass + mj_setConst, actuator_forcerange, opt.gravity):
+se cae con suelo de 0,5, mochila de 3-6 kg o motores de 100 N·m → se ha aprendido
+su mundo de memoria (aleatorización de dominio, NB55). GIF nb43_resbala.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -154,7 +158,7 @@ for nombre, politica in [("quieto", lambda obs: np.zeros(6)), ("azar", lambda ob
 
 md(r"""Dos referencias, dos historias:
 
-- **Quieto: 832,6 puntos.** ¿No habíamos dicho que quedarse quieto daba 1.000? Casi: en **8 de los 10** episodios aguanta los 20 segundos de pie (1.000 puntos cada uno), pero en **2** (semillas 0 y 2) se cae de espaldas, a los 228 y a los 100 pasos. Es el pequeño azar de la postura de partida (±0,05 rad en cada articulación, sección 2): a veces lo deja con el centro de masas un poco por detrás de los pies y, sin nadie que corrija, se va al suelo (NB38). Incluso "no hacer nada" necesita algo de equilibrio.
+- **Quieto: 832,6 puntos.** ¿No habíamos dicho que quedarse quieto daba 1.000? Casi: en **8 de los 10** episodios aguanta los 20 segundos de pie (1.000 puntos cada uno), pero en **2** (semillas 0 y 2) se cae de espaldas, a los 228 y a los 100 pasos. Parece culpa del pequeño azar de la postura de partida (±0,05 rad en cada articulación, sección 2), pero **no lo es**: la culpa es del propio simulador. Con el integrador Euler y el pasito de 0,002 s de `zancudo.xml`, desde algunas posturas el tobillo se pone a **vibrar a 250 Hz** con el par saltando de +150 a −150, sin que MuJoCo avise de nada, y esa vibración acaba tirando al robot. Con el integrador `implicitfast` no se cae ninguna semilla y "quieto" saca unos 1.000 puntos. Lo descubrirás y lo explicarás con números en la práctica del NB49 (integradores): de momento quédate con la lección de que **un resultado raro puede ser un fallo numérico de la simulación, no física de verdad**.
 - **Azar: unos 57 puntos.** Agitando las piernas al azar se cae en **algo más de 1 segundo** (unos 55 pasos). Un punto por paso de vida, y poco más. (Si lo ejecutas tú, te saldrá algo un poco distinto: `action_space.sample()` no usa la semilla del `reset`, así que el azar cambia en cada ejecución.)
 
 Así que el listón está claro: cualquier agente que saque menos de ~830 lo hace **peor que quedarse quieto**, y para pasar de 1.000 tiene que **avanzar** de verdad.
@@ -477,7 +481,190 @@ y se entrena como en la sección 4, con `"ZancudoSinReloj-v0"`. Lo hice con los 
 </details>
 """),
 
-md(r"""## 11 · Posdata
+md(r"""## 11 · 🛠 Práctica en MuJoCo: ¿y si cambia el mundo?
+
+En la sección 7 pusimos a prueba al campeón con **empujones** y con **ruido** en los sensores, y salió bien parado. Pero un robot de verdad se encuentra con otra clase de sorpresas, mucho más traicioneras: **su cuerpo y su mundo no son exactamente los del simulador**. El suelo resbala más o menos que en la simulación, el robot lleva encima algo que pesa (una batería más grande, una cámara, una mochila), sus motores dan algo menos de fuerza que lo que dice el catálogo...
+
+Todo eso, en MuJoCo, son **números del modelo**. Y el modelo de un entorno está a mano: `entorno.modelo`. Hoy vas a cambiarlos uno a uno, sin volver a entrenar, y a medir cuánto le importa al campeón. Es la pregunta que se hace cualquier equipo antes de llevar una política a un robot real: **¿se ha aprendido el mundo de memoria?**
+
+El plan:
+
+1. Una función que juega episodios con el campeón en un mundo **modificado**.
+2. Tres cambios: el **rozamiento** del suelo, una **mochila** en el torso y **motores más flojos**.
+3. Una tabla para compararlos, y un GIF del que más le cuesta.
+"""),
+
+md(r"""### Paso 1 · Jugar en un mundo modificado
+
+La idea: crear un `Zancudo()` nuevo, **cambiar su modelo** antes de empezar, y jugar 5 episodios de 10 segundos (500 decisiones) con el campeón. El cambio lo hace una función que le pasamos como argumento, `cambiar(modelo, datos)`: así la misma prueba sirve para cualquier cambio (pasar funciones como argumentos, NB23). Devuelve en cuántos episodios llega al final sin caerse y la distancia media recorrida:
+"""),
+
+code(r"""def prueba_mundo(cambiar, n=5, pasos=500):
+    llegan, distancias = 0, []
+    for semilla in range(n):
+        entorno = Zancudo()
+        cambiar(entorno.modelo, entorno.datos)            # el mundo nuevo, ANTES de empezar
+        observacion, info = entorno.reset(seed=semilla)
+        x0 = entorno.datos.qpos[0]
+        for paso in range(pasos):
+            observacion, recompensa, terminado, truncado, info = entorno.step(politica(observacion))
+            if terminado:
+                break
+        llegan += not terminado
+        distancias.append(entorno.datos.qpos[0] - x0)
+    return llegan, round(float(np.mean(distancias)), 1)"""),
+
+md(r"""(`llegan += not terminado` suma 1 si **no** ha terminado por caída: `True` cuenta como 1 y `False` como 0, NB27. Y `round(float(...), 1)` deja la distancia con un decimal, para que se lea bien.)
+
+¿Por qué un `Zancudo()` nuevo en cada episodio? Porque vamos a **estropear** su modelo a propósito, y no queremos que un cambio se arrastre a la prueba siguiente. Cada entorno carga su propio `MjModel` del fichero (sección 2), así que lo que toquemos en uno no afecta a los demás.
+
+### Paso 2 · La referencia: el mundo de siempre
+
+Primero, sin cambiar nada (una función que no hace nada), para tener con qué comparar:
+"""),
+
+code(r"""def sin_cambios(modelo, datos):
+    pass
+
+print("mundo normal:", prueba_mundo(sin_cambios))"""),
+
+md(r"""Los 5 episodios llegan al final, y recorre unos **43 metros** en 10 segundos: el campeón de la sección 6.
+
+### Paso 3 · Un suelo que resbala
+
+Cada forma (*geom*) del modelo tiene su rozamiento en `modelo.geom_friction`: una fila por forma, con tres números (deslizamiento, giro y rodadura). El que importa para no resbalar es el **primero**, la columna 0. En Zancudo vale 1 en todas las formas (lo pusimos en el MJCF del NB42). Cuando dos formas se tocan, MuJoCo usa el **mayor** de sus dos rozamientos, así que, para que el suelo resbale de verdad, hay que bajarlo en **todas** (el suelo y los pies). Como referencia: goma sobre asfalto seco, cerca de 1; un suelo de baldosa pulida, unos 0,5; una pista de hielo, menos de 0,1.
+"""),
+
+code(r"""for mu in [0.5, 0.3]:
+    def resbaladizo(modelo, datos):
+        modelo.geom_friction[:, 0] = mu
+    print(f"rozamiento {mu}:", prueba_mundo(resbaladizo))"""),
+
+md(r"""Con un suelo de **0,5** (la mitad de lo que tenía al entrenar) ya se cae en **2 de los 5** episodios, y con **0,3**, en 4 de 5. Un suelo de baldosa, y el campeón que corría 16 km/h sin caerse nunca se va al suelo.
+
+Tiene lógica: corre a saltos, y cada vez que aterriza y empuja, el pie necesita agarre. Durante el entrenamiento, el rozamiento **siempre** fue 1, y la política aprendió a empujar justo lo que permite un rozamiento de 1. Con menos, el pie patina.
+
+### Paso 4 · Una mochila
+
+Ahora le cargamos peso en el torso. Las masas están en `modelo.body_mass` (una por cuerpo, NB03b). Para saber qué número es el del torso, se lo preguntamos al modelo por su nombre con `modelo.body("torso").id` (NB21).
+
+**Ojo, trampa de MuJoCo**: al compilar un modelo, MuJoCo precalcula cosas que dependen de las masas (por ejemplo, la masa total de cada parte del robot). Si cambias `body_mass` a mano, hay que pedirle que las recalcule con **`mujoco.mj_setConst(modelo, datos)`**; si no, una parte de los cálculos seguiría usando la masa vieja.
+"""),
+
+code(r"""for kilos in [3, 6]:
+    def mochila(modelo, datos):
+        modelo.body_mass[modelo.body("torso").id] += kilos
+        mujoco.mj_setConst(modelo, datos)                  # ¡que recalcule lo que depende de las masas!
+    print(f"mochila de {kilos} kg:", prueba_mundo(mochila))"""),
+
+md(r"""Con **3 kg** (un 13 % más de masa total: Zancudo pesa 23,6 kg) se cae en 2 de 5 episodios. Con **6 kg**, en **todos**. Una mochila de colegio.
+
+### Paso 5 · Motores más flojos
+
+El par máximo de cada motor está en `modelo.actuator_forcerange`: una fila por motor, con el mínimo y el máximo (en Zancudo, −150 y +150 N·m, NB42). Un motor real da menos par cuando se calienta o cuando la batería baja. Probemos con 120 y con 100:
+"""),
+
+code(r"""for par in [120, 100]:
+    def flojos(modelo, datos):
+        modelo.actuator_forcerange[:] = [-par, par]
+    print(f"motores de {par} N·m:", prueba_mundo(flojos))"""),
+
+md(r"""Con **120 N·m** (un 20 % menos) aguanta los 5 episodios, aunque recorre algo menos. Con **100** (un 33 % menos), se cae en 3 de 5.
+
+### Paso 6 · Verlo
+
+El GIF del suelo de rozamiento 0,3, con la semilla 0. Usamos la misma idea que la función `grabar` de la sección 6, pero cambiando el modelo antes de empezar:
+"""),
+
+code(r"""camara = Zancudo(render_mode="rgb_array")
+camara.modelo.geom_friction[:, 0] = 0.3
+observacion, info = camara.reset(seed=0)
+fotos = []
+for paso in range(250):
+    observacion, recompensa, terminado, truncado, info = camara.step(politica(observacion))
+    if paso % 2 == 0:
+        fotos.append(camara.render())
+    if terminado:
+        break
+camara.close()
+imageio.mimsave("assets/nb43_resbala.gif", fotos, fps=25, loop=0)
+print(f"se ha caído a los {(paso + 1) * 0.02:.1f} s" if terminado else "no se ha caído")
+Image(filename="assets/nb43_resbala.gif")"""),
+
+md(r"""Arranca igual que siempre, con su carrera a saltos... y en el primer segundo un pie patina al empujar, pierde el ritmo y se va al suelo.
+
+### La tabla
+
+| Cambio | Cuánto | Llega al final |
+|---|---|---|
+| ninguno | — | 5 de 5 |
+| rozamiento | 1 → 0,5 | 3 de 5 |
+| rozamiento | 1 → 0,3 | 1 de 5 |
+| mochila | +3 kg (+13 %) | 3 de 5 |
+| mochila | +6 kg (+25 %) | 0 de 5 |
+| motores | 150 → 120 N·m | 5 de 5 |
+| motores | 150 → 100 N·m | 2 de 5 |
+
+Compáralo con la sección 7: los empujones y el ruido apenas le afectaban, y un cambio "pequeño" del mundo lo tumba. ¿Por qué esa diferencia? Porque durante el entrenamiento se **cayó** muchas veces, desde estados raros, y aprendió a recuperarse de ellos (un empujón solo te lleva a otro estado). Pero el **mundo** fue siempre el mismo: rozamiento 1, 23,6 kg, 150 N·m. La política se ha aprendido ese mundo **de memoria**. Es lo mismo que pasaba con el sobreajuste del NB18: lo que no aparece en los datos de entrenamiento, no se aprende.
+
+Y la cura es la misma que allí: **más variedad en los datos**. Si durante el entrenamiento el rozamiento, las masas y la fuerza de los motores cambian en cada episodio, la política aprende a andar en **todos** esos mundos. Se llama **aleatorización de dominio**, y lo haremos en el NB55.
+"""),
+
+md(r"""### Tus retos
+
+**R1.** Prueba con la **gravedad** de la Luna (1,62 m/s²), la de Marte (3,71) y una un 20 % más fuerte que la de la Tierra (11,77). La gravedad está en `modelo.opt.gravity`, un vector de 3 números (NB12): cambia solo el tercero. Antes de ejecutarlo, apuesta: ¿en cuál le irá peor?
+
+**R2.** Y al revés: ¿un suelo con **más** agarre (rozamiento 1,5 y 2) le ayuda?
+
+**R3.** Explica con lo que sabes del NB37 por qué una mochila de 6 kg es tan grave para una política que da **ángulos objetivo** a motores PD (NB40). (Pista: ¿qué tiene que hacer un PD para aguantar más peso?)
+"""),
+
+md(r'''<details>
+<summary>▶ Solución R1</summary>
+
+```python
+for g in [1.62, 3.71, 11.77]:
+    def otra_gravedad(modelo, datos):
+        modelo.opt.gravity[2] = -g                   # hacia abajo: negativa
+    print(f"gravedad {g}:", prueba_mundo(otra_gravedad))
+```
+
+En la **Luna**, 0 de 5 (y apenas avanza un metro); en **Marte**, 0 de 5. Con un 20 % **más** de gravedad, ¡5 de 5! Lo que parecía "más fácil" (pesar menos) es lo peor: cada empujón de las piernas, calculado para la gravedad de la Tierra, lo lanza por los aires y aterriza girado. En cambio, con algo más de gravedad, los saltos son más cortos, y su forma de correr aguanta. Una política entrenada no sabe qué es "fácil": solo sabe lo que ha visto.
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+for mu in [1.5, 2.0]:
+    def agarre(modelo, datos):
+        modelo.geom_friction[:, 0] = mu
+    print(f"rozamiento {mu}:", prueba_mundo(agarre))
+```
+
+5 de 5 con los dos, recorriendo algo menos (unos 40 y 38 m). Más agarre no le hace caer, pero tampoco le ayuda: con rozamiento 1 ya no resbalaba. La pequeña pérdida de distancia es otra señal de lo mismo: su forma de correr está ajustada a un rozamiento de 1, y cualquier cambio, incluso a mejor, la saca un poco de su sitio.
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+Un motor PD solo hace fuerza si hay **error**: par = kp · (ángulo pedido − ángulo real) (NB40). Con 6 kg más en el torso, las rodillas y las caderas necesitan más par para aguantar (par = fuerza × brazo, NB37), y el PD solo lo consigue dejándose **hundir** más. Así que, con los mismos ángulos objetivo, el robot va más agachado y más retrasado respecto de lo que la política "esperaba". La política nunca vio ese cuerpo más hundido, y sus decisiones dejan de encajar. (En el NB52 y el NB53 verás la solución clásica a esto: **prealimentar** el par que hace falta.)
+</details>
+'''),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- **El modelo de un entorno se puede tocar**: `entorno.modelo` es un `MjModel` normal, y sus números (rozamientos, masas, pares, gravedad) se cambian en el sitio, sin volver a cargar nada.
+- **`geom_friction[:, 0]`**: el rozamiento de deslizamiento de cada forma; en un contacto manda el **mayor** de los dos.
+- **`body_mass` + `mj_setConst`**: tras cambiar una masa, hay que pedirle a MuJoCo que recalcule lo que depende de ella.
+- **`actuator_forcerange`**: el par máximo de cada motor; **`opt.gravity`**: la gravedad, un vector.
+- **Un entorno nuevo por prueba**, para que un cambio no se arrastre a la siguiente.
+- **La lección de robótica**: una política entrenada en un solo mundo se lo aprende de memoria; los empujones no la tumban, pero un suelo de baldosa o una mochila, sí.
+
+En la práctica del **NB44** abrirás la recompensa moldeada por dentro: grabarás un episodio, separarás cuánto aporta cada término y comprobarás con las fuerzas de contacto de MuJoCo si el término de "vuelo" mide lo que dice medir.
+"""),
+
+md(r"""## 12 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

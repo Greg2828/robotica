@@ -14,6 +14,11 @@ en 2D (Newton con jacobiano numérico). A la pata coja: reparto ponderado por el
 CdM (servos blandos solo se sostienen con él). Equilibrio lateral: LIPM 3D,
 empujones de pie con dos y un pie, frente a la teoría; barrido de anchura de
 cadera con replace.
+Práctica en MuJoCo: Zancudo se mece. CdM en onda lateral A·sen(2πft) con reparto
+ponderado; sensores de tacto como báscula (fracción de peso por pie) frente al LIPM
+(ZMP = A·(1 + (2πf/ω)²)); frontera f* = (ω/2π)·√(ANCHO/A − 1) = 0,48 Hz con 6 cm
+(0,5 Hz casi despega, 0,6 se cae); a ritmo de andar el CdM apenas puede mecerse
+1-2 cm: pasar el peso exige levantar un pie. GIF nb53_se_mece.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -1207,7 +1212,195 @@ Alrededor de **kp = 220** (con kv = 15). Con menos, ni con la prealimentación p
 </details>
 '''),
 
-md(r"""## 14 · Posdata
+md(r"""## 14 · 🛠 Práctica en MuJoCo: Zancudo se mece
+
+Andar en 3D tiene una parte que en el plano no existía: en cada paso, el peso tiene que pasar de un pie **al otro**. Antes de dar pasos de verdad (NB54 en adelante), hagamos la versión más sencilla: Zancudo **meciéndose** de lado a lado, con los dos pies en el suelo, como quien espera el autobús balanceándose. Y hagámonos la pregunta que decide cómo se anda:
+
+> **¿A qué ritmo puede mecerse sin que se le despegue un pie?**
+
+El LIPM de la sección 10 tiene la respuesta. En la dirección lateral: aceleración en y = ω² · (y − p_y). Despejando el ZMP:
+
+```
+   p_y  =  y − (aceleración en y) / ω²
+```
+
+Si el CdM se mece como una onda, y = A · sen(2π·f·t), su aceleración es −(2π·f)² · y (NB16: derivar dos veces un seno da menos el seno por la frecuencia al cuadrado). Sustituyendo:
+
+```
+   p_y  =  A · (1 + (2π·f / ω)²) · sen(2π·f·t)
+```
+
+**El ZMP se mece más que el CdM**, y tanto más cuanto más deprisa. Para mover el CdM de lado a lado hay que empujar el suelo **más allá**: si quieres llevar el CdM hacia la derecha, primero tienes que empujar hacia la izquierda. Y el ZMP no puede salir de los pies. Hoy vas a medirlo con los **sensores de tacto** de Zancudo 3D, que dicen cuánto peso carga cada pie.
+"""),
+
+md(r"""### Paso 1 · Mecerse
+
+La función es como `pata_coja` (sección 9), pero con el CdM siguiendo una onda: y = −A · sen(2π·f·t), con un arranque suave de 1 s (el quíntico, para no empezar de golpe), los dos pies quietos y el reparto **ponderado** de fuerzas. En cada instante apunta el CdM pedido, el real y la lectura de los dos sensores de tacto (`tacto_d` y `tacto_i`, que pusimos en el constructor: la suma de las fuerzas normales que entran en el site de la planta, NB50). Y, como `pata_coja`, acepta una retrollamada `al_paso` (para el vídeo del final):
+"""),
+
+code(r"""def mecer(frecuencia, amplitud=0.06, segundos=6.0, al_paso=None):
+    '''Devuelve un array (t, y pedido, y real, carga pie derecho, carga pie izquierdo) y el instante de la caída (o None).'''
+    m_ = construir(config).compile()
+    d_ = mujoco.MjData(m_)
+    kp, kv = config.motores.kp, config.motores.kv
+    q, pelvis = ik_cdm(np.array([0.04, 0.0]), TOBILLO_D, TOBILLO_I)
+    d_.qpos[:] = q
+    mujoco.mj_forward(m_, d_)
+    anterior, registro = q[7:].copy(), []
+    for k in range(round(segundos / 0.01)):
+        t = k * 0.01
+        y = -amplitud * suave(t) * math.sin(2 * math.pi * frecuencia * t)
+        q, pelvis = ik_cdm(np.array([0.04, y]), TOBILLO_D, TOBILLO_I, pelvis)
+        orden = q[7:] + (kv / kp) * (q[7:] - anterior) / 0.01
+        anterior = q[7:].copy()
+        fraccion_d = float(np.clip((ANCHO - y) / (2 * ANCHO), 0, 1))
+        calc.qpos[:] = q
+        pares, _ = pares_de_pie_ponderado(m, calc, {"planta_d": fraccion_d, "planta_i": 1 - fraccion_d})
+        d_.ctrl[:] = orden + pares / kp
+        for _ in range(5):
+            mujoco.mj_step(m_, d_)
+        if al_paso is not None:
+            al_paso(d_)
+        registro.append((t, y, d_.subtree_com[1][1], d_.sensor("tacto_d").data[0], d_.sensor("tacto_i").data[0]))
+        if d_.qpos[2] < 0.5:
+            return np.array(registro), t
+    return np.array(registro), None
+
+lento, cae = mecer(0.2)
+print("¿se cae?", cae, "  error máximo del CdM:", f"{100 * np.abs(lento[:, 2] - lento[:, 1]).max():.2f} cm")"""),
+
+md(r"""A 0,2 Hz (una ida y vuelta cada 5 segundos), Zancudo sigue el CdM pedido a unos 3 mm, sin problemas.
+
+### Paso 2 · Lo que dicen los pies
+
+Del sensor de tacto sacamos la **fracción del peso** que carga el pie derecho: su carga dividida entre la suma de las dos. Y el LIPM la predice: si el ZMP está en p_y, entre los dos pies (en y = −ANCHO el derecho, en +ANCHO el izquierdo), el pie derecho carga (ANCHO − p_y) / (2·ANCHO), la regla de la palanca de la sección 9, pero con el **ZMP** en lugar del CdM:
+"""),
+
+code(r"""def fraccion_medida(registro):
+    return registro[:, 3] / (registro[:, 3] + registro[:, 4])
+
+def fraccion_lipm(registro, frecuencia):
+    p_y = registro[:, 1] * (1 + (2 * math.pi * frecuencia / OMEGA) ** 2)      # ZMP del LIPM (ignora el arranque)
+    return np.clip((ANCHO - p_y) / (2 * ANCHO), 0, 1)
+
+fig, ax = plt.subplots(figsize=(9, 3.5))
+ax.plot(lento[:, 0], fraccion_medida(lento), label="medida (sensores de tacto)")
+ax.plot(lento[:, 0], fraccion_lipm(lento, 0.2), "--", label="LIPM: el ZMP")
+ax.plot(lento[:, 0], np.clip((ANCHO - lento[:, 1]) / (2 * ANCHO), 0, 1), ":", label="si mandara el CdM (estático)")
+ax.set(xlabel="tiempo (s)", ylabel="fracción del peso en el pie derecho", title="Zancudo se mece a 0,2 Hz")
+ax.legend(loc="lower right")
+ax.grid(alpha=0.3)
+plt.show()"""),
+
+md(r"""Las tres curvas van juntas, oscilando entre 0,2 y 0,8: cuando el CdM está a 6 cm a la derecha, el pie derecho carga el 80 % del peso. A este ritmo tan lento, el ZMP casi coincide con el CdM (el factor 1 + (2π·0,2/3,72)² vale 1,11), y la cuenta "estática" (punteada) casi vale. La medida va un poco **por dentro** de las dos: el reparto real es algo menos extremo que el de la teoría.
+
+### Paso 3 · Cada vez más deprisa
+
+Ahora, la misma amplitud (6 cm) a más ritmo. Para cada frecuencia, la fracción **máxima** que llega a cargar un pie (medida y del LIPM), la carga **mínima** que llega a tener un pie (en N: si llega a 0, se ha despegado) y si se cae. Descartamos los 2 primeros segundos (el arranque):
+"""),
+
+code(r"""print(f"{'f (Hz)':>6} | {'factor ZMP/CdM':>14} | {'fracción máx. medida':>20} | {'LIPM':>5} | {'carga mín. (N)':>14} | ¿se cae?")
+for frecuencia in [0.2, 0.3, 0.4, 0.5, 0.6]:
+    registro, cae = mecer(frecuencia)
+    if cae is not None:
+        print(f"{frecuencia:6.1f} | {1 + (2 * math.pi * frecuencia / OMEGA) ** 2:14.2f} | {'':>20} | {'':>5} | {'':>14} | a los {cae:.1f} s")
+        continue
+    estable = registro[registro[:, 0] > 2]
+    medida = fraccion_medida(estable)
+    teoria = fraccion_lipm(estable, frecuencia)
+    print(f"{frecuencia:6.1f} | {1 + (2 * math.pi * frecuencia / OMEGA) ** 2:14.2f} | {max(medida.max(), 1 - medida.min()):20.2f} | "
+          f"{max(teoria.max(), 1 - teoria.min()):5.2f} | {estable[:, 3:].min():14.1f} | no")"""),
+
+md(r"""(`max(medida.max(), 1 − medida.min())` es la carga máxima de **cualquiera** de los dos pies: si el derecho llega a cargar poco, el izquierdo carga mucho.)
+
+La tabla sigue al LIPM de cerca:
+
+- **0,2-0,4 Hz**: la fracción máxima sube con la frecuencia (0,80 → 0,88), entre 3 y 6 centésimas por debajo de la predicción, y el pie que menos carga nunca baja de unos 27 N.
+- **0,5 Hz**: el LIPM predice que el ZMP llega **justo** al centro de un pie (fracción 1,00: el otro pie, a punto de despegarse). Medido: un pie carga el 97 % y el otro se queda con **7 N**, casi nada.
+- **0,6 Hz**: el ZMP tendría que ir más allá del centro del pie. El pie contrario se despega sin que nadie lo haya planeado, el robot se queda sobre el **borde** de un solo pie... y se cae.
+
+### Paso 4 · La frontera, con una fórmula
+
+¿A qué frecuencia exacta empieza a despegarse un pie? Cuando el ZMP llega al centro del pie, |p_y| = ANCHO:
+
+```
+   A · (1 + (2π·f / ω)²) = ANCHO      →      f* = (ω / 2π) · √(ANCHO / A − 1)
+```
+"""),
+
+code(r"""f_limite = OMEGA / (2 * math.pi) * math.sqrt(ANCHO / 0.06 - 1)
+print(f"frecuencia límite para A = 6 cm: {f_limite:.2f} Hz  (una ida y vuelta cada {1 / f_limite:.1f} s)")"""),
+
+md(r"""**0,48 Hz**: justo entre el 0,5 que casi despega y el 0,4 que va sobrado. El LIPM, una ecuación de una línea, predice la frontera.
+
+Y mira lo que significa para **andar**. Una persona da unos 2 pasos por segundo: el peso va y vuelve de un pie al otro **una vez por segundo** (1 Hz). A ese ritmo, para que ningún pie se despegue, el CdM solo puede mecerse A = ANCHO / (1 + (2π/ω)²) ≈ 2,6 cm. Para pasar el peso **entero** de un pie al otro (10 cm) a ritmo de andar, **no hay más remedio que despegar un pie**. Justo lo que es andar: el pie se levanta porque el ZMP ya se ha ido al otro. Por eso un robot (o una persona) que anda mece el cuerpo muy poco, unos pocos centímetros, y no lleva el CdM encima de cada pie como hicimos en la pata coja.
+
+### Paso 5 · Verlo
+
+El GIF del caso que se cae, 0,6 Hz, con la cámara de frente (la `grabadora` de la sección 9). Fíjate en el momento en que un pie se despega del suelo:
+"""),
+
+code(r"""fotos, al_paso = grabadora(construir(config).compile(), camara="frente", cada=4)
+registro, cae = mecer(0.6, al_paso=al_paso)
+print(f"se cae a los {cae:.1f} s" if cae is not None else "no se cae")
+imageio.mimsave("assets/nb53_se_mece.gif", fotos, fps=25, loop=0)
+Image(filename="assets/nb53_se_mece.gif")"""),
+
+md(r"""Al principio se mece con normalidad; en cada vaivén, el pie que se descarga se despega un poco más, hasta que Zancudo se queda apoyado en el **canto** de un solo pie y vuelca de lado. Es la caída de la pata coja de la sección 10 (de lado, con un pie, el margen era de solo 4 cm), provocada por su propio balanceo.
+"""),
+
+md(r"""### Tus retos
+
+**R1.** Con amplitud de **3 cm** en vez de 6, ¿qué frecuencia límite predice la fórmula? Compruébalo con `mecer` un poco por debajo y un poco por encima.
+
+**R2.** A ritmo de andar más rápido, 1,25 Hz (un paso cada 0,4 s), ¿cuánto puede mecerse el CdM sin despegar ningún pie, según el LIPM? Prueba con `mecer` 1 cm y 1,5 cm, y mira la carga mínima de los pies.
+"""),
+
+md(r'''<details>
+<summary>▶ Solución R1</summary>
+
+```python
+print("f* =", OMEGA / (2 * math.pi) * math.sqrt(ANCHO / 0.03 - 1))
+for frecuencia in [0.8, 0.9]:
+    registro, cae = mecer(frecuencia, amplitud=0.03)
+    if cae is None:
+        estable = registro[registro[:, 0] > 2]
+        print(frecuencia, "carga mín.", estable[:, 3:].min().round(1), "fracción máx.", fraccion_medida(estable).max().round(2))
+    else:
+        print(frecuencia, "se cae a los", cae)
+```
+
+La fórmula da **0,90 Hz**: con la mitad de amplitud, se puede ir casi el doble de rápido (la raíz de 0,1/0,03 − 1 = 2,33 frente a la de 0,1/0,06 − 1 = 0,67). A **0,8 Hz** aguanta, con un pie cargando el 91 % (el LIPM decía 92 %); a **0,9 Hz**, justo en la frontera, se cae. Menos amplitud, más ritmo: es el compromiso de toda marcha.
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+f = 1.25
+print("A máxima según el LIPM:", ANCHO / (1 + (2 * math.pi * f / OMEGA) ** 2))
+for amplitud in [0.01, 0.015]:
+    registro, cae = mecer(f, amplitud=amplitud)
+    estable = registro[registro[:, 0] > 2]
+    print(amplitud, "carga mín.", estable[:, 3:].min().round(1), "N;  fracción máx.", fraccion_medida(estable).max().round(2),
+          " LIPM:", fraccion_lipm(estable, f).max().round(2))
+```
+
+El LIPM dice **1,8 cm**. Con **1 cm**, perfecto: un pie carga como mucho el 78 % (el LIPM decía 77 %) y el otro nunca baja de 48 N. Con **1,5 cm**, el LIPM predice que un pie llegaría al 91 %... y en la simulación se **despega** (carga mínima 0). Cerca del límite y a ritmo rápido, la teoría vuelve a ser optimista, como en la sección 10: el ZMP no llega del todo al centro del pie antes de que el otro se levante (las piernas también se aceleran de lado, y el LIPM las supone sin masa). A ritmo de andar, Zancudo puede mecerse **un centímetro y poco**: el resto del trabajo de pasar el peso lo hace levantar el pie.
+</details>
+'''),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- **Sensores de tacto como báscula**: `d.sensor("tacto_d").data[0]` da la fuerza normal sobre la planta; con dos, la **fracción del peso** de cada pie.
+- **El LIPM lateral, medido en un robot 3D**: el ZMP se mece A · (1 + (2π·f/ω)²); la carga de cada pie lo sigue a unas centésimas mientras los dos pies apoyan.
+- **La frontera f* = (ω/2π)·√(ANCHO/A − 1)**: por encima, un pie se despega sin que nadie lo planee. 0,48 Hz con 6 cm; 0,9 Hz con 3 cm.
+- **La lección de locomoción**: a ritmo de andar, el CdM apenas puede mecerse un par de centímetros con los dos pies en el suelo; pasar el peso de verdad **exige** levantar un pie. Andar es una sucesión de pequeñas caídas de lado a lado.
+
+En la práctica del **NB54** pondrás a prueba el **entorno de Gymnasium profesional** de Zancudo 3D, con la **gravedad proyectada** del E1 entre sus observaciones: el primer paso para que aprenda a andar en 3D por sí mismo.
+"""),
+
+md(r"""## 15 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

@@ -14,6 +14,11 @@ siempre detrás, arrastrada). Primer arreglo: alternar apoyos con el reloj de
 fase (ZancudoAlterno) → galope con ritmo (Goodhart otra vez, los términos se
 pelean). Segundo arreglo: seguir una referencia de separación de los pies
 (ZancudoZancada) → se cruzan 25 veces en 10 s, anda. Ejercicios resueltos.
+Práctica en MuJoCo: la recompensa, por dentro. Términos grabados de info y aportación
+de cada uno (manda la velocidad); repuntuar sin simular: con la recompensa moldeada
+el galope (completa) GANA a zancada_1; mj_contactForce frente a la lista de contactos:
+el término de vuelo se deja engañar (completa: 18 % de aire según la lista, 36 % según
+la fuerza; pie arrastrado que roza sin empujar).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -673,7 +678,214 @@ En `entrenar_moldeado.py`, añade `"sin_patinar": dict(peso_patinar=0.5)` a `VAR
 </details>
 """),
 
-md(r"""## 12 · Posdata
+md(r"""## 12 · 🛠 Práctica en MuJoCo: la recompensa, por dentro
+
+Hoy hemos juzgado a los agentes **mirándolos** (los GIF) y **midiendo** lo que queríamos (velocidad, aire, cruces...). Pero hay una tercera mirada que no hemos hecho: abrir la **recompensa** y ver, paso a paso, **cuánto paga cada término**. Es lo primero que hace un ingeniero de locomoción cuando un agente hace algo raro: "¿qué está cobrando, exactamente?".
+
+Y una cuarta, que es de MuJoCo: cada término se calcula con algo que mide el simulador (una velocidad, una altura, una lista de contactos). **¿Mide de verdad lo que dice medir?** Si no, el agente lo descubrirá antes que tú.
+
+El plan:
+
+1. Grabar los términos de un episodio, para cualquier agente.
+2. Ver cuánto aporta cada uno: ¿cuál manda?
+3. **Repuntuar** sin volver a simular: ¿qué agente gana con cada recompensa?
+4. Comprobar el término de vuelo con las **fuerzas** de contacto de MuJoCo.
+"""),
+
+md(r"""### Paso 1 · Grabar los términos
+
+`ZancudoZancada` calcula **todos** los términos de la lección (los cinco de `ZancudoMoldeado`, el de alternar y el de zancada) y los deja en `info` (lo viste al leer su código). Así que lo usamos como **medidor** para cualquier agente, se haya entrenado con la recompensa que sea: igual que hicimos con `medir_forma`, el entorno solo nos interesa para medir.
+
+La función juega 500 pasos (10 s) y devuelve una tabla: una fila por paso, una columna por término (en bruto, sin multiplicar por su peso):
+"""),
+
+code(r"""TERMINOS = ["r_velocidad", "r_recto", "en_el_aire", "exceso", "cambio", "r_alterna", "r_zancada"]
+
+def grabar_terminos(politica, semilla=0, pasos=500):
+    entorno = ZancudoZancada(peso_zancada=1.0)
+    observacion, info = entorno.reset(seed=semilla)
+    filas = []
+    for paso in range(pasos):
+        observacion, recompensa, terminado, truncado, info = entorno.step(politica(observacion))
+        filas.append([info[t] for t in TERMINOS])
+        if terminado:
+            break
+    return np.array(filas)
+
+tabla = grabar_terminos(agentes["completa"])
+print(tabla.shape)
+print(tabla[:3].round(3))"""),
+
+md(r"""500 filas y 7 columnas. Las tres primeras filas son el arranque, y se nota: los números bailan mucho de un paso al siguiente (`r_velocidad` pasa de 0,98 a 0,06 en dos pasos, mientras el robot se pone en marcha) y `cambio` es grande (la primera acción se compara con una "anterior" que era cero). Por eso lo que cuenta son las **medias** de todo el episodio.
+
+### Paso 2 · ¿Qué término manda?
+
+Para saber cuánto aporta cada término **de media por paso**, se multiplica la media de su columna por su **peso**, con su signo (los castigos restan). Los pesos son los de `ZancudoZancada` con `peso_zancada=1`: los cinco de `ZancudoMoldeado` (sección 4), más 0,5 para alternar y 1 para la zancada. Y la vida, que no está en la tabla porque vale siempre 1:
+"""),
+
+code(r"""PESOS = {"r_velocidad": 1.0, "r_recto": 0.3, "en_el_aire": -0.5, "exceso": -2.0, "cambio": -0.05,
+         "r_alterna": 0.5, "r_zancada": 1.0}
+VIDA = 0.2
+
+def aportaciones(tabla):
+    medias = tabla.mean(axis=0)                                 # la media de cada columna (NB27)
+    aporta = {t: PESOS[t] * medias[k] for k, t in enumerate(TERMINOS)}
+    aporta["vida"] = VIDA
+    return aporta
+
+registros = {nombre: grabar_terminos(agentes[nombre]) for nombre in ["NB43 (sin moldear)", "completa", "zancada_1"]}
+print(f"{'término':>12} | " + " | ".join(f"{n:>18}" for n in registros))
+filas = {n: aportaciones(t) for n, t in registros.items()}
+for termino in ["r_velocidad", "r_recto", "vida", "en_el_aire", "exceso", "cambio", "r_alterna", "r_zancada"]:
+    print(f"{termino:>12} | " + " | ".join(f"{filas[n][termino]:+18.3f}" for n in registros))"""),
+
+md(r"""Léela por columnas:
+
+- **`completa`**: casi todo lo que cobra viene de la **velocidad** (+0,97 de 1 posible: va a 1 m/s clavado). Luego, recto (+0,29) y vida (+0,2). Los castigos son pequeños: el mayor, el de vuelo (−0,09). La de alternar (+0,28) y la de zancada (+0,01) no las cobraba en su entrenamiento, pero las medimos igual: casi no da zancadas "de verdad".
+- **`zancada_1`**: la velocidad baja un poco (+0,89), paga algo más de vuelo (−0,14)... y a cambio cobra casi el **máximo** del término de zancada (+0,98).
+- **NB43**: con la recompensa de hoy le iría fatal. Su velocidad (más de 4 m/s) cae fuera de la campana (+0,03) y el castigo de vuelo (−0,35, vuela el 69 % del tiempo) y el de pie alto (−0,17) se lo comen.
+
+### Paso 3 · Repuntuar sin volver a simular
+
+Tenemos los términos **en bruto** de cada paso. Así que podemos calcular qué nota sacaría cada agente con **cualquier** combinación de pesos, sin volver a simular nada: basta con volver a sumar. Es una herramienta muy potente (y muy barata) para diseñar recompensas: antes de gastar horas de entrenamiento con unos pesos nuevos, compruebas cómo puntúan a comportamientos que ya conoces.
+
+Una pregunta clave de la lección: con la recompensa de **la sección 4** (solo los cinco términos de `ZancudoMoldeado`), ¿quién gana, el que galopa o el que anda?
+"""),
+
+code(r"""def nota_por_paso(aporta, terminos):
+    return sum(aporta[t] for t in terminos)
+
+MOLDEADO = ["r_velocidad", "r_recto", "vida", "en_el_aire", "exceso", "cambio"]
+ZANCADA = MOLDEADO + ["r_alterna", "r_zancada"]
+for nombre, aporta in filas.items():
+    print(f"{nombre:>18}: con la recompensa moldeada {nota_por_paso(aporta, MOLDEADO):+.3f} por paso  |  "
+          f"con la de zancada {nota_por_paso(aporta, ZANCADA):+.3f}")"""),
+
+md(r"""Con la recompensa **moldeada**, **el galope gana**: `completa` saca 1,35 por paso y `zancada_1`, que anda, solo 1,22. Así que PPO **no se equivocó** al galopar: con aquella recompensa, galopar era **mejor**. Lo que estaba mal era la recompensa, no el aprendizaje. Con la de **zancada**, en cambio, `zancada_1` arrasa (2,62 frente a 1,64), y casi toda la diferencia es un solo término: la zancada (0,98 frente a 0,01).
+
+Esta es la forma rigurosa de decir lo que en la sección 8 dijimos con palabras: **el agente optimiza la recompensa que le das**. Si el comportamiento que quieres no es el que más puntúa con tu recompensa, ningún algoritmo lo encontrará.
+
+### Paso 4 · ¿Mide bien el término de vuelo?
+
+El término de vuelo usa `pies_en_el_suelo()`, que mira la **lista de contactos** de MuJoCo (`datos.contact`): si hay un contacto entre un pie y el suelo, ese pie "toca". Pero que dos formas se toquen no quiere decir que una **empuje** a la otra. MuJoCo apunta un contacto en cuanto las formas se solapan, aunque sea una fracción de milímetro; la **fuerza** la decide después el solucionador, y puede ser **cero** (por ejemplo, si el pie ya se está levantando: un contacto solo puede empujar, nunca tirar). Lo verás a fondo en el NB48.
+
+La fuerza de cada contacto se pide con **`mujoco.mj_contactForce(modelo, datos, i, f)`**: rellena un array `f` de 6 números, y el **primero** es la fuerza **normal** (la que empuja perpendicular al suelo). Sumemos la de cada pie:
+"""),
+
+code(r"""def fuerza_pies(entorno):
+    f = np.zeros(6)                                        # mj_contactForce escribe aquí sus 6 números
+    total = [0.0, 0.0]                                     # pie derecho, pie izquierdo
+    for i in range(entorno.datos.ncon):
+        c = entorno.datos.contact[i]
+        for k, pie in enumerate(entorno.pies):
+            if {c.geom1, c.geom2} == {pie, entorno.suelo}:   # este contacto es pie-suelo (en cualquier orden)
+                mujoco.mj_contactForce(entorno.modelo, entorno.datos, i, f)
+                total[k] += f[0]
+    return total
+
+def lista_frente_a_fuerza(politica, semilla=0, pasos=500):
+    entorno = ZancudoMoldeado()
+    observacion, info = entorno.reset(seed=semilla)
+    tocan, fuerzas = [], []
+    for paso in range(pasos):
+        observacion, recompensa, terminado, truncado, info = entorno.step(politica(observacion))
+        tocan.append(entorno.pies_en_el_suelo())
+        fuerzas.append(fuerza_pies(entorno))
+    return np.array(tocan), np.array(fuerzas)"""),
+
+md(r"""(`{c.geom1, c.geom2} == {pie, entorno.suelo}` compara dos **conjuntos** (NB21): son iguales si tienen los mismos elementos, en cualquier orden. Es una forma corta de escribir el `or` de `pies_en_el_suelo`.)
+
+Ahora, para cada agente, el porcentaje del tiempo en el aire según la **lista** (lo que usa la recompensa) y según la **fuerza** (ningún pie empuja más de 1 N), y cuánto tiempo pasa cada pie "tocando" sin empujar:
+"""),
+
+code(r"""print(f"{'agente':>20} | {'aire (lista)':>12} | {'aire (fuerza)':>13} | {'toca sin empujar (der / izq)':>28}")
+for nombre in ["NB43 (sin moldear)", "completa", "sin_vuelo", "zancada_1"]:
+    tocan, fuerzas = lista_frente_a_fuerza(agentes[nombre])
+    aire_lista = 100 * np.mean(~tocan.any(axis=1))
+    aire_fuerza = 100 * np.mean((fuerzas < 1.0).all(axis=1))
+    fantasma = 100 * np.mean(tocan & (fuerzas < 1.0), axis=0)
+    print(f"{nombre:>20} | {aire_lista:11.1f} % | {aire_fuerza:12.1f} % | {fantasma[0]:12.1f} % / {fantasma[1]:.1f} %")"""),
+
+md(r"""(`~` niega un array de verdaderos y falsos, `.any(axis=1)` pregunta "¿alguno?" en cada fila y `.all(axis=1)`, "¿todos?": NB27.)
+
+**El término de vuelo se deja engañar.** Según la lista de contactos, `completa` está en el aire el **18 %** del tiempo; según las fuerzas, el **36 %**: el doble. ¿Dónde está la diferencia? En la última columna: el pie **izquierdo** (el que va arrastrado, sección 7) pasa el **28 %** del tiempo "tocando" el suelo **sin empujarlo**: rozándolo, apenas solapado, mientras se levanta. Para la recompensa, eso es "tener un pie en el suelo", y el castigo de vuelo no se cobra.
+
+Con `sin_vuelo` pasa lo mismo (40 % frente a 65 %), y con `zancada_1`, bastante menos (29 % frente a 39 %: cada pie, un 5 %). En cambio, el agente del NB43, que nunca tuvo un castigo de vuelo, casi no tiene contactos fantasma (69 % frente a 70 %).
+
+Fíjate en lo que significa: **la medida tiene un agujero, y los agentes a los que se castigaba por volar son justo los que lo usan**. Nadie les enseñó a hacerlo a propósito: rozar el suelo con un pie salía más barato que volar, y PPO lo encontró. Es Goodhart (sección 2) a nivel de **sensor**. La lección de ingeniería: un término de la recompensa es tan bueno como la **medida** que usa. En un robot real, el "pie en el suelo" lo daría un sensor de fuerza con un umbral, que es lo que acabamos de hacer con `mj_contactForce`.
+"""),
+
+md(r"""### Tus retos
+
+**R1.** Repuntúa con la recompensa moldeada pero castigando el vuelo **4 veces más** (peso −2 en vez de −0,5). ¿Gana ahora `zancada_1`? ¿Hay algún peso de vuelo con el que ganaría?
+
+**R2.** Escribe `aportaciones_fuerza(tabla, politica)`: como `aportaciones`, pero con el término de vuelo medido con la **fuerza** (sustituye la columna `en_el_aire` por lo que da `lista_frente_a_fuerza`). ¿Cambia el ganador con la recompensa moldeada?
+
+**R3.** Dibuja, para `completa`, la fuerza de cada pie durante los primeros 2 segundos (100 pasos), dividida por el peso del robot (23,6 kg × 9,81). ¿Qué hace el pie izquierdo?
+"""),
+
+md(r'''<details>
+<summary>▶ Solución R1</summary>
+
+```python
+for peso_vuelo in [-0.5, -2.0]:
+    for nombre in ["completa", "zancada_1"]:
+        aporta = dict(filas[nombre])
+        aporta["en_el_aire"] = peso_vuelo * registros[nombre][:, TERMINOS.index("en_el_aire")].mean()
+        print(peso_vuelo, nombre, round(nota_por_paso(aporta, MOLDEADO), 3))
+```
+
+Con −2, `completa` saca **1,08** y `zancada_1`, **0,79**: sigue ganando el galope, y por más. No hay peso de vuelo que lo arregle: `zancada_1` **vuela más** (29 % frente a 18 %, según la lista), así que cuanto más se castiga el vuelo, peor le va. Y en los demás términos tampoco gana (va algo más lenta y da más tirones; solo va un pelín más recta). Ningún reparto razonable de esos cinco pesos convierte el andar en lo mejor: por eso hizo falta un término **nuevo**, el de zancada. Moldear no es solo afinar pesos; a veces falta pedir algo que no estaba en la lista.
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+def aportaciones_fuerza(tabla, politica):
+    tocan, fuerzas = lista_frente_a_fuerza(politica)
+    nueva = tabla.copy()
+    nueva[:, TERMINOS.index("en_el_aire")] = (fuerzas < 1.0).all(axis=1)
+    return aportaciones(nueva)
+
+for nombre in ["completa", "zancada_1"]:
+    print(nombre, round(nota_por_paso(aportaciones_fuerza(registros[nombre], agentes[nombre]), MOLDEADO), 3))
+```
+
+`completa` baja de 1,35 a **1,26** y `zancada_1`, de 1,22 a **1,17**: el galope sigue ganando. Medir bien el vuelo le quita a `completa` su trampa, pero no basta para que andar sea mejor. (Los dos episodios son el mismo, semilla 0, así que las filas encajan una a una.) Si quisieras entrenar con la medida buena, cambiarías `pies_en_el_suelo` para que use la fuerza... y el agente buscaría el **siguiente** agujero. El bucle de la sección 8.
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+```python
+tocan, fuerzas = lista_frente_a_fuerza(agentes["completa"], pasos=100)
+peso = 23.6 * 9.81
+t = np.arange(1, 101) * 0.02
+fig, ax = plt.subplots(figsize=(9, 3.5))
+ax.plot(t, fuerzas[:, 0] / peso, color="tab:orange", label="pie derecho")
+ax.plot(t, fuerzas[:, 1] / peso, color="tab:purple", label="pie izquierdo")
+ax.set(xlabel="tiempo (s)", ylabel="fuerza del suelo / peso")
+ax.legend()
+ax.grid(alpha=0.3)
+plt.show()
+```
+
+Los dos pies van **a golpes**: el derecho (el de delante) con picos de hasta **5 veces el peso**, y el izquierdo, de hasta 4; y entre golpe y golpe, cada pie pasa más de la mitad del tiempo sin cargar **nada**. Un andar tranquilo se vería muy distinto: curvas anchas y suaves, alrededor de 1 peso, pasando de un pie al otro. Esto son saltitos con aterrizajes duros, y cada uno es un martillazo para los motores de un robot real (NB40). (Ojo: miramos la fuerza 50 veces por segundo, una vez por decisión; los picos de verdad, entre una decisión y la siguiente, pueden ser algo mayores.)
+</details>
+'''),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- **Grabar los términos de la recompensa** desde `info`, y **repuntuar** sin volver a simular: cambiar pesos es solo volver a sumar.
+- **Un contacto en `datos.contact` no es una fuerza**: MuJoCo apunta los contactos en cuanto las formas se solapan, y la fuerza puede ser cero.
+- **`mj_contactForce(modelo, datos, i, f)`**: la fuerza del contacto i; `f[0]` es la normal.
+- **La lección de robótica**: cada término de la recompensa depende de una **medida**, y si la medida tiene un agujero, el agente lo encuentra (el pie que roza el suelo sin pisarlo).
+
+En la práctica del **P1**, la primera del puente de Python, leerás una función que no has escrito tú (la cinemática inversa de la pierna de Zancudo) y comprobarás en el simulador si hace lo que dice.
+"""),
+
+md(r"""## 13 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

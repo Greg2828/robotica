@@ -13,6 +13,12 @@ gestores de contexto (__enter__/__exit__, contextlib.contextmanager,
 try/finally). Nuevo: rendimiento con timeit, cProfile/pstats
 (el entorno frente a PPO), el GIL, hilos (mujoco.rollout) y procesos
 (ProcessPoolExecutor, pickle del modelo).
+Práctica en MuJoCo: ¿con qué entrenarías a Zancudo? Desde los arranques del NB43,
+con Euler y 0,002 el tobillo tiembla a 250 Hz (par ±150 alternando en cada pasito,
+ciclo límite sin aviso) y "quieto" se cae en las semillas 0 y 2: pasito·kv/inercia
+= 2,49 > 2 (inercia de mj_fullM). implicitfast lo arregla; el campeón sigue corriendo
+con implicitfast 0,002 (sim-to-sim) pero se cae con 0,005/0,01: el pasito lo decide
+la tarea. Elección: implicitfast 0,002.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -945,7 +951,253 @@ Los dos dan lo mismo: **cae desde 16 N** (de 10 a 15 aguanta), igual que en el N
 </details>
 '''),
 
-md(r"""## 13 · Posdata
+md(r"""## 13 · 🛠 Práctica en MuJoCo: ¿con qué entrenarías a Zancudo?
+
+En la sección 5 pusimos a Zancudo de pie con cada integrador y cada pasito, y Euler con 0,002 salía bien: "de pie". Pero allí mismo te avisé: estar de pie quieto, partiendo de la postura de fábrica, es la prueba **fácil**. Lo profesional es comprobarlo con la **tarea de verdad**. Y para Zancudo, la tarea de verdad es la del NB43: el entorno de Gymnasium (que arranca cada episodio en una postura agachada con un poco de azar) y el campeón que corre a más de 4 m/s.
+
+Recuerda que ese entorno usa el `zancudo.xml` del NB42 **tal cual**: integrador `Euler` (el de por defecto) y pasito 0,002. Con él entrenamos al campeón. Hoy vas a hacerle la revisión médica que no le hicimos entonces, con las herramientas de esta lección:
+
+1. **Quieto**, desde los 10 arranques del entorno, con Euler y con implicitfast.
+2. Mirar de cerca lo que sale raro: la **huella** de una inestabilidad numérica.
+3. Explicarlo con la regla de la sección 4 (pasito · λ < 2), leyendo la inercia del propio modelo.
+4. El campeón, corriendo, con otros integradores y pasitos: ¿cuál es el pasito más grande que sirve **para la tarea**?
+5. La velocidad de cada opción, y la decisión.
+"""),
+
+md(r"""### Paso 1 · Quieto, desde los arranques del NB43
+
+La función prepara un `Zancudo()` del NB43, le cambia el integrador y el pasito **antes** del `reset` (cada entorno carga su propio modelo, así que el cambio no afecta a nada más y no hace falta restaurarlo), lo arranca con una semilla y lo deja 6 segundos con los motores pidiendo la postura base (la acción "quieto"). Devuelve si se ha caído y qué fracción del tiempo hay algún motor **al límite** de su par (±150 N·m, NB42), descontando los dos primeros segundos:
+"""),
+
+code(r"""from zancudo_env import Zancudo
+
+EULER, IMPLICITFAST = mujoco.mjtIntegrator.mjINT_EULER, mujoco.mjtIntegrator.mjINT_IMPLICITFAST
+
+def quieto(integrador: int, dt: float, semilla: int, segundos: float = 6.0) -> tuple[bool, float]:
+    entorno = Zancudo()
+    entorno.modelo.opt.integrator, entorno.modelo.opt.timestep = integrador, dt
+    entorno.reset(seed=semilla)                                  # la postura de partida del NB43
+    m, d = entorno.modelo, entorno.datos
+    al_limite = []
+    for paso in range(round(segundos / dt)):
+        d.ctrl[:] = entorno.postura_base                         # la acción "quieto"
+        mujoco.mj_step(m, d)
+        al_limite.append(np.abs(d.actuator_force).max() > 149)
+    cae = 0.865 + d.qpos[1] < 0.55                               # el criterio de caída del NB43
+    return cae, float(np.mean(al_limite[len(al_limite) // 3:]))
+
+for nombre, integrador in [("Euler", EULER), ("implicitfast", IMPLICITFAST)]:
+    resultados = [quieto(integrador, 0.002, semilla) for semilla in range(10)]
+    print(f"{nombre:>12}, pasito 0,002:  se cae en las semillas {[s for s, (cae, _) in enumerate(resultados) if cae]};  "
+          f"motores al límite: {[round(f, 2) for _, f in resultados]}")"""),
+
+md(r"""Con **Euler**, Zancudo **se cae** en las semillas **0 y 2**... y en otras seis (1, 3, 5, 6, 7 y 9), aunque no se cae, tiene un motor **al límite de su par** dos tercios del tiempo, **estando quieto**. Solo las semillas 4 y 8 están tranquilas. Con **implicitfast**, ni una caída y ningún motor al límite.
+
+¿Te suena lo de las semillas 0 y 2? En el NB43 (sección 3), la política "quieto" sacaba 832,6 puntos porque se caía de espaldas justo en esas dos semillas, y lo atribuimos al pequeño azar de la postura de partida. **No era eso.** Con el mismo azar y implicitfast, no se cae. Algo va mal en la simulación con Euler.
+
+### Paso 2 · La huella
+
+Miremos de cerca la semilla 1 (no se cae, pero tiene un motor al límite): el par de cada tobillo durante 20 pasitos seguidos (0,04 s), a los 3 segundos:
+"""),
+
+code(r"""fig, ax = plt.subplots(figsize=(9, 3.5))
+for nombre, integrador, estilo in [("Euler", EULER, "o-"), ("implicitfast", IMPLICITFAST, "s--")]:
+    entorno = Zancudo()
+    entorno.modelo.opt.integrator = integrador
+    entorno.reset(seed=1)
+    pares = []
+    for paso in range(1520):
+        entorno.datos.ctrl[:] = entorno.postura_base
+        mujoco.mj_step(entorno.modelo, entorno.datos)
+        pares.append(entorno.datos.actuator_force[[2, 5]].copy())       # tobillos derecho e izquierdo
+    pares = np.array(pares[1500:])
+    ax.plot(pares[:, 1], estilo, label=f"tobillo izquierdo, {nombre}")
+    print(f"{nombre:>12}: par del tobillo izquierdo en 6 pasitos seguidos: {pares[:6, 1].round(1)}")
+ax.set(xlabel="pasito (a partir de t = 3 s)", ylabel="par (N·m)", title="Zancudo QUIETO")
+ax.legend()
+ax.grid(alpha=0.3)
+plt.show()"""),
+
+md(r"""Con Euler, el tobillo izquierdo da **+150, −150, +150, −74, +112, −150...**: cambia de signo **en cada pasito**, casi siempre al máximo. Es una oscilación de periodo 2 pasitos, 0,004 s: **250 veces por segundo**. Con implicitfast, el par es pequeño y tranquilo.
+
+Esa es la **huella** de una inestabilidad numérica, y conviene grabársela: **una magnitud que cambia de signo en cada pasito**. Ningún fenómeno físico de Zancudo oscila exactamente al ritmo del integrador: es el integrador "pasándose" una y otra vez, como el muelle de la sección 4. Y no ha explotado (ni MuJoCo ha dado ningún aviso) porque el motor tiene un **tope**: el par no puede pasar de 150, y la oscilación se queda atrapada ahí, como un **ciclo límite** (NB39b). La simulación está rota y no lo parece: Zancudo está de pie, quieto a simple vista, con un tobillo vibrando a 250 Hz.
+
+### Paso 3 · La explicación, con los números del modelo
+
+Es la regla de la sección 4 para un amortiguador: Euler frena "de más" y explota si **pasito · λ > 2**, con **λ = kv / inercia**. El `kv` de los motores de Zancudo es 20 (NB42). ¿Y la inercia del tobillo? Está en la **diagonal de la matriz de masas** (NB45): cuánto cuesta acelerar cada articulación ella sola.
+"""),
+
+code(r"""entorno = Zancudo()
+entorno.reset(seed=1)
+m, d = entorno.modelo, entorno.datos
+M = np.zeros((m.nv, m.nv))
+mujoco.mj_fullM(m, d, M)                                  # la matriz de masas (NB45)
+kv = -m.actuator_biasprm[0, 2]
+for nombre in ["cadera_d", "rodilla_d", "tobillo_d"]:
+    k = m.joint(nombre).dofadr[0]
+    inercia = M[k, k]
+    print(f"{nombre:>10}: inercia {inercia:.4f} kg·m²   λ = kv / inercia = {kv / inercia:7.0f} 1/s   "
+          f"pasito·λ = {0.002 * kv / inercia:.2f}")"""),
+
+md(r"""El pie es una pieza **ligera** (0,8 kg) y **pequeña**, y casi toda su inercia (0,016 kg·m²) es la `armature` de 0,01 que tiene cada articulación en el MJCF del NB42 (la inercia del rotor del motor: la verás a fondo en el NB50). Con kv = 20, λ = 1.246 1/s, y con el pasito de 0,002: **pasito · λ = 2,49**. ¡Por encima de 2! La cadera y la rodilla, que mueven piezas mucho más pesadas, están lejísimos del límite. El tobillo es el **eslabón débil**.
+
+Exactamente lo de la sección 4: el problema no es la rigidez del motor (kp), es su **amortiguación** (kv) sobre una inercia **pequeña**. Y por eso implicitfast lo arregla, al mismo coste: trata el `kv` de forma implícita.
+
+¿Por qué no se veía en la sección 5? Porque allí Zancudo partía de su postura de fábrica, en reposo perfecto, y el tobillo nunca recibía un "golpe" que encendiera la oscilación. Desde los arranques del NB43, con su azar, sí. Lección: **pruébalo en las condiciones de la tarea**.
+
+### Paso 4 · El campeón, en otros mundos numéricos
+
+El campeón del NB43 aprendió a correr **con** ese tobillo tembloroso. ¿Sigue corriendo si arreglamos la simulación? Y si implicitfast aguanta pasitos grandes, ¿podemos entrenar más deprisa con un pasito de 0,005 o 0,01? Para que la política siga decidiendo 50 veces por segundo, hay que ajustar el submuestreo del entorno: 0,02 / pasito pasitos por decisión.
+"""),
+
+code(r"""from pathlib import Path
+import torch
+from stable_baselines3 import PPO
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import VecNormalize
+torch.set_num_threads(1)
+
+agente = PPO.load(Path("modelos") / "zancudo_defecto_mejor")
+normalizador = VecNormalize.load(Path("modelos") / "zancudo_defecto_mejor_norm.pkl", make_vec_env("Zancudo-v0", n_envs=1))
+normalizador.training = False
+campeon = lambda obs: agente.predict(normalizador.normalize_obs(obs), deterministic=True)[0]
+
+def correr(integrador: int, dt: float, semilla: int, decisiones: int = 500) -> float | None:
+    '''Velocidad media en 10 s, o None si se cae.'''
+    entorno = Zancudo()
+    entorno.modelo.opt.integrator, entorno.modelo.opt.timestep = integrador, dt
+    entorno.submuestreo = round(0.02 / dt)                 # 50 decisiones por segundo, siempre
+    entorno.dt = dt * entorno.submuestreo
+    observacion, _ = entorno.reset(seed=semilla)
+    x0 = entorno.datos.qpos[0]
+    for _ in range(decisiones):
+        observacion, _, cae, _, _ = entorno.step(campeon(observacion))
+        if cae:
+            return None
+    return (entorno.datos.qpos[0] - x0) / (decisiones * 0.02)
+
+for nombre, integrador, dt in [("Euler", EULER, 0.002), ("implicitfast", IMPLICITFAST, 0.002),
+                               ("implicitfast", IMPLICITFAST, 0.005), ("implicitfast", IMPLICITFAST, 0.01)]:
+    with Cronometro(f"{nombre}, {dt}"):
+        velocidades = [correr(integrador, dt, semilla) for semilla in range(3)]
+    print("    velocidades:", ["se cae" if v is None else f"{v:.2f} m/s" for v in velocidades])"""),
+
+md(r"""(`Cronometro`, el gestor de contexto de la sección 8, nos dice de paso cuánto tarda cada prueba.)
+
+Tres resultados, y los tres importan:
+
+1. **Con implicitfast y 0,002, el campeón sigue corriendo**, a unos 4 m/s (algo menos que los ~4,3 de su mundo de entrenamiento). Es una prueba **sim-to-sim**: cambiar algo del simulador que no debería importar y ver si la política lo nota (la haremos en serio en el NB61). Lo nota un poco, pero no depende del temblor para correr.
+2. **Con 0,005, se cae** en 2 de los 3 intentos, y **con 0,01, siempre**. Quieto aguantaba hasta 0,02 (sección 5); corriendo, con aterrizajes y contactos bruscos, no pasa de 0,002. El pasito lo decide la **tarea**, no la prueba fácil.
+3. Los tiempos: las dos primeras pruebas tardan lo mismo (unos 6,4 s), porque lo que más cuesta aquí es la **red neuronal** decidiendo 1.500 veces (lo viste con `cProfile` en la sección 9), no la física. Las de 0,005 y 0,01 tardan menos solo porque se caen antes.
+
+### Paso 5 · La decisión
+
+Falta comparar el coste de la física sola, con `timeit` (sección 9). Las tres opciones que no tiemblan: Euler con un pasito más pequeño (0,001, pasito · λ = 1,24), implicitfast con 0,002, y la de referencia:
+"""),
+
+code(r"""print(f"{'opción':>20} | {'pasos/s':>8} | {'s de robot por s de reloj':>25} | {'¿tiembla?':>9}")
+for nombre, integrador, dt in [("Euler, 0,002", EULER, 0.002), ("Euler, 0,001", EULER, 0.001),
+                               ("implicitfast, 0,002", IMPLICITFAST, 0.002)]:
+    with opciones(zancudo, integrator=integrador, timestep=dt):            # el gestor de la sección 8
+        d = mujoco.MjData(zancudo)
+        segundos = min(timeit.repeat(lambda: mujoco.mj_step(zancudo, d), number=3000, repeat=3))
+    tiembla = any(quieto(integrador, dt, s)[1] > 0.1 for s in range(4))
+    print(f"{nombre:>20} | {3000 / segundos:8,.0f} | {3000 / segundos * dt:25.0f} | {'sí' if tiembla else 'no':>9}")"""),
+
+md(r"""**implicitfast con 0,002**: cuesta lo mismo por paso que Euler (la diferencia es del tamaño del ruido de medida), no tiembla, y simula el **doble** de segundos de robot por segundo que Euler con 0,001, la otra forma de quitar el temblor. Es la combinación con la que entrenaría a Zancudo. Y es justo la que le pusimos al Zancudo v2 en el NB50 y al Zancudo 3D del NB53: `integrator="implicitfast"`.
+
+(El campeón del NB43 se queda como está: es un buen ejemplo de política que se entrenó en un simulador con un defecto, y lo dejamos así a propósito. En el Bloque C, todo se entrena ya con implicitfast.)
+"""),
+
+md(r"""### Tus retos
+
+**R1.** Con la regla pasito · λ < 2 y la inercia del tobillo del paso 3, calcula el pasito **máximo** con el que Euler no debería temblar. Compruébalo con `quieto` en las 10 semillas con 0,0015 y con 0,0018 s.
+
+**R2.** Otra forma de arreglarlo sin cambiar de integrador: bajar el `kv` de los motores a 10 (`modelo.actuator_biasprm[:, 2] = -10`). Comprueba con `quieto` que ya no tiembla con Euler y 0,002. ¿Sigue corriendo el campeón con kv = 10? ¿Por qué esta solución es peor?
+
+**R3.** Repite las referencias del NB43 (sección 3) con implicitfast: juega 10 episodios con la acción cero en un `Zancudo()` con `opt.integrator` cambiado, sumando las recompensas. ¿Cuánto saca ahora "quieto"?
+"""),
+
+md(r'''<details>
+<summary>▶ Solución R1</summary>
+
+```python
+inercia = M[m.joint("tobillo_d").dofadr[0], m.joint("tobillo_d").dofadr[0]]
+print("pasito máximo:", 2 * inercia / kv, "s")
+for dt in [0.0015, 0.0018]:
+    resultados = [quieto(EULER, dt, s) for s in range(10)]
+    print(dt, "caídas:", sum(c for c, _ in resultados), " al límite:", [round(f, 2) for _, f in resultados])
+```
+
+La regla da 2 · 0,0161 / 20 ≈ **0,0016 s**. Con **0,0015**, ninguna semilla tiembla. Con **0,0018** (por encima del límite), tiemblan **6 de las 10**, aunque ninguna se cae. La regla acierta: el límite está entre las dos. Y fíjate en que, cerca del límite, que tiemble o no depende del arranque: por eso hay que probar **varias** semillas (NB34), y dejar margen.
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+def quieto_kv(kv_nuevo, semilla):
+    entorno = Zancudo()
+    entorno.modelo.actuator_biasprm[:, 2] = -kv_nuevo
+    entorno.reset(seed=semilla)
+    al_limite = []
+    for paso in range(3000):
+        entorno.datos.ctrl[:] = entorno.postura_base
+        mujoco.mj_step(entorno.modelo, entorno.datos)
+        al_limite.append(np.abs(entorno.datos.actuator_force).max() > 149)
+    return np.mean(al_limite[1000:])
+
+print("kv = 10, al límite:", [round(quieto_kv(10, s), 2) for s in range(10)])
+
+for semilla in range(3):
+    entorno = Zancudo()
+    entorno.modelo.actuator_biasprm[:, 2] = -10
+    obs, _ = entorno.reset(seed=semilla)
+    for k in range(500):
+        obs, _, cae, _, _ = entorno.step(campeon(obs))
+        if cae:
+            break
+    print(semilla, "se cae a los", (k + 1) * 0.02, "s" if cae else "", "" if cae else "no se cae")
+```
+
+Con kv = 10, pasito · λ = 1,24 y, efectivamente, ninguna semilla tiembla. Pero el campeón **se cae** en 2 de los 3 intentos (semillas 1 y 2). Es peor solución porque cambia la **física del robot** (un motor menos amortiguado se comporta distinto, y la política lo nota), mientras que cambiar de integrador solo cambia **cómo se calcula** la misma física. Regla de oro: los arreglos numéricos se hacen en el integrador y en el pasito, no en los parámetros del robot.
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+```python
+retornos = []
+for semilla in range(10):
+    entorno = Zancudo()
+    entorno.modelo.opt.integrator = IMPLICITFAST
+    obs, _ = entorno.reset(seed=semilla)
+    total = 0.0
+    while True:
+        obs, r, cae, truncado, _ = entorno.step(np.zeros(6))
+        total += r
+        if cae or truncado:
+            break
+    retornos.append(total)
+print(np.mean(retornos), np.round(retornos, 1))
+```
+
+Unos **1.000 puntos** de media, y en **todas** las semillas: aguanta los 20 segundos de pie. Con Euler eran 832,6, por las dos caídas. El listón de "no hacer nada" del NB43 estaba falseado por el integrador. (No cambia las conclusiones de aquel notebook, pero es un buen recordatorio: antes de fiarte de una referencia, comprueba que la simulación está sana.)
+</details>
+'''),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- **La huella de una inestabilidad numérica**: una magnitud que cambia de signo **en cada pasito**. Si además está al tope (como el par de un motor), no explota y MuJoCo no avisa: hay que buscarla.
+- **Leer la inercia de cada articulación** en la diagonal de la matriz de masas (`mj_fullM`) para aplicar la regla pasito · kv / inercia < 2. El eslabón débil es la pieza **ligera** con mucha amortiguación.
+- **Cambiar integrador y pasito de un entorno** (`opt.integrator`, `opt.timestep`), ajustando el **submuestreo** para conservar la frecuencia de decisión.
+- **El pasito lo decide la tarea**: quieto, Zancudo aguanta 0,02; corriendo, solo 0,002.
+- **La elección**: implicitfast con 0,002, al mismo coste que Euler y sin temblor.
+
+En la práctica del **NB50** usarás `MjSpec` para fabricar un banco de pruebas de **variantes** de Zancudo v2 (más pesado, con otros pies, con otros motores) y compararlas con una prueba automática.
+"""),
+
+md(r"""## 14 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 

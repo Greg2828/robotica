@@ -12,6 +12,11 @@ paso de captura (máquina de estados, 0,30 → 0,59 m/s; varios pasos no ayudan)
 Python: de notebook a librería (paquete andar/, %%writefile, __init__, __all__,
 importaciones relativas, API pública), logging a fondo, Enum, retrollamadas.
 La librería se escribe desde build_parts/nb52_andar/ (fuente única).
+Práctica en MuJoCo: ¿cuánto retraso aguanta la marcha clásica? delay/nsample con
+MjSpec; la trampa del historial vacío dentro de andar.ejecutar (salto de 15 cm con
+20 ms), arreglada SIN tocar la librería con unittest.mock.patch("mujoco.MjData")
++ mj_initCtrlHistory. Bucle abierto: el retraso no afecta (solo desplaza la marcha).
+Paso de captura: 140 N → ~70-80 N con 100 ms (pierde su ventaja); el tobillo, igual.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -1306,7 +1311,210 @@ Pies: **3·10⁻¹⁶ m** (cero: la IK de la pierna es exacta). CdM: **1·10⁻�
 </details>
 '''),
 
-md(r"""## 19 · Posdata
+md(r"""## 19 · 🛠 Práctica en MuJoCo: ¿cuánto retraso aguanta la marcha clásica?
+
+En un robot de verdad, las órdenes **nunca** llegan al instante: el controlador tarda en calcular, el mensaje viaja por un cable (o por radio) hasta el motor, el driver del motor lo filtra... De unos pocos milisegundos a varias decenas, según el robot. En la práctica del NB50 aprendiste a simularlo con el atributo **`delay`** de los actuadores (y `nsample`, cuántas órdenes recuerda), y te encontraste con la **trampa del historial**: al crear los datos, la memoria de órdenes está llena de **ceros**, y durante los primeros milisegundos los servos obedecen a "piernas rectas".
+
+Hoy la pregunta es la que te dejé en el NB51: **¿cuánto retraso aguanta la marcha clásica antes de caerse?** Con una complicación nueva, muy de la vida real: el código que mueve a Zancudo está en una **librería**, `andar`, que **no vamos a tocar** (como si fuera de otro equipo, o de internet). Y la librería crea sus propios `MjData` por dentro, donde no podemos rellenar el historial.
+
+El plan:
+
+1. Fabricar a Zancudo v2 con retraso en los motores (`MjSpec`, como en el NB50).
+2. Ver la trampa del historial en acción dentro de `andar.ejecutar`.
+3. Arreglarla **sin tocar la librería**, con una herramienta profesional de Python: `unittest.mock.patch`.
+4. Medir: la marcha en **bucle abierto** y el **paso de captura** (que reacciona), con retrasos cada vez mayores.
+"""),
+
+md(r"""### Paso 1 · Zancudo con retraso
+
+Igual que en el NB50: cargamos el MJCF en un `MjSpec`, ponemos el mismo `delay` a los seis motores con un `nsample` suficiente, compilamos y dejamos los servos como los queremos (kp = 3.000, kv = 90, sección 12):
+"""),
+
+code(r"""def zancudo_con_retraso(retraso: float) -> mujoco.MjModel:
+    spec = mujoco.MjSpec.from_file("robots/zancudo_v2.xml")
+    if retraso > 0:
+        for motor in spec.actuators:
+            motor.delay = retraso
+            motor.nsample = int(round(retraso / spec.option.timestep)) + 1     # una orden de sobra (NB50)
+    modelo = spec.compile()
+    andar.configurar_servos(modelo, 3000, 90)
+    return modelo
+
+prueba = zancudo_con_retraso(0.02)
+print("retraso:", prueba.actuator_delay[0], "s;  órdenes que recuerda cada motor:", prueba.actuator_history[0, 0])"""),
+
+md(r"""### Paso 2 · La trampa, dentro de la librería
+
+Andemos con 20 ms de retraso, tal cual, y midamos cuánto **salta** el torso en los primeros 0,3 s (con el argumento `al_paso`, que la librería llama después de cada instante: la retrollamada de la sección 12):
+"""),
+
+code(r"""def salto_inicial(modelo: mujoco.MjModel) -> tuple[float, float | None]:
+    alturas = []
+    r = andar.ejecutar(modelo, posturas, marcha.dt, al_paso=lambda d: alturas.append(d.qpos[1]))
+    return max(alturas[:30]) - alturas[0], r.cae_en
+
+for retraso in [0.0, 0.02]:
+    salto, cae = salto_inicial(zancudo_con_retraso(retraso))
+    print(f"retraso {1000 * retraso:3.0f} ms: el torso salta {100 * salto:5.1f} cm al arrancar;  ¿se cae? {cae}")"""),
+
+md(r"""Sin retraso, el torso no sube nada al arrancar (0,0 cm). Con 20 ms, **salta 15 cm**: durante esos 20 ms, los servos, rígidos (kp = 3.000), obedecen a la orden "0 rad" del historial vacío y estiran las piernas de golpe. Es la trampa del NB50.
+
+Allí la arreglamos con `mj_initCtrlHistory`, llamado justo después de crear los datos. Aquí no podemos: el `MjData` lo crea `andar.ejecutar` **por dentro**, en su primera línea (`datos = mujoco.MjData(modelo)`), y empieza a simular enseguida.
+
+### Paso 3 · Sin tocar la librería: `mock.patch`
+
+¿Cómo se cambia lo que hace una librería sin modificarla? Fíjate en cómo crea los datos: escribe `mujoco.MjData(modelo)`. Es decir, **busca** el nombre `MjData` dentro del módulo `mujoco` **en el momento de llamarlo**. Si durante un rato ese nombre apuntara a **otra** función nuestra, la librería llamaría a la nuestra sin enterarse.
+
+Eso es lo que hace **`unittest.mock.patch`**, de la biblioteca estándar: sustituye un nombre por otro objeto **mientras dura un bloque `with`**, y lo deja como estaba al salir, pase lo que pase (es un gestor de contexto, NB49). Se usa muchísimo en los **tests**, para sustituir piezas lentas o peligrosas (una base de datos, un robot real) por imitaciones (*mocks*). Hoy lo usamos para un experimento.
+
+Nuestra sustituta crea los datos con la `MjData` **original** (guardada antes en otra variable, para no llamarnos a nosotros mismos) y rellena el historial de cada motor con la orden de partida:
+"""),
+
+code(r"""from unittest import mock
+
+MjDataOriginal = mujoco.MjData                         # la de verdad, guardada ANTES de sustituirla
+
+def datos_con_historial(orden_inicial):
+    '''Devuelve una función que crea MjData con el historial de órdenes lleno de orden_inicial.'''
+    def crear(modelo):
+        datos = MjDataOriginal(modelo)
+        for motor in range(modelo.nu):
+            n = modelo.actuator_history[motor, 0]
+            if n > 0:
+                mujoco.mj_initCtrlHistory(modelo, datos, motor, None, np.full((n, 1), orden_inicial[motor]))
+        return datos
+    return crear
+
+with mock.patch("mujoco.MjData", datos_con_historial(posturas[0, 3:])):
+    salto, cae = salto_inicial(zancudo_con_retraso(0.02))
+print(f"con el historial lleno: el torso salta {100 * salto:.1f} cm;  ¿se cae? {cae}")
+print("y fuera del with, mujoco.MjData vuelve a ser la original:", mujoco.MjData is MjDataOriginal)"""),
+
+md(r"""El salto desaparece. Tres detalles:
+
+- **La orden de partida** es `posturas[0, 3:]`: los ángulos de la primera postura, que es justo lo primero que `ejecutar` manda a los servos.
+- **`datos_con_historial` devuelve una función** (un cierre que recuerda `orden_inicial`, P2), porque `mock.patch` necesita algo que se llame igual que `MjData`: con un solo argumento, el modelo.
+- **`mock.patch("mujoco.MjData", ...)`** recibe el nombre **como texto**, "módulo.nombre". Funciona porque `andar` escribe `mujoco.MjData` y no `from mujoco import MjData`: en ese segundo caso, la librería tendría su **propia** copia del nombre, y habría que parchear `"andar.control.MjData"`. Es la regla de oro de `mock.patch`: **parchea el nombre donde se busca, no donde se define**.
+
+Una advertencia de profesional: esto es un **apaño**. Funciona, y está bien para un experimento, pero depende de un detalle interno de la librería (cómo crea sus datos) que mañana podría cambiar. La solución buena sería que la librería ofreciera una forma de pasarle los datos ya preparados; eso es lo que propondrías a sus autores (en una librería propia, sería la versión 0.2.0).
+
+### Paso 4 · Bucle abierto: la marcha, con retraso
+
+Ahora sí, a medir. La marcha completa con retrasos de 0 a 150 ms:
+"""),
+
+code(r"""print(f"{'retraso':>8} | {'¿se cae?':>8} | {'tobillos al final (m)':>21} | {'error máx. (rad)':>16}")
+with mock.patch("mujoco.MjData", datos_con_historial(posturas[0, 3:])):
+    for retraso in [0.0, 0.02, 0.05, 0.1, 0.15]:
+        r = andar.ejecutar(zancudo_con_retraso(retraso), posturas, marcha.dt)
+        final = "" if r.cae_en else f"{r.tobillos[-1, 0]:.3f}  {r.tobillos[-1, 1]:.3f}"
+        print(f"{1000 * retraso:5.0f} ms | {str(r.cae_en):>8} | {final:>21} | {np.nanmax(r.error_q):16.3f}")"""),
+
+md(r"""**Ni se inmuta.** Con 150 ms de retraso, los pies acaban en el mismo sitio que sin retraso (0,61 m, a un par de milímetros). El "error" de las articulaciones sí crece (de 0,02 a 0,27 rad), pero es engañoso: `ejecutar` compara la postura de **ahora** con la que pidió **ahora**, y el robot va, simplemente, 150 ms **por detrás**.
+
+Piénsalo y verás que tenía que ser así: en bucle abierto, el plan entero se calcula **antes** de empezar, y el robot no mide nada para decidir. Retrasar **todas** las órdenes lo mismo es lo mismo que empezar la marcha 150 ms más tarde. Los servos, que sí reaccionan (su PD mide el ángulo en cada pasito), no están retrasados: el retraso es de las **órdenes** que reciben, no de su propio bucle.
+
+El retraso solo hace daño cuando hay alguien que **reacciona** a lo que pasa. Y en el NB52 lo hay: el paso de captura.
+
+### Paso 5 · El paso de captura, con retraso
+
+`PasoDeCaptura` mide el DCM en cada instante y, si sale del pie, decide un paso. Con retraso, el pie empieza a moverse más tarde de lo que se decidió. Repetimos la tabla de la sección 14 (un paso como máximo, empujones de 10 a 200 N) con retrasos crecientes. El historial se rellena con la postura de pie de la que parte `probar`, que es la misma que la primera de la marcha:
+"""),
+
+code(r"""from andar.plan import CENTRO_PIE, ALTURA_TOBILLO
+
+de_pie = andar.Cinematica(zancudo).postura(CENTRO_PIE, (0.0, ALTURA_TOBILLO), (0.0, ALTURA_TOBILLO))
+print("¿los mismos ángulos que la primera postura de la marcha?", np.allclose(de_pie[3:], posturas[0, 3:]))
+
+logging.getLogger("andar").setLevel(logging.ERROR)        # sin los avisos de la IK casi estirada (sección 14)
+fuerzas = np.arange(10, 201, 10)
+print("fuerza (decenas de N): ", " ".join(f"{f // 10:>2}" for f in fuerzas))
+with mock.patch("mujoco.MjData", datos_con_historial(de_pie[3:])):
+    for retraso in [0.0, 0.02, 0.05, 0.1, 0.2]:
+        captura_lenta = andar.PasoDeCaptura(zancudo_con_retraso(retraso))
+        for nombre, signo in [("adelante", 1), ("atrás", -1)]:
+            fila = " ".join(" #" if captura_lenta.probar(signo * f)[0] else " ." for f in fuerzas)
+            print(f"{1000 * retraso:3.0f} ms, {nombre:>8}:   {fila}")
+logging.getLogger("andar").setLevel(logging.WARNING)"""),
+
+md(r"""(Durante la tabla subimos el nivel de `andar` a `ERROR`, para que no salga el aviso de la IK casi estirada de la sección 14 en cada paso largo; al acabar, lo dejamos como estaba.)
+
+Lo que cuenta la tabla:
+
+- **20 ms** (un retraso realista para un robot bien hecho): casi nada. Aguanta hasta 130 N hacia delante (antes, 140) y 150 hacia atrás.
+- **50 ms**: hacia delante, el límite baja a 100 N, y aparece un **hueco**: aguanta 140 pero no 110-130. Con retraso, el resultado empieza a depender de **en qué momento** exacto llega cada orden.
+- **100 ms**: el límite fiable baja a **70-80 N**, lo mismo que aguantaba **sin dar ningún paso** (sección 14). El paso llega tan tarde que casi no ayuda; hacia delante quedan huecos de suerte hasta 120.
+- **200 ms**: curiosamente, algo mejor que con 100 (90-100 N). No le busques demasiada explicación: con retrasos grandes, el resultado depende mucho del instante exacto de cada orden (los huecos), y una sola serie de empujones no basta para ordenar 100 frente a 200 ms (haría falta empujar en varios instantes, como en la sección 13). Lo importante es la tendencia.
+
+La lección: **el retraso se come justo lo que aporta la realimentación**. El bucle abierto no lo nota, porque no reacciona. El tobillo, que es lento, tampoco. El paso de captura, que tiene que reaccionar **deprisa** a algo que crece **exponencialmente** (el DCM se escapa como e^(ω·t), NB51), pierde la mitad de su ventaja con 100 ms. Por eso en los robots reales se pelea por cada milisegundo, y por eso en el NB55 entrenaremos las políticas de RL **con** retrasos aleatorios: así aprenden a no contar con reaccionar al instante.
+"""),
+
+md(r"""### Tus retos
+
+**R1.** Predícelo con el NB51: si el paso empieza τ segundos tarde, el DCM se escapa durante Δt + τ en vez de Δt. La velocidad máxima que se captura con un paso pasa a ser ω · (r + L · e^(−ω·(Δt + τ))). Con r = 0,10, L = 0,35 y Δt = 0,25 (sección 14), calcula cuánto baja (en %) con τ = 0,05, 0,1 y 0,2 s respecto de τ = 0, y compáralo con la tabla.
+
+**R2.** Comprueba que `mock.patch` deja todo como estaba **incluso si hay un error** dentro del `with`: lanza un `ValueError` dentro, captúralo fuera, y mira a qué apunta `mujoco.MjData`.
+
+**R3.** Haz la tabla del paso 5 con `max_pasos=0` (solo el tobillo) y retrasos de 0, 100 y 200 ms. ¿Le afecta el retraso? ¿Por qué?
+"""),
+
+md(r'''<details>
+<summary>▶ Solución R1</summary>
+
+```python
+r_pie, alcance, dt_paso = 0.10, 0.35, 0.25
+base = omega * (r_pie + alcance * math.exp(-omega * dt_paso))
+for tau in [0.05, 0.1, 0.2]:
+    v = omega * (r_pie + alcance * math.exp(-omega * (dt_paso + tau)))
+    print(f"τ = {tau}: {v:.2f} m/s, un {100 * (1 - v / base):.0f} % menos")
+```
+
+La teoría dice que baja un **10 %** con 50 ms, un **18 %** con 100 ms y un **30 %** con 200 ms. La simulación: con 50 ms, entre un 7 % (atrás) y un 29 % (adelante); con 100 ms, cerca de un **45 %**; con 200 ms, un 30-35 %. El orden de magnitud cuadra, y la teoría vuelve a ser **optimista** con retrasos medianos, por los motivos de la sección 14 (el pie rueda, la pierna pesa, reaccionamos cuando el DCM ya ha salido), a los que ahora se suma uno nuevo: con retraso, el destino del pie se calcula con un DCM **viejo**, y el pie aterriza donde **estaba** el punto de captura, no donde **está**.
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+try:
+    with mock.patch("mujoco.MjData", datos_con_historial(posturas[0, 3:])):
+        print("dentro:", mujoco.MjData is MjDataOriginal)          # False
+        raise ValueError("algo falla a mitad del experimento")
+except ValueError as e:
+    print("error capturado:", e)
+print("fuera:", mujoco.MjData is MjDataOriginal)                    # True
+```
+
+Dentro, `False` (es nuestra función); fuera, **`True`**, aunque el bloque terminó con un error. Es el `try/finally` de los gestores de contexto del NB49: `mock.patch` restaura el nombre en su `__exit__`, que se ejecuta **siempre**. Si no fuera así, un error a mitad dejaría `mujoco.MjData` cambiado para el resto del notebook, y todo lo que viniera después se comportaría raro sin motivo aparente.
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+```python
+with mock.patch("mujoco.MjData", datos_con_historial(de_pie[3:])):
+    for retraso in [0.0, 0.1, 0.2]:
+        solo_tobillo = andar.PasoDeCaptura(zancudo_con_retraso(retraso), max_pasos=0)
+        for nombre, signo in [("adelante", 1), ("atrás", -1)]:
+            fila = " ".join(" #" if solo_tobillo.probar(signo * f)[0] else " ." for f in fuerzas)
+            print(f"{1000 * retraso:3.0f} ms, {nombre:>8}:   {fila}")
+```
+
+**Igual** con los tres retrasos: hasta 70 N en las dos direcciones. Sin pasos, lo que salva a Zancudo son los **servos** (que no tienen retraso en su propio PD) y el tamaño del pie; la parte que reacciona (la IK que lleva el CdM hacia el DCM) es tan **lenta** (sigue una exponencial con ω, NB51) que unas décimas de segundo de retraso no le cambian nada. El retraso daña a los controladores **rápidos**, no a los lentos.
+</details>
+'''),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- **Retraso en los motores con `MjSpec`** (`delay`, `nsample`) y la trampa del **historial vacío**, ahora dentro de una librería ajena.
+- **`unittest.mock.patch`**: sustituir un nombre mientras dura un `with`, para cambiar lo que hace una librería sin tocarla. Se parchea **donde se busca** el nombre. Y es un apaño: lo bueno es que la librería lo permita.
+- **El retraso de las órdenes no afecta al bucle abierto**: solo desplaza la marcha en el tiempo. Daña a lo que **reacciona deprisa**: el paso de captura pierde la mitad de su ventaja con 100 ms; el tobillo, lento, no lo nota.
+- **Con retraso aparecen los huecos**: el resultado depende del momento exacto en que llega cada orden.
+
+En la práctica del **NB53** pondrás a Zancudo 3D a **mecerse** de un pie al otro cada vez más deprisa, leerás cuánto peso carga cada pie con los sensores de tacto, y comprobarás con el LIPM a qué ritmo un pie tiene que despegarse por fuerza.
+"""),
+
+md(r"""## 20 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
