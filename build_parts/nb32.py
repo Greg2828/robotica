@@ -11,6 +11,12 @@ entrenamiento con dos optimizadores Adam. Entrenamiento real (semilla 0), curvas
 de retorno y σ, mirar dentro (empuje que satura, mapa del crítico), examen en el
 entorno oficial PaloDeEscoba-v0 (NB25), comparación TD vs Montecarlo con 4
 semillas, la fragilidad (pasos de Adam + ventajas normalizadas) → hacia PPO.
+🛠 Práctica en MuJoCo (apartado 18): A2C en el palo de MuJoCo VIENDO EL CARRO
+(ver_carro=True, 4 obs, episodios de 5 s), piezas de la lección sin cambiar.
+ActorMJ con SIMETRÍA impar μ(obs) = (red(obs) − red(−obs))/2 (sin ella: llega a
+499 y se derrumba, el carro contra el tope por una "manía" de sesgo; reto R1).
+Tasa 0,002, 60 iteraciones (~1,5 min; con 40 aún dejaba escapar el carro). Examen: NB29 40/50 caídas, A2C 0, carro < 0,5 m. Examen de 10 s (50 palos) contra la neurona
+del NB29, vídeo de 10 s. Tasa 0,005 → fragilidad (R2) → PPO en el NB33.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -836,11 +842,275 @@ ruedecilla aprendible **no siempre** aprende mucho; si la tarea no le da motivo,
 </details>
 """),
 
-md(r"""## 18 · Posdata
+md(r"""## 18 · 🛠 Práctica en MuJoCo: actor-crítico en el palo de física real, viendo el carro
+
+En el NB29 dejaste una cuenta pendiente: la política que solo miraba el palo dejaba que el carro **derivara** hasta el final del raíl, y
+pasados unos segundos el palo caía. Te prometí el remedio para "cuando tuviéramos redes": dejarle **ver el carro** y pedirle episodios
+**más largos**. Hoy tienes las dos redes del actor-crítico, así que vamos a por ello en el palo de MuJoCo:
+
+- La observación pasa de 2 a **4 números**: ángulo del palo (rad), giro (rad/s), **posición del carro** (m) y **velocidad del carro** (m/s).
+  El fichero del NB29 ya lo trae: `ver_carro=True`.
+- Episodios de **5 segundos** (500 pasos de 0,01 s), como los 500 pasos del palo de juguete.
+- El mismo actor-crítico de esta lección, con **diferencia temporal**, sin cambiar sus piezas (`retornos_desde_cada_paso`,
+  `entradas_del_critico`, `calcular_ventajas`)... y con una idea nueva de diseño, la **simetría**, que te contaré en el paso 1.
+
+Y el examen final será **el doble de largo** que los episodios de entrenamiento: 10 segundos. El mismo examen que la política del NB29 suspendía.
+"""),
+
+md(r"""### Paso 1 · Las dos redes, para MuJoCo
+
+Son el `Actor` y el `Critico` de los apartados 6 y 7 con tres cambios:
+
+1. **4 entradas** (y 5 el crítico, con el reloj).
+2. **Escalas de MuJoCo**: el ángulo se divide entre 0,1 (los radianes son números pequeños; NB31, práctica) y lo demás se deja como está (ya
+   anda por las unidades). La σ inicial, 0,3, la del NB29.
+3. **Simetría.** Piensa en el palo reflejado en un espejo: si todo está al revés (palo inclinado a la izquierda en vez de a la derecha,
+   carro a la izquierda en vez de a la derecha...), la buena acción es exactamente la **contraria**. Matemáticamente, la media del actor
+   debería cumplir μ(−observación) = −μ(observación). Una red cualquiera no lo cumple; pero podemos **obligarla** con un truco de una línea:
+
+```
+   media(obs) = ( red(obs) − red(−obs) ) / 2
+```
+
+   Compruébalo: si cambias obs por −obs, sale ( red(−obs) − red(obs) ) / 2, justo lo contrario. Y en particular, con todo a cero (palo
+   derecho, carro quieto en el centro) la media es **exactamente 0**: el actor no puede tener una "manía" de empujar siempre hacia un lado.
+
+¿Por qué tanto interés en esa manía? Porque lo **medí** sin la simetría (reto R1): el actor aprendía a sostener el palo y, después, su
+red iba cogiendo poco a poco una costumbre de empujar hacia un lado. Un empujón constante, aunque pequeño, lleva el carro contra el tope
+del raíl en un par de segundos. Es el mismo tipo de idea que los cuadrados del crítico del NB30 (allí, para que el valor fuera **igual** a los
+dos lados): **meter en la red lo que sabes del problema** le ahorra tener que aprenderlo (y desaprenderlo).
+"""),
+
+code(r"""from practica_mujoco.nb29_palo_mujoco import jugar_mujoco
+import taller
+
+torch.set_num_threads(1)
+
+class ActorMJ(nn.Module):
+    def __init__(self, ocultas=32, sigma_inicial=0.3):
+        super().__init__()
+        self.escala = torch.tensor([0.1, 1.0, 1.0, 1.0])       # ángulo, giro, posición y velocidad del carro
+        self.red = nn.Sequential(nn.Linear(4, ocultas), nn.Tanh(), nn.Linear(ocultas, 1))
+        self.log_sigma = nn.Parameter(torch.tensor(np.log(sigma_inicial), dtype=torch.float32))
+
+    def media(self, observaciones):
+        x = observaciones / self.escala
+        return ((self.red(x) - self.red(-x)) / 2).squeeze(-1)  # simetría: μ(−obs) = −μ(obs)
+
+    def campana(self, observaciones):
+        return Normal(self.media(observaciones), self.log_sigma.exp())
+
+class CriticoMJ(nn.Module):
+    def __init__(self, ocultas=64):
+        super().__init__()
+        self.escala = torch.tensor([0.1, 1.0, 1.0, 1.0, 500.0])  # ... y el reloj
+        self.red = nn.Sequential(nn.Linear(5, ocultas), nn.Tanh(), nn.Linear(ocultas, 1))
+
+    def forward(self, entradas):
+        return self.red(entradas / self.escala).squeeze(-1) * 100
+
+torch.manual_seed(0)
+actor_prueba = ActorMJ()
+obs_prueba = torch.tensor([[0.05, 0.3, 0.5, -0.2]])
+with torch.no_grad():
+    print("μ(obs) =", round(actor_prueba.media(obs_prueba).item(), 4), "| μ(−obs) =", round(actor_prueba.media(-obs_prueba).item(), 4),
+          "| μ(0) =", actor_prueba.media(torch.zeros(1, 4)).item())"""),
+
+md(r"""La simetría, comprobada: μ(−obs) es exactamente −μ(obs), y con todo a cero, la media es 0.
+
+### Paso 2 · El bucle de entrenamiento, con MuJoCo
+
+Es la función `entrenar` del apartado 10, con dos cambios: se juega con `jugar_mujoco` (500 pasos, `ver_carro=True`, y la σ del actor), y
+las redes son las de MuJoCo. Para que `jugar_mujoco` pueda usar al actor, el traductor NumPy → tensor → NumPy de la práctica del NB31. Los
+cinco bloques numerados son **idénticos** a los de la lección.
+"""),
+
+code(r"""def como_politica(actor):
+    def politica(observaciones):
+        with torch.no_grad():
+            return actor.media(torch.from_numpy(observaciones.astype(np.float32))).numpy()
+    return politica
+
+def entrenar_mj(semilla=0, iteraciones=60, n_episodios=32, tasa_actor=0.002, tasa_critico=0.01,
+                pasos_critico=10, gamma=0.99, pasos=500, Actor_=ActorMJ):
+    torch.manual_seed(semilla)
+    generador = np.random.default_rng(semilla)
+    actor, critico = Actor_(), CriticoMJ()
+    optim_actor = torch.optim.Adam(actor.parameters(), lr=tasa_actor)
+    optim_critico = torch.optim.Adam(critico.parameters(), lr=tasa_critico)
+    historial = []
+    for iteracion in range(iteraciones):
+        # 1. jugar en MuJoCo
+        obs, acc, med, rec, vivo = jugar_mujoco(como_politica(actor), actor.log_sigma.exp().item(), n_episodios,
+                                                generador, pasos_maximos=pasos, ver_carro=True)
+        rec = rec * vivo
+        historial.append(rec.sum(axis=0).mean())
+        G = retornos_desde_cada_paso(rec, gamma)
+        # 2. el crítico opina
+        entradas = torch.from_numpy(entradas_del_critico(obs))
+        with torch.no_grad():
+            valores = critico(entradas).numpy()
+        # 3. ventajas (diferencia temporal), normalizadas
+        ventajas = calcular_ventajas("td", valores, rec, G, vivo, gamma)[vivo]
+        ventajas = torch.from_numpy((ventajas - ventajas.mean()) / (ventajas.std() + 1e-8))
+        # 4. el actor: la pérdida truco
+        log_prob = actor.campana(torch.from_numpy(obs[vivo])).log_prob(torch.from_numpy(acc[vivo]))
+        perdida_actor = -(log_prob * ventajas).mean()
+        optim_actor.zero_grad()
+        perdida_actor.backward()
+        optim_actor.step()
+        # 5. el crítico aprende a predecir G
+        entradas_vivas, G_vivos = entradas[vivo], torch.from_numpy(G[vivo])
+        for _ in range(pasos_critico):
+            perdida_critico = ((critico(entradas_vivas) - G_vivos) ** 2).mean()
+            optim_critico.zero_grad()
+            perdida_critico.backward()
+            optim_critico.step()
+    return actor, critico, historial"""),
+
+md(r"""(El parámetro `Actor_` deja cambiar la clase del actor sin tocar la función: lo usarás en el reto R1. Es el polimorfismo del NB25.)
+
+### Paso 3 · ¡A entrenar en MuJoCo!
+
+Semilla 0, 60 iteraciones de 32 episodios de 5 segundos: casi **un millón de pasos de física**. La tasa del actor, 0,002 (más baja que la del
+apartado 11; con más, ver el reto R2). En la Pi tarda **alrededor de minuto y medio** (cuando los palos ya no caen, cada iteración son
+16.000 pasos de MuJoCo y otras tantas consultas a la red).
+"""),
+
+code(r"""inicio = time.time()
+actor_mj, critico_mj, historial_mj = entrenar_mj()
+print(f"Tiempo: {time.time() - inicio:.0f} s")
+print("Retorno medio cada 5 iteraciones:", [round(x) for x in historial_mj[::5]])
+
+plt.figure(figsize=(7, 3.5))
+plt.plot(historial_mj)
+plt.axhline(500, color="gray", linestyle="--", linewidth=1)
+plt.xlabel("iteración (32 episodios de MuJoCo de 5 s)")
+plt.ylabel("retorno medio")
+plt.title("Actor-crítico en el palo de MuJoCo, viendo el carro")
+plt.grid(True, alpha=0.4)
+plt.show()"""),
+
+md(r"""**Aprende.** De unos 110 puntos a casi **500** (el máximo de 5 segundos) en unas 15 iteraciones. Después tiene algún bajón pequeño (unos
+472-477 hacia las iteraciones 30-35: algún palo que se cae) y vuelve a subir a 499. Ese "casi pero no del todo" es una pista: aprender a
+sostener el palo es rápido; aprender a **no dejar escapar el carro** cuesta más, porque el castigo (chocar con el tope) llega tarde y solo a
+veces. Por eso le damos 60 iteraciones, y no 40: en mis pruebas, el actor de la iteración 40 aún dejaba escapar el carro en el examen del paso 4.
+"""),
+
+md(r"""### Paso 4 · El examen de 10 segundos
+
+Ahora la prueba que la política del NB29 no pasaba. 50 palos nuevos, **10 segundos** cada uno (1.000 pasos, el doble de lo que duraban los
+episodios de entrenamiento), sin explorar. Comparamos con la neurona del NB29 (pesos 2,2 y 0,35, solo mira el palo), y apuntamos también lo
+más lejos del centro que llega el carro:
+"""),
+
+code(r"""def examen_10s(politica, ver_carro):
+    obs, acc, med, rec, vivo = jugar_mujoco(politica, 0.0, 50, np.random.default_rng(123), pasos_maximos=1000, ver_carro=ver_carro)
+    return (~vivo[-1]).sum(), obs, vivo
+
+caidas_nb29, _, _ = examen_10s(lambda o: o @ np.array([2.2, 0.35]), ver_carro=False)
+caidas_ac, obs_ac, vivo_ac = examen_10s(como_politica(actor_mj), ver_carro=True)
+print(f"Neurona del NB29 (solo ve el palo): se caen {caidas_nb29} de 50")
+print(f"Actor-crítico (ve el carro):        se caen {caidas_ac} de 50 | el carro llega, como mucho, a {np.abs(obs_ac[:, :, 2]).max():.2f} m del centro")"""),
+
+md(r"""La diferencia es enorme. La neurona del NB29, que solo ve el palo, deja caer **40 de 50** palos en 10 segundos: el carro deriva hasta el tope.
+El actor-crítico que ve el carro **no deja caer ninguno**, y el carro no se aleja más de **medio metro** del centro, sin que la recompensa
+diga nada del carro: lo ha aprendido solo, porque chocar con el tope tumba el palo y acaba con el episodio. Y eso que se entrenó con episodios de 5 s y lo
+examinamos con 10: lo aprendido **generaliza en el tiempo**.
+"""),
+
+md(r"""### Paso 5 · En vídeo
+
+Para filmar al actor con `taller.video`, la función `control(modelo, datos)` de la práctica del NB31, ahora con las 4 observaciones. 10 segundos,
+desde 4 grados:
+"""),
+
+code(r"""def control_con_actor(actor):
+    def control(modelo, datos):
+        observacion = torch.tensor([[datos.qpos[1], datos.qvel[1], datos.qpos[0], datos.qvel[0]]], dtype=torch.float32)
+        with torch.no_grad():
+            datos.ctrl[0] = float(actor.media(observacion).clamp(-1, 1))
+    return control
+
+modelo_video, datos_video = taller.cargar("palo_escoba")
+datos_video.qpos[1] = np.radians(4)
+taller.video(modelo_video, datos_video, segundos=10, control=control_con_actor(actor_mj), nombre="nb32_actor_critico_mujoco")
+print(f"A los 10 s: palo a {np.degrees(datos_video.qpos[1]):.1f} grados | carro en x = {datos_video.qpos[0]:.2f} m")"""),
+
+md(r"""Fíjate en el baile: para devolver el carro al centro, el actor tiene que hacer algo **contraintuitivo**. Si empujara el carro directamente
+hacia el centro, el palo caería hacia el otro lado. Primero tiene que dejar que el palo se incline **hacia el centro**, y luego seguirlo con el
+carro (como cuando caminas con una escoba en equilibrio sobre la mano: para ir a la izquierda, primero la inclinas a la izquierda). Nadie se
+lo ha explicado: lo ha descubierto con 1.920 episodios de práctica.
+"""),
+
+md(r"""### Tus retos
+
+**R1.** Quita la simetría: crea un `ActorSinSimetria(ActorMJ)` cuyo `media` sea `self.red(x).squeeze(-1)` y entrénalo con
+`entrenar_mj(Actor_=ActorSinSimetria, iteraciones=60)` (un minuto y medio). ¿Qué pasa con la curva?
+
+**R2.** Con la simetría, sube la tasa del actor a **0,005** (la del apartado 11) y entrena 60 iteraciones. ¿Qué pasa?
+
+**R3.** ¿Por qué al **crítico** no le hemos impuesto ninguna simetría? ¿Qué simetría tendría, si quisieras imponérsela?
+"""),
+
+md(r"""<details>
+<summary>▶ Solución R1</summary>
+
+```python
+class ActorSinSimetria(ActorMJ):
+    def media(self, observaciones):
+        return self.red(observaciones / self.escala).squeeze(-1)
+
+_, _, h = entrenar_mj(Actor_=ActorSinSimetria, iteraciones=60)
+print([round(x) for x in h[::5]])
+```
+
+Medido (semilla 0): 54, 80, 184, 489, 498, 499, 494, 424, 281, 203, 228, 288. Aprende a sostener el palo los 5 segundos (499 hacia la
+iteración 25)... y se **derrumba**. Mirando dentro (en mis pruebas), la media del actor con todo a cero pasaba de 0,03 en la iteración 25 a
+**0,23** en la 45: una manía de empujar hacia un lado. Con ese empujón constante, el carro llegaba al tope del raíl (1,8 m) en unos 2 segundos,
+y en las últimas iteraciones **los 32 palos** caían allí. Cuando el palo ya se sostiene, las ventajas son casi todo ruido (apartado 14) y la
+red "pasea" sin rumbo; con la simetría, ese paseo no puede convertirse en una manía de empujar hacia un lado.
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+_, _, h = entrenar_mj(tasa_actor=0.005, iteraciones=60)
+print([round(x) for x in h[::5]])
+```
+
+Medido: 110, 484, 479, 353, 209, 142, 148, 189, 247, 297, 295, 342. Sube **rapidísimo** (484 en la iteración 5) y luego se derrumba a unos 140,
+y solo se recupera a medias. Es la **fragilidad** del apartado 14, ahora en MuJoCo: con pasos grandes, un actor que ya sabía se estropea. La
+simetría quita una forma de estropearse, pero no todas. El remedio de fondo es el de la próxima lección: **PPO**.
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+Porque el crítico predice un **valor**, y el valor de una situación y de su reflejo en el espejo es el **mismo**, no el contrario: el palo
+inclinado 5° a la derecha con el carro a la derecha es igual de bueno (o malo) que el reflejo, a la izquierda. Es una simetría **par**:
+V(−obs) = V(obs) (el reloj no se refleja). Se podría imponer con V(obs) = ( red(obs) + red(−obs) ) / 2, la misma idea que los cuadrados del
+crítico del NB30. Aquí no hace falta: un error de simetría del crítico solo hace la línea base algo peor, y no provoca derivas como en el actor.
+</details>
+"""),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- Un **actor-crítico con dos redes de PyTorch** entrena en MuJoCo con las mismas piezas de la lección: solo cambian el `jugar`, las entradas y las escalas.
+- **Qué ve el robot** decide qué puede aprender: con la posición y la velocidad del carro (`ver_carro=True`), el palo aguanta 10 s sin chocar con el tope.
+- La **simetría** del problema se puede meter en la red, μ(−obs) = −μ(obs): evita que el actor coja manías que llevan el carro al tope.
+- La política aprendida **generaliza en el tiempo**: entrenada con episodios de 5 s, aguanta exámenes de 10 s.
+- La fragilidad del actor-crítico también existe en MuJoCo: tasas altas → derrumbes.
+
+En la práctica del **NB33** escribirás **PPO** para este mismo palo de MuJoCo, y comprobarás si su freno le deja aprender con la tasa alta sin derrumbarse.
+"""),
+
+md(r"""## 19 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Hoy has construido, desde cero, la arquitectura que mueve a los robots que andan en los vídeos de investigación: un **actor** y un **crítico**, dos redes neuronales que aprenden juntas. Y
+Hoy has construido, desde cero, la arquitectura que mueve a los robots que andan en los vídeos de investigación: un **actor** y un **crítico**, dos redes neuronales que aprenden juntas (y, en la práctica, las has puesto a controlar el palo de MuJoCo viendo el carro). Y
 has visto su talón de Aquiles: la **fragilidad**. En la próxima lección, **PPO** (*Proximal Policy Optimization*, "optimización de la política en pasos próximos"), el algoritmo más usado del
 mundo para entrenar robots. Su idea es casi de sentido común: aprovechar cada lote de episodios **varias veces**, pero **sin dejar** que la política se aleje demasiado de la que jugó. Con él,
 y con un mando para elegir entre ruido y sesgo (GAE), tendrás en las manos la herramienta con la que se entrenan los humanoides de verdad.

@@ -9,6 +9,13 @@ números. Algoritmo completo; entrenar PPO en el palo (semilla 0); medir cuánto
 cambia la política por iteración (|r − 1|); experimento SIN recorte: llega en
 pocas iteraciones y se derrumba (r de cientos o miles); comparación con el
 NB32; examen en PaloDeEscoba-v0; qué añaden los PPO "de verdad" → SB3.
+🛠 Práctica en MuJoCo (apartado 14): PPO desde cero en el palo de MuJoCo viendo
+el carro (ActorMJ simétrico + CriticoMJ de la práctica del NB32; ventajas_gae y
+entradas_del_critico de la lección). Tasa 0,01 (la 0,005 hundía al A2C): 110 →
+498 en ~10 iteraciones y sin derrumbes, cambio |r−1| ~4-10 %; examen de 10 s:
+0 de 50 caídas, carro < ~0,5 m; vídeo de 10 s. Retos: sin recorte (cambio ~1,
+termina en ~30), tasa 0,005 (500 en entrenamiento pero 47/50 caídas en 10 s:
+el robot optimiza lo que mides).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -731,11 +738,266 @@ del recorte: la pieza que hace funcionar a PPO es el freno.
 </details>
 """),
 
-md(r"""## 14 · Posdata
+md(r"""## 14 · 🛠 Práctica en MuJoCo: PPO desde cero en el palo de física real
+
+En la práctica del NB32 entrenaste un actor-crítico en el palo de MuJoCo, viendo el carro, y aprobó el examen de 10 segundos. Pero tuviste
+que bajarle la tasa del actor a 0,002: con 0,005 llegaba arriba en 5 iteraciones y después **se derrumbaba** (reto R2 del NB32). Hoy has
+construido el remedio. La pregunta de la práctica es muy concreta:
+
+> **¿Aguanta PPO, en el palo de MuJoCo, una tasa con la que el actor-crítico se derrumbaba?**
+
+Vamos a usar la tasa **0,01**, el doble de la que hundió al actor-crítico y cinco veces la que le funcionó. Mismo palo de MuJoCo, mismas 4
+observaciones (`ver_carro=True`), mismos episodios de 5 segundos, mismo examen de 10 segundos. Y las piezas de esta lección **sin cambiar**:
+`ventajas_gae`, `entradas_del_critico` y la estructura de `entrenar_ppo`.
+"""),
+
+md(r"""### Paso 1 · Las redes de la práctica del NB32
+
+El actor con **simetría** (μ(−obs) = −μ(obs), para que no coja la manía de empujar hacia un lado) y el crítico con el reloj, tal cual los
+escribiste en la práctica del NB32, más el `jugar_mujoco` del NB29 y el traductor NumPy → tensor → NumPy:
+"""),
+
+code(r"""from practica_mujoco.nb29_palo_mujoco import jugar_mujoco
+import taller
+
+torch.set_num_threads(1)
+
+class ActorMJ(nn.Module):
+    def __init__(self, ocultas=32, sigma_inicial=0.3):
+        super().__init__()
+        self.escala = torch.tensor([0.1, 1.0, 1.0, 1.0])       # ángulo, giro, posición y velocidad del carro
+        self.red = nn.Sequential(nn.Linear(4, ocultas), nn.Tanh(), nn.Linear(ocultas, 1))
+        self.log_sigma = nn.Parameter(torch.tensor(np.log(sigma_inicial), dtype=torch.float32))
+
+    def media(self, observaciones):
+        x = observaciones / self.escala
+        return ((self.red(x) - self.red(-x)) / 2).squeeze(-1)  # simetría (práctica del NB32)
+
+    def campana(self, observaciones):
+        return Normal(self.media(observaciones), self.log_sigma.exp())
+
+class CriticoMJ(nn.Module):
+    def __init__(self, ocultas=64):
+        super().__init__()
+        self.escala = torch.tensor([0.1, 1.0, 1.0, 1.0, 500.0])
+        self.red = nn.Sequential(nn.Linear(5, ocultas), nn.Tanh(), nn.Linear(ocultas, 1))
+
+    def forward(self, entradas):
+        return self.red(entradas / self.escala).squeeze(-1) * 100
+
+def como_politica(actor):
+    def politica(observaciones):
+        with torch.no_grad():
+            return actor.media(torch.from_numpy(observaciones.astype(np.float32))).numpy()
+    return politica
+
+print("Piezas de la práctica del NB32 listas")"""),
+
+md(r"""### Paso 2 · PPO para MuJoCo
+
+Es `entrenar_ppo` del apartado 7, con tres cambios, los mismos de la práctica del NB32: se juega con `jugar_mujoco` (500 pasos, `ver_carro=True`,
+la σ del actor), las redes son las de MuJoCo, y las recompensas se multiplican por `estaba_vivo` (el `jugar` de esta lección ya lo hacía por
+dentro; el del fichero, no). Los bloques 2, 3 y 4 (GAE, apuntar la política vieja, épocas con minilotes y recorte) son **idénticos**.
+"""),
+
+code(r"""def entrenar_ppo_mj(semilla=0, iteraciones=40, n_episodios=32, tasa=0.01, epocas=10, minilote=1024,
+                    recorte=0.2, lam=0.95, gamma=0.99, pasos=500):
+    torch.manual_seed(semilla)
+    generador = np.random.default_rng(semilla)
+    actor, critico = ActorMJ(), CriticoMJ()
+    optim_actor = torch.optim.Adam(actor.parameters(), lr=tasa)
+    optim_critico = torch.optim.Adam(critico.parameters(), lr=0.01)
+    historial, cambios = [], []
+
+    for iteracion in range(iteraciones):
+        # 1. jugar en MuJoCo
+        obs, acc, med, rec, vivo = jugar_mujoco(como_politica(actor), actor.log_sigma.exp().item(), n_episodios,
+                                                generador, pasos_maximos=pasos, ver_carro=True)
+        rec = rec * vivo
+        historial.append(rec.sum(axis=0).mean())
+
+        # 2. el crítico opina; ventajas con GAE
+        entradas = torch.from_numpy(entradas_del_critico(obs))
+        with torch.no_grad():
+            valores = critico(entradas).numpy()
+        ventajas = ventajas_gae(valores, rec, vivo, gamma, lam)
+        objetivo_critico = torch.from_numpy((ventajas + valores)[vivo])
+        ventajas = ventajas[vivo]
+        ventajas = torch.from_numpy((ventajas - ventajas.mean()) / (ventajas.std() + 1e-8))
+
+        # 3. apuntar la política que jugó
+        O, A, E = torch.from_numpy(obs[vivo]), torch.from_numpy(acc[vivo]), entradas[vivo]
+        with torch.no_grad():
+            log_p_vieja = actor.campana(O).log_prob(A)
+
+        # 4. épocas y minilotes
+        n = len(ventajas)
+        for epoca in range(epocas):
+            orden = torch.randperm(n)
+            for inicio_lote in range(0, n, minilote):
+                i = orden[inicio_lote:inicio_lote + minilote]
+                r = (actor.campana(O[i]).log_prob(A[i]) - log_p_vieja[i]).exp()
+                if recorte is None:
+                    perdida_actor = -(r * ventajas[i]).mean()
+                else:
+                    perdida_actor = -torch.minimum(r * ventajas[i],
+                                                   torch.clamp(r, 1 - recorte, 1 + recorte) * ventajas[i]).mean()
+                optim_actor.zero_grad()
+                perdida_actor.backward()
+                optim_actor.step()
+
+                perdida_critico = ((critico(E[i]) - objetivo_critico[i]) ** 2).mean()
+                optim_critico.zero_grad()
+                perdida_critico.backward()
+                optim_critico.step()
+
+        with torch.no_grad():
+            r_final = (actor.campana(O).log_prob(A) - log_p_vieja).exp()
+        cambios.append((r_final - 1).abs().mean().item())
+    return actor, critico, historial, cambios"""),
+
+md(r"""(La variable del bucle de minilotes se llama `inicio_lote` y no `inicio`, para no pisar la `inicio` del cronómetro del apartado 8.)
+
+### Paso 3 · ¡PPO en MuJoCo, con la tasa peligrosa!
+
+Semilla 0, 40 iteraciones de 32 episodios de 5 segundos, tasa **0,01**. Cada iteración son hasta 16.000 pasos de MuJoCo y unos 160 pasos de
+aprendizaje. Tarda **alrededor de minuto y medio** en la Pi:
+"""),
+
+code(r"""inicio = time.time()
+actor_mj, critico_mj, historial_mj, cambios_mj = entrenar_ppo_mj()
+print(f"Tiempo: {time.time() - inicio:.0f} s")
+print("Retorno medio cada 5 iteraciones:", [round(x) for x in historial_mj[::5]])
+print("Cambio medio |r − 1| cada 5 iteraciones:", np.round(cambios_mj[::5], 3))
+
+plt.figure(figsize=(11, 3.3))
+plt.subplot(1, 2, 1)
+plt.plot(historial_mj)
+plt.axhline(500, color="gray", linestyle="--", linewidth=1)
+plt.ylim(0, 520)
+plt.xlabel("iteración (32 episodios de MuJoCo de 5 s)")
+plt.ylabel("retorno medio")
+plt.title("PPO en el palo de MuJoCo (tasa 0,01)")
+plt.grid(True, alpha=0.4)
+plt.subplot(1, 2, 2)
+plt.plot(cambios_mj, color="tab:red")
+plt.yscale("log")
+plt.xlabel("iteración")
+plt.ylabel("cambio medio |r − 1|")
+plt.grid(True, alpha=0.4)
+plt.show()"""),
+
+md(r"""**Aguanta.** Con una tasa cinco veces mayor que la del actor-crítico, PPO pasa de unos 110 puntos a **498** hacia la iteración 10, y se
+queda arriba (algún 490 suelto) hasta el final. Y el cambio medio de la política por iteración (derecha) se queda en torno al **4-10 %**:
+el cinturón de seguridad del apartado 4, trabajando en física real. El actor-crítico, con la mitad de esa tasa, llegaba a 484 y se hundía a
+unos 140 (NB32, R2).
+"""),
+
+md(r"""### Paso 4 · El examen de 10 segundos
+
+El mismo de la práctica del NB32: 50 palos nuevos, 10 segundos, sin explorar:
+"""),
+
+code(r"""obs, acc, med, rec, vivo = jugar_mujoco(como_politica(actor_mj), 0.0, 50, np.random.default_rng(123),
+                                        pasos_maximos=1000, ver_carro=True)
+print(f"PPO: se caen {(~vivo[-1]).sum()} de 50 | el carro llega, como mucho, a {np.abs(obs[:, :, 2]).max():.2f} m del centro")"""),
+
+md(r"""**Ninguno se cae**, y el carro apenas se aleja medio metro del centro (0,53 m como mucho): aprobado con la misma nota que el actor-crítico del NB32, pero
+entrenado con una tasa cinco veces mayor, en 40 iteraciones en vez de 60.
+
+### Paso 5 · En vídeo
+
+10 segundos, desde 4 grados:
+"""),
+
+code(r"""def control_con_actor(actor):
+    def control(modelo, datos):
+        observacion = torch.tensor([[datos.qpos[1], datos.qvel[1], datos.qpos[0], datos.qvel[0]]], dtype=torch.float32)
+        with torch.no_grad():
+            datos.ctrl[0] = float(actor.media(observacion).clamp(-1, 1))
+    return control
+
+modelo_video, datos_video = taller.cargar("palo_escoba")
+datos_video.qpos[1] = np.radians(4)
+taller.video(modelo_video, datos_video, segundos=10, control=control_con_actor(actor_mj), nombre="nb33_ppo_mujoco")
+print(f"A los 10 s: palo a {np.degrees(datos_video.qpos[1]):.1f} grados | carro en x = {datos_video.qpos[0]:.2f} m")"""),
+
+md(r"""### Tus retos
+
+**R1.** El experimento clave del apartado 9, en MuJoCo: entrena con `recorte=None` (todo igual, sin freno). ¿Qué pasa?
+
+**R2.** Entrena PPO con la tasa **0,005** y pásale el examen de 10 segundos. En el entrenamiento, ¿llega a 500? ¿Y el examen?
+
+**R3.** **Reto.** Con lo que has visto en R2, ¿qué cambiarías en el entrenamiento para que "aprobar el entrenamiento" garantizara mejor
+"aprobar el examen"?
+"""),
+
+md(r"""<details>
+<summary>▶ Solución R1</summary>
+
+```python
+_, _, h, c = entrenar_ppo_mj(recorte=None)
+print([round(x) for x in h[::5]], np.round(c[::5], 2))
+```
+
+Medido (semilla 0): 110, 32, 146, 170, 178, 355, 207, 26. **Un desastre**: ni siquiera llega a aprender, y termina en unos **30 puntos**, peor que
+el azar. El cambio medio de la política por iteración ronda **1** (entre 0,6 y 1,03): las probabilidades cambian por completo de un lote al
+siguiente, diez veces más que con el recorte. Y en el examen de 10 s, se caen los 50. Diez épocas sobre el mismo lote sin freno son una
+idea suicida también en MuJoCo: **el recorte es lo que hace funcionar a PPO**.
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+actor_lento, _, h, c = entrenar_ppo_mj(tasa=0.005)
+print([round(x) for x in h[::5]])
+obs, acc, med, rec, vivo = jugar_mujoco(como_politica(actor_lento), 0.0, 50, np.random.default_rng(123),
+                                        pasos_maximos=1000, ver_carro=True)
+print((~vivo[-1]).sum(), np.abs(obs[:, :, 2]).max())
+```
+
+Medido: en el entrenamiento, **perfecto**: 110, 327, 499, 500, 497, 500, 500, 500 (y sin derrumbes, donde el actor-crítico se hundía con esta
+misma tasa). Pero en el examen de 10 s, se caen **47 de 50**, con el carro en el tope (1,81 m). ¿Cómo puede ser? Porque sus episodios de
+entrenamiento duraban **5 segundos**: le basta con que el carro no llegue al tope **antes de los 5 s**. Esta política deja el carro derivar
+despacio: aguanta los 5 s, y luego choca. Ha aprendido **exactamente lo que le pedimos**, como el palo del NB29. La de tasa 0,01 tuvo la
+suerte de aprender a centrar el carro; esta, no.
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+Que lo que se mide al entrenar se parezca más a lo que se pide en el examen:
+
+- **Episodios más largos** (`pasos=1000`): el carro que deriva choca dentro del episodio, y la política lo paga. Cuesta el doble de cálculo.
+- **Una recompensa que hable del carro**: por ejemplo, restar un poco por cada paso según lo lejos del centro que esté, para que derivar
+  cueste puntos **desde el principio**, y no solo cuando ya es tarde. (Es **moldear** la recompensa, NB04; con cuidado de no crear trampas.)
+- **Examinar siempre más allá del entrenamiento**: un retorno de 500 en entrenamiento no es una garantía. Aquí, dos políticas con
+  entrenamientos perfectos dieron 0 y 47 caídas en el examen.
+
+Es una de las lecciones más importantes del RL en robótica: **el robot optimiza lo que mides, no lo que quieres**. Diseñar bien el
+episodio, la recompensa y el examen es tan importante como el algoritmo.
+</details>
+"""),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- **PPO desde cero** entrena en MuJoCo con las piezas de la lección: solo cambian el `jugar`, las redes y las escalas.
+- El **recorte** funciona igual en física real: con una tasa que hundía al actor-crítico, PPO aprende y no se derrumba (cambio por iteración ~4-10 %);
+  sin recorte, cambio ~100 % por iteración y desastre.
+- Con 40 iteraciones (1.280 episodios de 5 s), el palo aguanta 10 s sin caerse y con el carro centrado.
+- **Entrenar bien no es aprobar el examen**: dos entrenamientos perfectos (tasa 0,01 y 0,005) dieron 0 y 47 caídas en 10 s. Episodios,
+  recompensa y examen se diseñan juntos.
+
+En el **NB34** dejarás de escribir PPO a mano: llega **Stable-Baselines3**, la implementación profesional, y con ella los primeros robots
+de MuJoCo con patas. Lo que has escrito hoy es lo que hace por dentro.
+"""),
+
+md(r"""## 15 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Acabas de escribir desde cero, entendiendo cada línea, el algoritmo con el que se entrenan los robots que andan, corren y saltan en los laboratorios de todo el mundo. Lo que te falta no es otra
+Acabas de escribir desde cero, entendiendo cada línea, el algoritmo con el que se entrenan los robots que andan, corren y saltan en los laboratorios de todo el mundo, y lo has probado en el palo de escoba de MuJoCo. Lo que te falta no es otra
 idea, sino **oficio**: usar una implementación profesional, probada por miles de personas, en entornos de verdad. En la próxima lección conocerás **Stable-Baselines3**, la biblioteca de PPO
 más usada, y comprobarás que lo que hace por dentro es lo que has escrito hoy. Después, a por los primeros robots con patas: **Hopper** y **Walker2d**.
 """),

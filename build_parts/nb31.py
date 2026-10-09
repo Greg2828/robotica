@@ -10,6 +10,13 @@ descenso del NB17) y Adam; nn.MSELoss. Rehacer el NB19 (maestro que satura) en
 cinco líneas por paso: SGD vs Adam. Política estocástica con
 torch.distributions.Normal: log_prob y su gradiente = (a − μ)/σ² · obs (NB29),
 automático. Guardar y cargar con state_dict (y weights_only, NB26). GPU (.to).
+🛠 Práctica en MuJoCo (apartado 10): una red de PyTorch controla el palo de MuJoCo
+(jugar_mujoco del NB29 con un traductor NumPy↔tensor bajo no_grad;
+set_num_threads(1)). La flecha de REINFORCE a mano = autograd (log_prob). La
+neurona del NB29 con SGD 0,003 (pérdida = −objetivo): 70 → ~297. Red 2→16 ReLU→1
+(nn.Module) con Adam 0,01 y ESCALA de entradas (ángulo/0,1): ~300 en ~15
+iteraciones; sin escala, ~250 tras 50 (reto). Examen 0 caídas, vídeo con
+control(modelo, datos), state_dict en practica_nb31/politica_palo_mujoco.pt.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -539,11 +546,299 @@ Forma **(17,)**: una acción por motor. Ya sabes escribir, con PyTorch, la red q
 </details>
 """),
 
-md(r"""## 10 · Posdata
+md(r"""## 10 · 🛠 Práctica en MuJoCo: una red de PyTorch controla el palo de escoba
+
+En la práctica del NB29 entrenaste el palo de escoba de MuJoCo con una neurona de NumPy, y la pendiente la escribías **a mano**:
+`(a − μ)/σ² × observación`. Hoy has visto que PyTorch la calcula sola (apartado 5). Así que hoy:
+
+1. Comprobarás que la flecha del NB29, en MuJoCo, sale **idéntica** con autograd.
+2. Entrenarás la misma neurona con un optimizador de PyTorch (SGD).
+3. Cambiarás la neurona por una **red neuronal** de verdad (`nn.Module`, ReLU, Adam), y descubrirás un detalle que separa una red que
+   aprende de una que no: el **tamaño de los números que le entran**.
+4. Filmarás la red controlando el palo y la **guardarás** con `state_dict`.
+
+Es el paso que da toda la robótica moderna: **un simulador de física (MuJoCo) + una red neuronal (PyTorch)**.
+"""),
+
+md(r"""### Paso 1 · Preparar el taller
+
+Tres cosas: el `jugar_mujoco` que guardaste en el NB29; la función `retornos_desde_cada_paso` del NB29 (la copiamos, son seis líneas); y una
+orden nueva, `torch.set_num_threads(1)`, que le dice a PyTorch que use **un solo núcleo** del procesador. Con redes tan pequeñas, repartir
+cada cuentecita entre los cuatro núcleos de la Pi cuesta más de lo que ahorra (y así dejas los otros libres).
+"""),
+
+code(r"""from practica_mujoco.nb29_palo_mujoco import jugar_mujoco
+import taller
+
+torch.set_num_threads(1)
+SIGMA_MJ = 0.3                     # la exploración del NB29, en unidades del motor (−1 a 1)
+
+def retornos_desde_cada_paso(recompensas, gamma=0.99):
+    G = np.zeros_like(recompensas)
+    acumulado = np.zeros(recompensas.shape[1], dtype=np.float32)
+    for t in reversed(range(recompensas.shape[0])):
+        acumulado = recompensas[t] + gamma * acumulado
+        G[t] = acumulado
+    return G"""),
+
+md(r"""### Paso 2 · Una red de PyTorch como política de MuJoCo
+
+`jugar_mujoco` quiere una **función** que reciba las observaciones de NumPy y devuelva las medias en NumPy. Una red de PyTorch quiere
+tensores. Hacemos de traductor: NumPy → tensor (`torch.from_numpy`, en `float32`) → red → `.numpy()`. Y todo dentro de `torch.no_grad()`
+(apartado 2): para **jugar** no hacen falta pendientes.
+
+La primera "red" es la neurona del NB29: `nn.Linear(2, 1, bias=False)` (dos pesos, sin sesgo), con los pesos (1; 0,2) puestos a mano.
+`squeeze(-1)` quita la última dimensión, que mide 1: la red da una tabla (n, 1) y queremos n medias.
+"""),
+
+code(r"""def como_politica(red):
+    def politica(observaciones):
+        with torch.no_grad():
+            return red(torch.from_numpy(observaciones.astype(np.float32))).squeeze(-1).numpy()
+    return politica
+
+neurona = nn.Linear(2, 1, bias=False)
+with torch.no_grad():
+    neurona.weight[:] = torch.tensor([[1.0, 0.2]])
+
+obs, acc, med, rec, vivo = jugar_mujoco(como_politica(neurona), SIGMA_MJ, 50, np.random.default_rng(0))
+print("Retorno medio con la neurona (1; 0,2):", round(float((rec * vivo).sum(axis=0).mean()), 1))"""),
+
+md(r"""### Paso 3 · La flecha del NB29, con autograd
+
+Con un lote ya jugado, calculamos la dirección de mejora de **dos** formas:
+
+- **A mano**, con la fórmula del NB29: media sobre episodios de la suma sobre pasos de ventaja × (a − μ)/σ² × observación.
+- **Con autograd**: el "objetivo" = media sobre episodios de la suma sobre pasos de ventaja × log-probabilidad de la acción (`Normal(...).log_prob`, apartado 5), y `.backward()`.
+
+La ventaja, la del NB29: el retorno desde cada paso menos su media en ese paso, y a cero en los pasos con el palo ya en el suelo.
+"""),
+
+code(r"""G = retornos_desde_cada_paso(rec)
+ventajas = (G - G.mean(axis=1, keepdims=True)) * vivo                     # la línea base del NB29
+
+# 1) a mano (NB29)
+a_mano = (ventajas[..., None] * ((acc - med) / SIGMA_MJ ** 2)[..., None] * obs).sum(axis=0).mean(axis=0)
+
+# 2) con autograd
+medias = neurona(torch.from_numpy(obs)).squeeze(-1)                       # (300, 50), ahora SÍ con pendientes
+log_prob = Normal(medias, SIGMA_MJ).log_prob(torch.from_numpy(acc))
+objetivo = (log_prob * torch.from_numpy(ventajas)).sum(dim=0).mean()
+neurona.zero_grad()
+objetivo.backward()
+
+print("a mano (NB29):", a_mano)
+print("autograd:     ", neurona.weight.grad)"""),
+
+md(r"""**Iguales** (salvo el último decimal, por los `float32`). Fíjate en que aquí la red recibe de golpe las 300 × 50 observaciones del lote: una
+tabla de forma (300, 50, 2), y `nn.Linear` la trata sin pestañear (trabaja con la **última** dimensión, NB15). La fórmula a mano, para la
+que necesitamos dos lecciones (NB28b y NB29), es ahora una llamada a `.backward()`.
+"""),
+
+md(r"""### Paso 4 · Entrenar con un optimizador de PyTorch
+
+Ahora el bucle de entrenamiento con las cinco líneas del apartado 4. Un detalle: el optimizador **baja** la pérdida, y nosotros queremos
+**subir** el objetivo. Solución: la pérdida es **menos** el objetivo (bajar −x es subir x). En el NB32 lo verás con calma; hoy basta con eso.
+
+Con `SGD` y la tasa del NB29 (0,003), dar un paso es exactamente `pesos = pesos + 0,003 × flecha`: **es REINFORCE del NB29**, escrito con
+PyTorch. 50 iteraciones de 50 episodios, unos 15 segundos:
+"""),
+
+code(r"""def entrenar_red(red, optimizador, iteraciones=50, semilla=0):
+    generador = np.random.default_rng(semilla)
+    historial = []
+    for iteracion in range(iteraciones):
+        obs, acc, med, rec, vivo = jugar_mujoco(como_politica(red), SIGMA_MJ, 50, generador)   # jugar (sin pendientes)
+        historial.append(float((rec * vivo).sum(axis=0).mean()))
+        G = retornos_desde_cada_paso(rec)
+        ventajas = torch.from_numpy((G - G.mean(axis=1, keepdims=True)) * vivo)
+        medias = red(torch.from_numpy(obs)).squeeze(-1)                                        # ahora sí, con pendientes
+        objetivo = (Normal(medias, SIGMA_MJ).log_prob(torch.from_numpy(acc)) * ventajas).sum(dim=0).mean()
+        perdida = -objetivo                         # bajar −objetivo = subir el objetivo
+        optimizador.zero_grad()
+        perdida.backward()
+        optimizador.step()
+    return historial
+
+import time
+inicio = time.time()
+neurona = nn.Linear(2, 1, bias=False)
+nn.init.zeros_(neurona.weight)                     # empieza sin saber nada, como en el NB29
+historial_neurona = entrenar_red(neurona, torch.optim.SGD(neurona.parameters(), lr=0.003))
+print(f"Tiempo: {time.time() - inicio:.0f} s | pesos aprendidos: {neurona.weight.data.numpy().round(2)}")
+print("Retorno cada 5 iteraciones:", [round(x) for x in historial_neurona[::5]])"""),
+
+md(r"""Aprende como en el NB29, desde ~70 puntos hasta cerca de 300, y con pesos **positivos** (meter el carro debajo del palo). Por el camino
+da algún tropiezo (mira la lista): REINFORCE con SGD tiene sus días malos.
+
+(`nn.init.zeros_` pone a cero los pesos de una capa; el guion bajo final es la costumbre de PyTorch para "modifica el tensor en el sitio".)
+"""),
+
+md(r"""### Paso 5 · Una red de verdad... y el tamaño de sus números
+
+Ahora cambiamos la neurona por una red como la del apartado 3: 2 entradas → 16 neuronas ReLU → 1 salida, como clase `nn.Module`, con el
+optimizador **Adam** (tasa 0,01). Pero antes, un detalle que decide si aprenderá o no.
+
+Mira las observaciones de MuJoCo: el ángulo va en **radianes**, y un palo inclinado 3° está a **0,05** rad. Para una red recién nacida, cuyas
+ruedecillas empiezan con valores al azar de tamaño ~0,5, una entrada de 0,05 es casi **cero**: la señal más importante (cuánto se inclina el
+palo) le llega susurrando. Las redes aprenden mucho mejor cuando sus entradas son de tamaño **1**, más o menos (como la normalización del
+NB27). Así que, **dentro** de la red, dividimos el ángulo entre 0,1 (3° pasa a ser 0,5) y dejamos el giro, que ya anda por las unidades.
+"""),
+
+code(r"""class PoliticaRed(nn.Module):
+    def __init__(self, ocultas=16):
+        super().__init__()
+        self.capa1 = nn.Linear(2, ocultas)
+        self.capa2 = nn.Linear(ocultas, 1)
+        self.escala = torch.tensor([0.1, 1.0])           # ángulo / 0,1 ; giro / 1
+
+    def forward(self, observaciones):
+        return self.capa2(torch.relu(self.capa1(observaciones / self.escala)))
+
+torch.manual_seed(0)
+red = PoliticaRed()
+print("Ruedecillas:", sum(p.numel() for p in red.parameters()))
+
+inicio = time.time()
+historial_red = entrenar_red(red, torch.optim.Adam(red.parameters(), lr=0.01))
+print(f"Tiempo: {time.time() - inicio:.0f} s")
+print("Retorno cada 5 iteraciones:", [round(x) for x in historial_red[::5]])"""),
+
+md(r"""(La escala es un tensor normal, no una ruedecilla: no aparece en `parameters()` y el optimizador no la toca. Por eso salen 65 ruedecillas:
+2 × 16 + 16 de la primera capa, 16 + 1 de la segunda.)
+
+**La red aprende, y deprisa**: de unos 60 puntos a casi **300** en unas 15 iteraciones, y ahí se queda, rozando el máximo, sin los tropiezos de
+la neurona con SGD. Dibujemos las dos curvas:
+"""),
+
+code(r"""plt.figure(figsize=(7, 3.5))
+plt.plot(historial_neurona, label="neurona del NB29 + SGD")
+plt.plot(historial_red, label="red de 16 ReLU + Adam")
+plt.axhline(300, color="gray", linestyle="--", linewidth=1)
+plt.xlabel("iteración (50 episodios de MuJoCo)")
+plt.ylabel("retorno medio")
+plt.legend()
+plt.grid(True, alpha=0.4)
+plt.show()"""),
+
+md(r"""### Paso 6 · El examen y el vídeo
+
+El examen del NB29: la red **sin explorar** (σ = 0) con 100 palos nuevos de 3 segundos. Y luego la filmamos con `taller.video`, que
+necesita una función `control(modelo, datos)`: se la fabricamos con la red, leyendo la observación de `datos.qpos` y `datos.qvel`.
+"""),
+
+code(r"""obs, acc, med, rec, vivo = jugar_mujoco(como_politica(red), 0.0, 100, np.random.default_rng(123))
+print(f"Retorno medio {(rec * vivo).sum(axis=0).mean():.1f} | se caen antes de los 3 s: {(~vivo[-1]).sum()} de 100")
+
+def control_con_red(red):
+    def control(modelo, datos):
+        observacion = torch.tensor([[datos.qpos[1], datos.qvel[1]]], dtype=torch.float32)
+        with torch.no_grad():
+            datos.ctrl[0] = float(red(observacion).clamp(-1, 1))
+    return control
+
+modelo_video, datos_video = taller.cargar("palo_escoba")
+datos_video.qpos[1] = np.radians(4)
+taller.video(modelo_video, datos_video, segundos=3, control=control_con_red(red), nombre="nb31_red_pytorch")
+print(f"A los 3 s: palo a {np.degrees(datos_video.qpos[1]):.1f} grados | carro en x = {datos_video.qpos[0]:.2f} m")"""),
+
+md(r"""**Ninguno se cae**, y en el vídeo verás el carro meterse bajo el palo y enderezarlo. Una red de PyTorch está moviendo un motor dentro de
+un simulador de física. (Fíjate también en el carro: igual que en el NB29, esta red **solo ve el palo**, así que el carro no tiene por qué
+quedarse en el centro.)
+"""),
+
+md(r"""### Paso 7 · Guardar la red
+
+Como en el apartado 6: `state_dict`, `torch.save` y, al cargar, `weights_only=True`. La guardamos en la carpeta `practica_nb31/`, junto a la del
+apartado 6, y comprobamos que la red cargada controla el palo **igual**:
+"""),
+
+code(r"""torch.save(red.state_dict(), carpeta / "politica_palo_mujoco.pt")
+
+red_cargada = PoliticaRed()
+red_cargada.load_state_dict(torch.load(carpeta / "politica_palo_mujoco.pt", weights_only=True))
+
+a = jugar_mujoco(como_politica(red), 0.0, 5, np.random.default_rng(1))
+b = jugar_mujoco(como_politica(red_cargada), 0.0, 5, np.random.default_rng(1))
+print("¿Mismos retornos con la red cargada?", np.allclose((a[3] * a[4]).sum(axis=0), (b[3] * b[4]).sum(axis=0)))"""),
+
+md(r"""### Tus retos
+
+**R1.** Quita la escala: entrena `PoliticaRed` con `self.escala = torch.tensor([1.0, 1.0])` (la misma semilla 0, Adam 0,01). ¿Qué pasa?
+
+**R2.** Con la escala puesta, prueba Adam con tasa **0,003** (semillas 0 y 1). ¿Llega? ¿Cuándo?
+
+**R3.** **Reto.** ¿Cuántas veces es la red de hoy más grande que la neurona del NB29, en ruedecillas? ¿Y la red del humanoide del NB19 (159.505),
+comparada con la de hoy? ¿Cambiaría alguna línea de `entrenar_red` para entrenarla?
+"""),
+
+md(r"""<details>
+<summary>▶ Solución R1</summary>
+
+```python
+class PoliticaSinEscala(PoliticaRed):
+    def __init__(self):
+        super().__init__()
+        self.escala = torch.tensor([1.0, 1.0])
+
+torch.manual_seed(0)
+red_sin = PoliticaSinEscala()
+h = entrenar_red(red_sin, torch.optim.Adam(red_sin.parameters(), lr=0.01))
+print([round(x) for x in h[::5]])
+```
+
+(Heredar de `PoliticaRed` y cambiar solo la escala: la herencia del NB25.)
+
+Medido: aprende, pero **mucho más despacio**: 60, 66, 69, 76, 110, 148, 173, 211, 224, 249 (cada 5 iteraciones), y acaba hacia **250**,
+cuando con la escala rozaba los 300 en solo 15 iteraciones. La red es la misma, el algoritmo es el mismo: solo ha cambiado el **tamaño de los
+números que le entran**. Con el ángulo en radianes sin escalar, sus neuronas apenas notan la inclinación del palo y tardan muchísimo en
+aprender a amplificarla. Escalar las entradas es una de las primeras cosas que se revisan cuando una red no aprende (y en el NB32 lo harás siempre).
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+```python
+for semilla in [0, 1]:
+    torch.manual_seed(semilla)
+    red_lenta = PoliticaRed()
+    h = entrenar_red(red_lenta, torch.optim.Adam(red_lenta.parameters(), lr=0.003), semilla=semilla)
+    print(semilla, [round(x) for x in h[::5]])
+```
+
+Medido: las dos llegan, pero más tarde. Semilla 0: 63, 61, 83, 94, 163, 234, 283, 295, 297, 297; semilla 1: 51, 66, 92, 110, 147, 197,
+254, 271, 291, 295. Con tasa 0,003 necesitan unas 35-40 iteraciones para pasar de 280; con 0,01, unas 15. Aquí la tasa grande no da
+sustos... todavía. En el NB32 verás que, con tasas altas, un actor que ya sabía puede **derrumbarse**.
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+La neurona del NB29 tenía **2** ruedecillas; la red de hoy, **65**: unas 32 veces más. La del humanoide, 159.505: unas **2.500 veces** la de
+hoy. Y `entrenar_red` **no cambiaría ni una línea**: recibe cualquier red y cualquier optimizador, y `.backward()` calcula las pendientes de
+todas las ruedecillas, sean 2 o 159.505. Solo cambiarían el entorno (el humanoide en vez del palo) y el tiempo de cálculo. Esa es la
+promesa de PyTorch cumplida en MuJoCo.
+</details>
+"""),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- Una **red de PyTorch** controla un robot de MuJoCo con un traductor de dos líneas: NumPy → tensor → red → NumPy (y `torch.no_grad()` para jugar).
+- La pendiente de REINFORCE en MuJoCo sale **idéntica** a mano y con autograd; con un optimizador de PyTorch, el entrenamiento es el bucle de cinco líneas.
+- Las unidades de MuJoCo (radianes) dan números diminutos: **escalar las entradas** de la red (a tamaño ~1) decide si aprende o no.
+- Para filmar una red: una función `control(modelo, datos)` que lee `qpos`/`qvel`, pregunta a la red y escribe `datos.ctrl`.
+- Las redes que mueven robots se guardan con `state_dict` y se cargan con `weights_only=True`.
+- `torch.set_num_threads(1)`: con redes pequeñas, un núcleo basta (y deja la Pi libre para la física).
+
+En la práctica del **NB32** juntarás dos redes, un **actor** y un **crítico**, en el palo de MuJoCo, y por fin le dejarás **ver el carro** para
+que no se escape hacia el final del raíl.
+"""),
+
+md(r"""## 11 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Ya tienes la herramienta profesional: tensores, autograd, capas, optimizadores, distribuciones y cómo guardar redes. Y has comprobado que no hace nada que no supieras hacer a mano, solo que mucho más rápido
+Ya tienes la herramienta profesional: tensores, autograd, capas, optimizadores, distribuciones y cómo guardar redes, y la has usado para que una red controle un robot de MuJoCo. Y has comprobado que no hace nada que no supieras hacer a mano, solo que mucho más rápido
 y sin errores. En la próxima lección juntamos todo: un **actor-crítico** con **redes neuronales de PyTorch** (el actor da la campana de acciones; el crítico, el valor de cada situación), que aprende a
 mantener el palo de escoba usando **tu** entorno oficial de Gymnasium del NB25. Será el último paso antes de **PPO**.
 """),

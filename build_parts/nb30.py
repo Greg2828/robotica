@@ -10,6 +10,14 @@ golpe); ventaja = G − V(s). Comparación con 5 semillas (iteraciones hasta 490
 línea base media ~[53,79,95,60,47]; crítico + normalizar ~[13,17,17,66,26] (el
 mejor). El descuento γ: 0,9 no aprende (miope), 0,99 bien, 1,0 algo peor.
 Hacia actor-crítico y PPO.
+🛠 Práctica en MuJoCo (apartado 10): las armas en el palo de MuJoCo (jugar_mujoco
+del fichero del NB29, funciones de la lección sin cambiar). Ruido de la flecha
+(20 lotes de 50) al principio (pesos 0: igual con/sin línea base, señal fuerte)
+y al final (pesos 2,2/0,35: sin línea base ~26 vs ~5 media / ~4 crítico, 11 de
+20 flechas al revés) → explica por qué el puro aprendía en el NB29. Crítico
+lineal en radianes (momento/300). Media (0,003) vs crítico+normalizar (0,1): las
+dos >280, sin ventaja clara aquí. γ 0,9 sí aprende en MuJoCo: horizonte en
+segundos = timestep/(1−γ). Retos: viento, γ para 3 s, lotes de 200 (√4).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -461,11 +469,264 @@ actor-crítico, actor y crítico aprenden **a la vez**, sin parar.
 </details>
 """),
 
-md(r"""## 10 · Posdata
+md(r"""## 10 · 🛠 Práctica en MuJoCo: el ruido, el crítico y el descuento en el palo de física real
+
+En la práctica del NB29 entrenaste por primera vez en MuJoCo, y te llevaste una sorpresa: allí el REINFORCE **puro** también
+aprendía. Te prometí que hoy **mediríamos** por qué. Vamos a usar el palo de escoba de MuJoCo como laboratorio y a llevarle las cuatro
+armas de esta lección:
+
+1. **Medir** el ruido de la flecha (sin línea base, con la media por paso, con el crítico)... y descubrir **cuándo** importa.
+2. El **crítico** de mínimos cuadrados, con los mismos rasgos, ahora juzgando situaciones de física real.
+3. **Normalizar** y entrenar con el crítico.
+4. El **descuento**, y una idea nueva: el horizonte se mide en **segundos**, y depende del paso de tiempo del simulador.
+
+Todo con las funciones de esta lección **sin cambiar una línea** (`retornos_desde_cada_paso`, `direccion_de_mejora`, `rasgos`,
+`ajustar_critico`) y con el `jugar_mujoco` que guardaste en el NB29.
+"""),
+
+md(r"""### Paso 1 · Traer el palo de MuJoCo
+
+`jugar_mujoco` está en el fichero `practica_mujoco/nb29_palo_mujoco.py` (NB29, paso 6). Recuerda que no recibe pesos, sino una
+**función** que convierte observaciones en medias; para nuestra neurona de dos ruedecillas, `lambda o: o @ pesos` (NB19). Episodios de
+3 segundos (300 pasos de 0,01 s), observación [ángulo, giro] en radianes, acción del motor entre −1 y 1, σ = 0,3: lo mismo que en el NB29.
+"""),
+
+code(r"""from practica_mujoco.nb29_palo_mujoco import jugar_mujoco
+
+SIGMA_MJ = 0.3
+obs, acc, med, rec, vivo = jugar_mujoco(lambda o: o @ np.zeros(2), SIGMA_MJ, 50, np.random.default_rng(0))
+print("Forma de las observaciones:", obs.shape, "| retorno medio sin saber nada:", round((rec * vivo).sum(axis=0).mean(), 1))"""),
+
+md(r"""(300 pasos, 50 episodios, 2 números por observación. Y los ~70 puntos del NB29: sin saber nada, el palo dura menos de un segundo.)
+
+### Paso 2 · Medir el ruido, en dos momentos del aprendizaje
+
+Hacemos lo del apartado 2: estimar la flecha **20 veces** con los mismos pesos (cada vez con un lote nuevo de 50 episodios) y mirar su
+dispersión. Pero ahora en **dos momentos**:
+
+- **Al principio** del aprendizaje: pesos (0, 0), la política que no sabe nada.
+- **Al final**: pesos (2,2; 0,35), más o menos los que aprendió el NB29, una política que ya sostiene el palo.
+
+Y con las tres formas de calcular las ventajas: sin línea base, con la media por paso y con el crítico. (Tarda unos 20 segundos.)
+"""),
+
+code(r"""def ventajas_segun(modo, obs, G, vivo):
+    if modo == "sin línea base":
+        return G
+    if modo == "media por paso":
+        return G - G.mean(axis=1, keepdims=True)
+    return G - rasgos(obs) @ ajustar_critico(obs, G, vivo)          # "crítico"
+
+for nombre, pesos_mj in [("al principio", np.array([0.0, 0.0])), ("al final", np.array([2.2, 0.35]))]:
+    print(f"--- {nombre}, pesos {pesos_mj} ---")
+    for modo in ["sin línea base", "media por paso", "crítico"]:
+        generador = np.random.default_rng(7)
+        flechas = []
+        for r in range(20):
+            obs, acc, med, rec, vivo = jugar_mujoco(lambda o: o @ pesos_mj, SIGMA_MJ, 50, generador)
+            G = retornos_desde_cada_paso(rec)
+            flechas.append(direccion_de_mejora(obs, acc, med, ventajas_segun(modo, obs, G, vivo), vivo, SIGMA_MJ))
+        flechas = np.array(flechas)
+        print(f"{modo:>15}: media {flechas.mean(axis=0).round(1)} | dispersión {flechas.std(axis=0).round(1)}"
+              f" | flechas con el primer número negativo: {(flechas[:, 0] < 0).sum()} de 20")"""),
+
+md(r"""Aquí está la respuesta a la sorpresa del NB29. Lee las dos mitades de la salida por separado:
+
+- **Al principio**, las tres formas dan casi **la misma** dispersión (unos 8 en la primera ruedecilla, unos 31-34 en la segunda), y la
+  media de la flecha es claramente **positiva**: "empuja hacia donde cae el palo". La señal es tan fuerte que el ruido apenas importa.
+  Por eso el REINFORCE puro aprendía.
+- **Al final**, todo cambia. Sin línea base, la dispersión de la primera ruedecilla sube a unos **26**, y la media se queda en unos 2,5:
+  el ruido es **diez veces** mayor que la señal, y **11 de las 20** flechas apuntan hacia el lado contrario. Con la media por paso, la
+  dispersión baja a unos **5**; con el crítico, a unos **4**: entre cinco y siete veces menos ruido.
+
+¿Por qué? Cuando la política ya es buena, casi todos los episodios duran los 300 pasos y sus retornos son **altos y parecidos**. Sin línea
+base, **todas** las acciones reciben un refuerzo grande y positivo (el problema de las golosinas del NB29), y la poca información útil
+("esta acción fue un poco mejor que aquella") queda enterrada. La línea base resta esa parte común y deja a la vista las diferencias.
+
+**Lección:** las armas contra el ruido importan sobre todo **al afinar**, cuando la política ya es buena y lo que queda por aprender es
+sutil. Para un humanoide, que pasa casi todo su entrenamiento afinando, son imprescindibles.
+"""),
+
+md(r"""### Paso 3 · Interrogar al crítico de MuJoCo
+
+El crítico es el mismo del apartado 4: rasgos [1, ángulo², giro², ángulo × giro, momento] y mínimos cuadrados. Lo ajustamos con un lote de
+la política buena y le preguntamos, como hicimos con el palo de juguete, por tres situaciones. Ojo con las unidades: ahora el ángulo va en
+**radianes** (`np.radians`) y el momento es el paso dividido entre **300** (lo que duran estos episodios):
+"""),
+
+code(r"""obs, acc, med, rec, vivo = jugar_mujoco(lambda o: o @ np.array([2.2, 0.35]), SIGMA_MJ, 50, np.random.default_rng(3))
+G = retornos_desde_cada_paso(rec)
+pesos_criticos_mj = ajustar_critico(obs, G, vivo)
+
+def valor_mj(grados, grados_por_segundo, paso):
+    i, v = np.radians(grados), np.radians(grados_por_segundo)
+    return np.array([1.0, i ** 2, v ** 2, i * v, paso / 300]) @ pesos_criticos_mj
+
+print(f"Derecho y quieto, al principio:      V = {valor_mj(0, 0, 0):6.1f}")
+print(f"Inclinado 3° y cayendo, al principio: V = {valor_mj(3, 20, 0):6.1f}")
+print(f"Derecho y quieto, casi al final:     V = {valor_mj(0, 0, 290):6.1f}")"""),
+
+md(r"""Mira los números con lupa, como en el apartado 4. La tercera respuesta tiene sentido: casi al final quedan solo 10 pasos, y el crítico
+espera unos **30** puntos (menos que al principio, bien; pero más de los ~10 que de verdad quedan). Las otras dos son **imposibles**: con
+γ = 0,99 y 300 pasos, el retorno máximo es 1 + 0,99 + 0,99² + ... ≈ **95**, y el crítico dice unos **110**. Y apenas distingue
+"derecho y quieto" de "inclinado y cayendo" (109,5 frente a 108,8).
+
+Es el mismo juez **tosco** de la lección: una neurona lineal con cinco rasgos, ajustada con datos de una política que casi siempre aguanta
+los 300 pasos. Para que la media de sus predicciones cuadre, se pasa por arriba al principio y por abajo al final (el rasgo "momento" es
+una línea recta, y el retorno de verdad cae como una curva). Aun así, como línea base sirve, porque lo que importa es que se lleve la
+parte **común** de los retornos (paso 2). Un crítico que de verdad entienda las situaciones será una **red** (NB32).
+"""),
+
+md(r"""### Paso 4 · Entrenar: media por paso contra crítico + normalizar
+
+Ahora, la comparación del apartado 5 en MuJoCo. Usamos la función `entrenar` de la lección como plantilla, cambiando solo el `jugar`. Dos
+tasas, medidas probando (NB17): 0,003 para la media por paso (la del NB29) y **0,1** para crítico + normalizar (las ventajas normalizadas
+son números de tamaño 1, mucho más pequeños, así que hace falta una tasa mayor). 40 iteraciones de 50 episodios cada una, semilla 0.
+Unos 15 segundos:
+"""),
+
+code(r"""def entrenar_mj(linea_base, normalizar, tasa, gamma=0.99, iteraciones=40, semilla=0, viento=0.0):
+    generador = np.random.default_rng(semilla)
+    pesos = np.zeros(2)
+    historial = []
+    for iteracion in range(iteraciones):
+        obs, acc, med, rec, vivo = jugar_mujoco(lambda o: o @ pesos, SIGMA_MJ, 50, generador, viento=viento)
+        historial.append((rec * vivo).sum(axis=0).mean())
+        G = retornos_desde_cada_paso(rec, gamma)
+        ventajas = ventajas_segun(linea_base, obs, G, vivo)
+        if normalizar:
+            ventajas = (ventajas - ventajas[vivo].mean()) / (ventajas[vivo].std() + 1e-8)
+        pesos = pesos + tasa * direccion_de_mejora(obs, acc, med, ventajas, vivo, SIGMA_MJ)
+    return pesos, historial
+
+pesos_media, h_media = entrenar_mj("media por paso", False, 0.003)
+pesos_critico, h_critico = entrenar_mj("crítico", True, 0.1)
+print("media por paso:     pesos", pesos_media.round(2), "| últimas 5 iteraciones:", round(np.mean(h_media[-5:])))
+print("crítico+normalizar: pesos", pesos_critico.round(2), "| últimas 5 iteraciones:", round(np.mean(h_critico[-5:])))
+
+plt.figure(figsize=(7, 3.5))
+plt.plot(h_media, label="media por paso (tasa 0,003)")
+plt.plot(h_critico, label="crítico + normalizar (tasa 0,1)")
+plt.axhline(300, color="gray", linestyle="--", linewidth=1)
+plt.xlabel("iteración (50 episodios de MuJoCo)")
+plt.ylabel("retorno medio")
+plt.legend()
+plt.grid(True, alpha=0.4)
+plt.show()"""),
+
+md(r"""Las dos aprenden y acaban por encima de **280** (de unos 300 posibles), en un número de iteraciones parecido. Aquí el crítico **no** saca la
+ventaja que sacaba en el palo de juguete, y ya sabes por qué (paso 2): en este palo sin viento, la parte difícil del aprendizaje es
+corta, la señal es fuerte y casi cualquier línea base sirve. Y fíjate en los pesos: con el crítico salen **más grandes** (normalizar
+hace que los pasos no se encojan cuando las ventajas son pequeñas). Hay muchas ruedecillas que funcionan (NB29).
+
+Contarlo así, sin adornarlo, es parte del oficio: **una técnica que acelera mucho un problema puede no cambiar nada en otro**. Por eso se mide.
+"""),
+
+md(r"""### Paso 5 · El descuento, en segundos
+
+En el apartado 6, con el palo de juguete, γ = 0,9 **no aprendía**: el robot era miope. Probémoslo en MuJoCo (crítico + normalizar, unos 15
+segundos):
+"""),
+
+code(r"""for gamma in [0.9, 0.99]:
+    pesos_g, h_g = entrenar_mj("crítico", True, 0.1, gamma=gamma)
+    print(f"γ = {gamma}: horizonte ≈ {1 / (1 - gamma):.0f} pasos = {0.01 / (1 - gamma):.1f} s"
+          f" | últimas 5 iteraciones: {np.mean(h_g[-5:]):.0f}")"""),
+
+md(r"""¡Aquí γ = 0,9 **sí** aprende! ¿Contradice el apartado 6? No, y la razón es muy de simulador: **el horizonte se mide en pasos, pero
+la física ocurre en segundos**. Un horizonte de 1/(1 − γ) pasos dura:
+
+```
+   horizonte en segundos  ≈  paso de tiempo / (1 − γ)
+```
+
+El palo de juguete daba pasos de 0,02 s y caía despacio (con el viento, una mala acción se pagaba un segundo después); este palo de MuJoCo
+va a 0,01 s y, sin motor, **cae en 0,58 s** desde 5° (NB28). Con γ = 0,9 ve 0,1 s por delante: poco, pero, para un palo que cae tan
+deprisa, una mala acción ya se nota en el siguiente puñado de pasos.
+
+Consecuencia práctica, que verás en todos los entornos de robots: **si cambias el paso de tiempo del simulador, tienes que cambiar γ**. Si
+pasas de 0,01 s a 0,002 s (cinco veces más pasos por segundo), con el mismo γ el robot verá cinco veces menos tiempo hacia delante.
+"""),
+
+md(r"""### Tus retos
+
+**R1.** Repite el paso 4 con **viento** (`viento=5.0`, ráfagas de hasta 5 newtons sobre el palo) y las semillas 0, 1 y 2. ¿Ayuda el crítico
+cuando el mundo es más ruidoso?
+
+**R2.** En el NB29 viste que la política que solo mira el palo deja que el carro derive y, pasados unos 3 segundos, choca con el tope.
+¿Qué γ haría falta para que el horizonte fuera de **3 segundos** en este palo de MuJoCo (paso de 0,01 s)? ¿Y en el humanoide de
+Gymnasium, que da pasos de 0,015 s?
+
+**R3.** **Reto.** Con los pesos del final (2,2; 0,35), mide el ruido de la flecha sin línea base y con el crítico usando **lotes de 200
+episodios** en vez de 50 (10 repeticiones). ¿Cuánto baja la dispersión? ¿Compensa jugar 4 veces más?
+"""),
+
+md(r"""<details>
+<summary>▶ Solución R1</summary>
+
+```python
+for linea_base, normalizar, tasa in [("media por paso", False, 0.003), ("crítico", True, 0.1)]:
+    finales = [round(np.mean(entrenar_mj(linea_base, normalizar, tasa, semilla=s, viento=5.0)[1][-5:])) for s in range(3)]
+    print(linea_base, finales)
+```
+
+Medido (unos 45 segundos): con la media por paso, **254, 240 y 254**; con crítico + normalizar, **245, 219 y 258**. Con viento, los dos
+aprenden peor que sin él (el viento es ruido en el mundo y además hace el palo más difícil), y el crítico **no** gana: su línea base lineal
+de cinco rasgos es tosca, y con tasa 0,1 da pasos más grandes y más irregulares. Para que un crítico marque la diferencia hace falta que
+**juzgue bien**: una red neuronal, como verás en el NB32.
+</details>
+
+<details>
+<summary>▶ Solución R2</summary>
+
+Horizonte en pasos = 3 s / 0,01 s = 300 pasos, y 1/(1 − γ) = 300 → γ = 1 − 1/300 ≈ **0,9967**.
+
+En el humanoide, 3 s / 0,015 s = 200 pasos → γ = 1 − 1/200 = **0,995**. (Los entrenamientos de humanoides usan, de hecho, valores entre
+0,99 y 0,995.) Y ojo: un horizonte largo no basta. Con la observación del NB29, el robot **no ve el carro**, así que aunque le importe el
+futuro, no puede saber que va derivando (NB29, R4). Lo arreglaremos en el NB32.
+</details>
+
+<details>
+<summary>▶ Solución R3</summary>
+
+```python
+for modo in ["sin línea base", "crítico"]:
+    generador = np.random.default_rng(7)
+    flechas = []
+    for r in range(10):
+        obs, acc, med, rec, vivo = jugar_mujoco(lambda o: o @ np.array([2.2, 0.35]), SIGMA_MJ, 200, generador)
+        G = retornos_desde_cada_paso(rec)
+        flechas.append(direccion_de_mejora(obs, acc, med, ventajas_segun(modo, obs, G, vivo), vivo, SIGMA_MJ))
+    print(modo, np.array(flechas).std(axis=0).round(1))
+```
+
+Medido: sin línea base, la dispersión de la primera ruedecilla baja de unos 26 a unos **12**; con el crítico, de unos 4 a unos **1,8**.
+Cuatro veces más episodios dividen el ruido entre **dos**, no entre cuatro: es la raíz cuadrada del error típico (NB28, √4 = 2). Y fíjate
+en la comparación que importa: el crítico con 50 episodios (≈ 4) es **tres veces** más preciso que no usar línea base con 200 (≈ 12), y
+sin línea base, aun con 200 episodios, la mitad de las flechas (5 de 10) siguen apuntando al revés. **Jugar más es caro y ayuda poco;
+una buena línea base es gratis y ayuda mucho.** Esa es la razón de ser de los críticos.
+</details>
+"""),
+
+md(r"""### Qué has aprendido de MuJoCo hoy
+
+- El ruido de la flecha se **mide** en MuJoCo igual que en cualquier otro mundo: repetir la estimación con los mismos pesos y mirar su dispersión.
+- En el palo de MuJoCo, la línea base casi no importa **al principio** (señal fuerte) y es **imprescindible al final** (sin ella, la mitad
+  de las flechas apuntan al revés).
+- Las piezas de RL (crítico de mínimos cuadrados, normalizar) se enchufan a MuJoCo **sin cambiar una línea**; solo cambian las **unidades**
+  (radianes) y las **tasas**.
+- El horizonte del descuento se mide en **segundos**: paso de tiempo / (1 − γ). Si cambias `opt.timestep`, revisa γ.
+- Una técnica que ayuda mucho en un problema puede no cambiar nada en otro: **se mide**.
+
+En la práctica del **NB31** la política dejará de ser una neurona de NumPy: será una **red de PyTorch** que controla el palo de MuJoCo, con
+las pendientes calculadas por autograd.
+"""),
+
+md(r"""## 11 · Posdata
 
 Si algo no ha quedado claro, dime el **apartado** y la **frase exacta** y lo reescribo.
 
-Hoy has aprendido a medir y domar el ruido, has construido tu primer **crítico**, y has visto que el descuento define lo lejos que "ve" un robot. En el **NB31** llega la herramienta que usa toda la
+Hoy has aprendido a medir y domar el ruido, has construido tu primer **crítico**, y has visto que el descuento define lo lejos que "ve" un robot (y, en la práctica en MuJoCo, que ese "lejos" se mide en segundos y que la línea base importa sobre todo al afinar). En el **NB31** llega la herramienta que usa toda la
 industria para construir y entrenar redes neuronales: **PyTorch**. Verás que hace **sola** la retropropagación que escribiste a mano en el NB19 (se llama **autograd**), y rehicimos en unas pocas
 líneas lo que nos costó una lección entera. Con PyTorch, el actor y el crítico podrán ser **redes neuronales** de verdad.
 """),
