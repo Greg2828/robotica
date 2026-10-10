@@ -1000,7 +1000,11 @@ for ax in ejes:
     ax.grid(alpha=0.3)
 plt.show()"""),
 
-md(r"""PLACEHOLDER_CORTO_CURVAS
+md(r"""Qué cuentan las tres gráficas:
+
+- **Duración** (izquierda): al principio Zancudo se cae en unos 2 s. A los 400.000 pasos aguanta **8-9 s de los 10** casi siempre. Lo primero que aprende la red es lo más urgente: **no caerse**, porque caerse corta el episodio y con él todos los premios que quedaban.
+- **Recompensa** (centro): sube de 1-2 a unos 10-13 por episodio. Pero cuidado: sube sobre todo **porque dura más**. Por eso la tercera gráfica divide por la duración.
+- **Términos por paso** (derecha): `contacto_fase` y `seguir_velocidad` suben poco a poco (de 0,4-0,5 a 0,6); `seguir_giro` se queda plano en 0,2; y `avance`, el que de verdad dice "te estás moviendo hacia donde te piden", **da saltos** entre 0 y 0,35 sin tendencia clara. Es la huella de la trampa de la sección 5: la red ha aprendido a sostenerse y a marcar el paso, pero aún no a desplazarse.
 
 ¿Y qué hace? Evaluamos la política con órdenes fijas (3 episodios de 10 s cada una, con semillas que no se usaron al entrenar), con la función `evaluar` del paquete, que mide la velocidad media conseguida (sin contar el primer segundo, de arranque):
 """),
@@ -1011,18 +1015,20 @@ for orden in [[0.0, 0.0, 0.0], [0.4, 0.0, 0.0], [0.0, 0.0, 0.4]]:
     r = evaluar(politica_corta, orden, episodios=3)
     print(f"{str(orden):>22} | {r['duracion']:8.1f} | {r['vx']:6.2f} | {r['vy']:6.2f} | {r['giro']:6.2f}")"""),
 
-md(r"""PLACEHOLDER_CORTO_EVAL
+md(r"""Lo que esperábamos, y lo que pasó en la primera prueba de pesos: a los 400.000 pasos, Zancudo **aguanta los 10 s de pie con cualquier orden... y no se mueve** (0,00 m/s con la orden de 0,4; 0,02 rad/s con la orden de girar a 0,4). Está en el óptimo local de quedarse quieto: de momento, es lo que más le renta.
+
+No es un fracaso: es **el principio** de la curva. 400.000 pasos son el 4 % del entrenamiento largo. Para ver cómo sale de la trampa, hace falta mucho más tiempo, y eso es lo que viene ahora.
 """),
 
 md(r"""## 11 · El entrenamiento largo
 
 ### Lanzarlo en segundo plano
 
-Para que Zancudo ande de verdad hacen falta **decenas de millones** de pasos. A unos 1.600 pasos por segundo con los 4 núcleos, 20 millones son unas **3 horas y media**. Eso no se hace dentro de un notebook. Se hace con la CLI, desde la terminal de la Pi, así:
+Para que Zancudo ande de verdad hacen falta **millones** de pasos (los laboratorios usan miles de millones). En la Pi, con los 4 núcleos, se consiguen entre 1.000 y 1.600 pasos por segundo (baja cuando los episodios se alargan y cuando la Pi se calienta): 10 millones son **unas 3 horas**. Eso no se hace dentro de un notebook. Se hace con la CLI, desde la terminal de la Pi, así:
 
 ```bash
 cd ~/dev/robotica && mkdir -p trabajo_nb54
-nohup venv/bin/python -m locomocion -v entrenar --pasos PLACEHOLDER_PASOS --salida trabajo_nb54/largo \
+nohup venv/bin/python -m locomocion -v entrenar --pasos 10000000 --salida trabajo_nb54/largo \
       > trabajo_nb54/largo.out 2>&1 &
 ```
 
@@ -1035,6 +1041,15 @@ Pieza a pieza (NB05b, NB26):
 
 Mientras corre, para ver cómo va: **`tail -f trabajo_nb54/largo/entrenamiento.log`** (muestra las últimas líneas y se queda esperando las nuevas; se sale con Ctrl+C, sin parar el entrenamiento). Y si algo lo interrumpe, se reanuda con `--seguir`. Cada 200.000 pasos se guardan `modelo.zip` y `normalizacion.pkl`.
 
+No es teoría: el entrenamiento de este notebook **se cortó** a los 528.000 pasos (se apagó la sesión). El último guardado era el de 401.408 pasos, así que se perdieron unos 2 minutos de trabajo, no horas. Se reanudó con
+
+```bash
+nohup venv/bin/python -m locomocion -v entrenar --seguir --pasos 9600000 --salida trabajo_nb54/largo \
+      > trabajo_nb54/largo.out 2>&1 &
+```
+
+(con `--seguir`, `--pasos` cuenta los pasos **que faltan**: 401.408 + 9.600.000 ≈ 10 millones). Antes, se recortó `progreso.csv` a las filas de hasta 401.408 pasos, para no tener repetidas las tandas que se perdieron.
+
 Al acabar, se copió lo importante a `notebooks/modelos/zancudo3d_andar/` (el modelo, su normalización, su `config.yaml`, `ajustes.json`, `progreso.csv` y el registro). Los modelos grandes de `trabajo_nb54/` no se suben a Git (`.gitignore`).
 
 Las últimas líneas del registro:
@@ -1044,7 +1059,7 @@ code(r"""LARGO = Path("modelos/zancudo3d_andar")
 print(*(LARGO / "entrenamiento.log").read_text(encoding="utf-8").splitlines()[-4:], sep="\n")
 print(sorted(p.name for p in LARGO.iterdir()))"""),
 
-md(r"""PLACEHOLDER_LARGO_LOG
+md(r"""El registro acaba en **10.002.432 pasos**, con el último guardado. Fíjate en las columnas: en las últimas tandas la **duración es 500** (los 500 pasos de 10 s: ningún episodio acaba en caída), la recompensa ronda 35 y el entrenamiento va a unos 1.230 pasos por segundo. (Si abres el fichero entero verás también las líneas del primer intento, el que se cortó: el registro se abre en modo "añadir", así que no se pierde la historia.)
 
 ### Las curvas
 """),
@@ -1069,7 +1084,13 @@ for ax in ejes:
 plt.show()
 print(f"{largo['pasos'][-1] / 1e6:.1f} millones de pasos en {horas[-1]:.1f} h")"""),
 
-md(r"""PLACEHOLDER_LARGO_CURVAS
+md(r"""Unas **2,4 horas** de Pi para 10 millones de pasos. Las curvas están **suavizadas** (media móvil de 25 tandas, P6), porque cada tanda solo tiene unos 10 episodios y es muy ruidosa. Se leen como tres capítulos de una historia:
+
+1. **Primero, no caerse** (0-2 millones). La duración sube de 2 a casi 10 s en el primer millón y medio. A partir de los 2 millones, prácticamente ningún episodio acaba en caída.
+2. **Luego, ir a donde le piden** (1-4 millones). `avance` pasa de 0,2 a 0,8 por paso y `seguir_velocidad` de 0,5 a 0,9: Zancudo ha salido de la trampa de quedarse quieto. `pie_en_el_aire` deja de restar (de −0,12 a 0): ya no da pasitos de claqué.
+3. **Por último, girar** (2-8 millones). `seguir_giro` es el término más lento: sube **en línea recta** de 0,2 a 0,85 durante seis millones de pasos. Lo comprobamos a medio camino: a los 4 millones, la política andaba recta a 0,50 m/s con la orden de 0,4, pero con la orden de girar a 0,4 rad/s giraba a 0,03. Girar sin caerse es más difícil que andar recto: hay que cargar el peso de forma asimétrica y torcer la cadera en el momento justo del paso.
+
+Desde los 7-8 millones, la recompensa se queda en una **meseta** de unos 35: con esta recompensa, esta red y este número de robots, ya no mejora mucho. Seguir hasta 20 millones daría poco; para mejorar habría que cambiar algo (sección siguiente y NB55).
 
 ### ¿Obedece?
 
@@ -1086,7 +1107,16 @@ for orden in ORDENES:
     examen[tuple(orden)] = r
     print(f"{str(orden):>22} | {r['duracion']:8.1f} | {r['vx']:6.2f} | {r['vy']:6.2f} | {r['giro']:6.2f}")"""),
 
-md(r"""PLACEHOLDER_LARGO_EXAMEN
+md(r"""**Zancudo obedece.** Recorramos la tabla:
+
+- **Quieto** ([0, 0, 0]): se queda en su sitio (0,01 m/s). Aprendido gracias al 10 % de episodios con orden de quietud (`prob_quieto`).
+- **Hacia delante** (0,2 / 0,4): avanza, pero **se pasa**: 0,30 y 0,49 m/s, un 20-50 % más de lo pedido. **Hacia atrás** (−0,2): −0,26, también un poco de más.
+- **De lado** (±0,15): se aparta de lado, a ±0,21-0,22 m/s, otra vez de más, y sin desviarse hacia delante.
+- **Girar** (±0,4 rad/s): **0,37** en los dos sentidos, casi perfecto, y girando sobre sí mismo (0,02 m/s de avance).
+- **Avanzar girando** ([0,3, 0, 0,3]): 0,40 m/s y 0,28 rad/s: **anda en curva**, las dos cosas a la vez.
+- **El límite** (0,6 m/s): la duración media baja a **7,3 s**: alguno de los tres episodios acaba en caída, y antes de caer se tuerce (0,23 m/s de lado, −0,38 rad/s de giro). 0,6 es el extremo del rango de órdenes del entrenamiento (`comandos.vx` de −0,3 a 0,6), y en los extremos la red ha visto menos ejemplos.
+
+¿Por qué se pasa de velocidad? Por la **campana**. Con σ = 0,25, pasarse 0,1 m/s cuesta exp(−0,1²/0,25) = 0,96: solo un 4 % del premio. Para la red, ir un poco deprisa es casi gratis, y probablemente le resulta **más estable** (como a ti te cuesta más andar muy despacio que a paso normal). Si quisiéramos precisión, se estrecha la campana al final del entrenamiento (un currículo de σ, NB55).
 
 ### Los pasos
 
@@ -1112,7 +1142,9 @@ aterrizajes = (contactos[1:] & ~contactos[:-1]).sum(axis=0)
 print(f"aterrizajes en 4 s: derecho {aterrizajes[0]}, izquierdo {aterrizajes[1]};  "
       f"los dos en el aire el {100 * np.mean(~contactos.any(axis=1)):.0f} % del tiempo")"""),
 
-md(r"""PLACEHOLDER_PASOS
+md(r"""Es una **marcha de verdad**: los pies se alternan con un ritmo de reloj, 5 aterrizajes de cada pie en 4 s, es decir, un paso cada 0,8 s por pie, **exactamente** el `periodo_paso` de la configuración (0,8 s). El término `contacto_fase` ha hecho su trabajo: el reloj de la observación marca el compás y la red lo sigue.
+
+Y los dos pies **nunca** están en el aire a la vez (0 %): cada pie aterriza un instante antes de que el otro despegue (las barras se solapan un poco). Eso es **andar**, con una pequeña fase de apoyo doble, como en el NB52; si hubiera fases con los dos pies en el aire, sería **correr**.
 
 ### Verlo
 
@@ -1137,11 +1169,27 @@ imageio.mimsave("assets/nb54_zancudo3d_anda.gif", fotos, fps=25, loop=0)
 print(f"x final: {entorno.datos.qpos[0]:.2f} m, y final: {entorno.datos.qpos[1]:.2f} m")
 Image(filename="assets/nb54_zancudo3d_anda.gif")"""),
 
-md(r"""PLACEHOLDER_GIF
+md(r"""En 6 s, unos 2,9 m: la media es ~0,48 m/s, lo mismo que medimos en el examen. Y se desvía solo 22 cm de lado en ese recorrido.
+
+Mira cómo anda: **agachado**, con las rodillas muy dobladas y el torso recto. No se lo pedimos (el término `altura` solo le pide llevar el torso a unos 0,75 m, y como castiga el error **al cuadrado**, apartarse unos centímetros apenas cuesta), pero es la marcha que suelen encontrar las políticas de RL: con las rodillas dobladas, las piernas tienen **margen** para estirarse y encogerse rápido y corregir, igual que tú doblas las rodillas cuando el suelo resbala. Los humanoides de verdad (y las personas) andan con las rodillas casi rectas porque **gastan menos energía**; nuestra recompensa apenas castiga el gasto (`par` con peso −0,00001), así que a Zancudo le da igual.
 
 ### Balance honesto, y qué haría falta
 
-PLACEHOLDER_BALANCE
+Lo que **funciona**, en una Raspberry Pi y en 2,4 horas:
+
+- Una política que obedece órdenes de velocidad hacia delante, hacia atrás, de lado, de giro y combinadas, sin caerse en 10 s (salvo en el extremo de 0,6 m/s).
+- Con una marcha alternada, al compás del reloj, con apoyo doble.
+- Todo en un paquete instalable, reproducible (configuración, ajustes y semilla guardados junto al modelo), probado con pytest y entrenado desde la terminal, con reanudación incluida.
+
+Lo que **no** funciona todavía, o funciona solo en el simulador:
+
+1. **Se pasa de velocidad** un 20-50 %. Se arregla afinando la recompensa (campana más estrecha al final, currículo).
+2. **Solo conoce un mundo perfecto**: suelo plano, masas exactas, motores ideales, sin retrasos, sin empujones. Si cambias algo (rozamiento, masa del torso, un empujón), probablemente se cae. Es la práctica del NB43 en 3D. Se arregla con **aleatorización de dominio**: NB55.
+3. **Usa la velocidad lineal privilegiada**, que un robot real no mide directamente (sección 6). NB61.
+4. **Anda agachado** y gasta energía de más. Se arregla con términos de energía y de postura, o imitando un movimiento de referencia: NB57.
+5. **Una sola semilla.** Con otra semilla, la marcha podría salir distinta, o peor. Un resultado serio se repite con 3-5 semillas (NB43). En la Pi, cada una son 2,4 horas.
+
+Y lo que **haría falta** para acercarse a un laboratorio: muchos más robots a la vez y muchos más pasos. legged_gym entrena con 4.096 robots y ~1.000 millones de pasos en 20 minutos de GPU. Nosotros, 16 robots y 10 millones en 2,4 horas: **100 veces menos experiencia**, y aun así anda. Lo de GPU llega en el NB59 y el NB60.
 
 ### En Colab
 
@@ -1360,7 +1408,7 @@ ax.legend(ncol=3, fontsize=8)
 plt.show()
 ```
 
-(`np.convolve` con un "núcleo" de 20 unos/20 hace una **media móvil**: cada punto es la media de las 20 tandas anteriores, P6.) Dividir por la duración separa las dos cosas que se mezclan al principio del entrenamiento: casi todos los términos positivos suben solo porque el robot **dura** más. Por paso, se ve lo que mejora de verdad: el que más sube es `seguir_velocidad` (y `avance`) cuando el robot empieza a moverse; las penalizaciones (orientación, balanceo, velocidad vertical) bajan, señal de una marcha más tranquila.
+(`np.convolve` con un "núcleo" de 20 unos/20 hace una **media móvil**: cada punto es la media de las 20 tandas anteriores, P6.) Dividir por la duración separa las dos cosas que se mezclan al principio del entrenamiento: casi todos los términos positivos suben solo porque el robot **dura** más. Por paso, se ve lo que mejora de verdad: los que más suben son `avance` y `seguir_giro` (unas 5 veces de principio a fin), y `seguir_velocidad` se duplica; `seguir_giro` es el último en subir, hasta los 8 millones. `vivo` es una raya plana (vale lo mismo en cada paso: solo suma por durar). Y las penalizaciones (`balanceo`, `orientacion`, `velocidad_vertical`, `pie_en_el_aire`, `accion_brusca`) se acercan a 0, señal de una marcha más tranquila.
 </details>
 
 <details>

@@ -57,10 +57,13 @@ def _registro_callback(carpeta: Path, cada_actualizacion: int = 10):
             self.episodios: list[dict] = []
             self.fichero = carpeta / "progreso.csv"
             self.columnas: list[str] | None = None
+            self.inicio = time.time()
             if self.fichero.exists():                    # al reanudar, se sigue escribiendo en el mismo fichero
                 with self.fichero.open() as f:
-                    self.columnas = next(csv.reader(f))
-            self.inicio = time.time()
+                    filas = list(csv.DictReader(f))
+                    self.columnas = list(filas[0]) if filas else None
+                if filas:                                 # y el reloj sigue donde se quedó, no vuelve a 0
+                    self.inicio -= float(filas[-1]["segundos"])
             self.actualizaciones = 0
 
         def _on_step(self) -> bool:

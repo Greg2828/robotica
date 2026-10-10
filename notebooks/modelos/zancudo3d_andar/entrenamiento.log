@@ -5,3 +5,295 @@
 04:00:12 INFO    locomocion.entrenamiento: pasos 163840 | recompensa 3.08 | duración 139 | seguir_velocidad 1.401 | 1577 pasos/s
 04:00:36 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (200704 pasos)
 04:00:38 INFO    locomocion.entrenamiento: pasos 204800 | recompensa 5.89 | duración 252 | seguir_velocidad 2.814 | 1588 pasos/s
+04:01:15 INFO    locomocion.entrenamiento: pasos 245760 | recompensa 5.32 | duración 233 | seguir_velocidad 2.597 | 1473 pasos/s
+04:02:11 INFO    locomocion.entrenamiento: pasos 286720 | recompensa 6.06 | duración 241 | seguir_velocidad 2.849 | 1289 pasos/s
+04:03:01 INFO    locomocion.entrenamiento: pasos 327680 | recompensa 9.96 | duración 375 | seguir_velocidad 4.162 | 1203 pasos/s
+04:03:51 INFO    locomocion.entrenamiento: pasos 368640 | recompensa 10.02 | duración 418 | seguir_velocidad 4.781 | 1145 pasos/s
+04:04:31 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (401408 pasos)
+04:04:40 INFO    locomocion.entrenamiento: pasos 409600 | recompensa 10.44 | duración 378 | seguir_velocidad 4.498 | 1102 pasos/s
+04:05:31 INFO    locomocion.entrenamiento: pasos 450560 | recompensa 14.47 | duración 460 | seguir_velocidad 5.984 | 1067 pasos/s
+04:06:21 INFO    locomocion.entrenamiento: pasos 491520 | recompensa 10.90 | duración 384 | seguir_velocidad 5.052 | 1040 pasos/s
+00:25:15 INFO    locomocion.entrenamiento: se reanuda desde trabajo_nb54/largo (401408 pasos ya hechos)
+00:25:15 INFO    locomocion.entrenamiento: entrenando 9600000 pasos con 16 entornos (semilla 0) → trabajo_nb54/largo
+00:26:01 INFO    locomocion.entrenamiento: pasos 442368 | recompensa 11.96 | duración 412 | seguir_velocidad 5.152 | 9477 pasos/s
+00:26:50 INFO    locomocion.entrenamiento: pasos 483328 | recompensa 12.09 | duración 409 | seguir_velocidad 5.165 | 5069 pasos/s
+00:27:32 INFO    locomocion.entrenamiento: pasos 524288 | recompensa 11.66 | duración 362 | seguir_velocidad 4.787 | 3810 pasos/s
+00:28:11 INFO    locomocion.entrenamiento: pasos 565248 | recompensa 12.07 | duración 384 | seguir_velocidad 5.180 | 3208 pasos/s
+00:28:45 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (602112 pasos)
+00:28:49 INFO    locomocion.entrenamiento: pasos 606208 | recompensa 13.55 | duración 413 | seguir_velocidad 5.725 | 2831 pasos/s
+00:29:25 INFO    locomocion.entrenamiento: pasos 647168 | recompensa 12.16 | duración 353 | seguir_velocidad 4.782 | 2580 pasos/s
+00:30:04 INFO    locomocion.entrenamiento: pasos 688128 | recompensa 15.25 | duración 431 | seguir_velocidad 6.113 | 2378 pasos/s
+00:30:44 INFO    locomocion.entrenamiento: pasos 729088 | recompensa 17.06 | duración 422 | seguir_velocidad 6.209 | 2212 pasos/s
+00:31:27 INFO    locomocion.entrenamiento: pasos 770048 | recompensa 12.83 | duración 351 | seguir_velocidad 5.047 | 2068 pasos/s
+00:32:01 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (802816 pasos)
+00:32:08 INFO    locomocion.entrenamiento: pasos 811008 | recompensa 17.39 | duración 462 | seguir_velocidad 6.930 | 1964 pasos/s
+00:32:44 INFO    locomocion.entrenamiento: pasos 851968 | recompensa 17.12 | duración 427 | seguir_velocidad 6.415 | 1896 pasos/s
+00:33:35 INFO    locomocion.entrenamiento: pasos 892928 | recompensa 17.09 | duración 444 | seguir_velocidad 6.683 | 1785 pasos/s
+00:34:28 INFO    locomocion.entrenamiento: pasos 933888 | recompensa 19.56 | duración 482 | seguir_velocidad 7.276 | 1688 pasos/s
+00:35:05 INFO    locomocion.entrenamiento: pasos 974848 | recompensa 19.05 | duración 460 | seguir_velocidad 7.064 | 1650 pasos/s
+00:35:32 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (1003520 pasos)
+00:35:42 INFO    locomocion.entrenamiento: pasos 1015808 | recompensa 19.32 | duración 455 | seguir_velocidad 7.163 | 1619 pasos/s
+00:36:17 INFO    locomocion.entrenamiento: pasos 1056768 | recompensa 18.58 | duración 445 | seguir_velocidad 6.980 | 1595 pasos/s
+00:36:53 INFO    locomocion.entrenamiento: pasos 1097728 | recompensa 17.19 | duración 407 | seguir_velocidad 6.357 | 1571 pasos/s
+00:37:29 INFO    locomocion.entrenamiento: pasos 1138688 | recompensa 22.74 | duración 500 | seguir_velocidad 7.982 | 1551 pasos/s
+00:38:03 INFO    locomocion.entrenamiento: pasos 1179648 | recompensa 21.38 | duración 500 | seguir_velocidad 7.825 | 1535 pasos/s
+00:38:25 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (1204224 pasos)
+00:38:38 INFO    locomocion.entrenamiento: pasos 1220608 | recompensa 22.22 | duración 500 | seguir_velocidad 8.129 | 1519 pasos/s
+00:39:13 INFO    locomocion.entrenamiento: pasos 1261568 | recompensa 22.09 | duración 500 | seguir_velocidad 8.216 | 1504 pasos/s
+00:39:48 INFO    locomocion.entrenamiento: pasos 1302528 | recompensa 20.12 | duración 448 | seguir_velocidad 7.339 | 1492 pasos/s
+00:40:35 INFO    locomocion.entrenamiento: pasos 1343488 | recompensa 21.92 | duración 500 | seguir_velocidad 8.359 | 1460 pasos/s
+00:41:22 INFO    locomocion.entrenamiento: pasos 1384448 | recompensa 19.40 | duración 459 | seguir_velocidad 7.346 | 1432 pasos/s
+00:41:44 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (1404928 pasos)
+00:42:04 INFO    locomocion.entrenamiento: pasos 1425408 | recompensa 20.87 | duración 462 | seguir_velocidad 7.675 | 1412 pasos/s
+00:42:40 INFO    locomocion.entrenamiento: pasos 1466368 | recompensa 21.60 | duración 477 | seguir_velocidad 7.924 | 1402 pasos/s
+00:43:15 INFO    locomocion.entrenamiento: pasos 1507328 | recompensa 22.42 | duración 500 | seguir_velocidad 8.417 | 1395 pasos/s
+00:43:51 INFO    locomocion.entrenamiento: pasos 1548288 | recompensa 22.39 | duración 490 | seguir_velocidad 8.391 | 1386 pasos/s
+00:44:29 INFO    locomocion.entrenamiento: pasos 1589248 | recompensa 23.88 | duración 500 | seguir_velocidad 8.568 | 1377 pasos/s
+00:44:44 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (1605632 pasos)
+00:45:05 INFO    locomocion.entrenamiento: pasos 1630208 | recompensa 18.14 | duración 380 | seguir_velocidad 6.239 | 1369 pasos/s
+00:45:42 INFO    locomocion.entrenamiento: pasos 1671168 | recompensa 23.06 | duración 500 | seguir_velocidad 8.646 | 1361 pasos/s
+00:46:19 INFO    locomocion.entrenamiento: pasos 1712128 | recompensa 24.27 | duración 500 | seguir_velocidad 8.631 | 1354 pasos/s
+00:46:53 INFO    locomocion.entrenamiento: pasos 1753088 | recompensa 24.77 | duración 500 | seguir_velocidad 8.543 | 1350 pasos/s
+00:47:28 INFO    locomocion.entrenamiento: pasos 1794048 | recompensa 21.00 | duración 407 | seguir_velocidad 6.768 | 1345 pasos/s
+00:47:41 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (1806336 pasos)
+00:48:06 INFO    locomocion.entrenamiento: pasos 1835008 | recompensa 22.72 | duración 477 | seguir_velocidad 8.088 | 1338 pasos/s
+00:48:44 INFO    locomocion.entrenamiento: pasos 1875968 | recompensa 19.80 | duración 451 | seguir_velocidad 7.659 | 1331 pasos/s
+00:49:19 INFO    locomocion.entrenamiento: pasos 1916928 | recompensa 25.06 | duración 482 | seguir_velocidad 8.170 | 1327 pasos/s
+00:49:55 INFO    locomocion.entrenamiento: pasos 1957888 | recompensa 24.79 | duración 500 | seguir_velocidad 8.687 | 1323 pasos/s
+00:50:30 INFO    locomocion.entrenamiento: pasos 1998848 | recompensa 23.11 | duración 500 | seguir_velocidad 8.645 | 1319 pasos/s
+00:50:37 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (2007040 pasos)
+00:51:05 INFO    locomocion.entrenamiento: pasos 2039808 | recompensa 24.77 | duración 497 | seguir_velocidad 8.663 | 1316 pasos/s
+00:51:42 INFO    locomocion.entrenamiento: pasos 2080768 | recompensa 22.60 | duración 466 | seguir_velocidad 7.989 | 1311 pasos/s
+00:52:37 INFO    locomocion.entrenamiento: pasos 2121728 | recompensa 24.29 | duración 500 | seguir_velocidad 8.699 | 1292 pasos/s
+00:53:25 INFO    locomocion.entrenamiento: pasos 2162688 | recompensa 24.83 | duración 494 | seguir_velocidad 8.602 | 1279 pasos/s
+00:54:06 INFO    locomocion.entrenamiento: pasos 2203648 | recompensa 26.13 | duración 495 | seguir_velocidad 8.544 | 1272 pasos/s
+00:54:11 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (2207744 pasos)
+00:54:38 INFO    locomocion.entrenamiento: pasos 2244608 | recompensa 24.93 | duración 500 | seguir_velocidad 8.703 | 1273 pasos/s
+00:55:08 INFO    locomocion.entrenamiento: pasos 2285568 | recompensa 25.88 | duración 500 | seguir_velocidad 8.714 | 1274 pasos/s
+00:55:48 INFO    locomocion.entrenamiento: pasos 2326528 | recompensa 23.58 | duración 463 | seguir_velocidad 7.968 | 1269 pasos/s
+00:56:26 INFO    locomocion.entrenamiento: pasos 2367488 | recompensa 28.39 | duración 500 | seguir_velocidad 8.720 | 1265 pasos/s
+00:57:06 INFO    locomocion.entrenamiento: pasos 2408448 | recompensa 26.51 | duración 468 | seguir_velocidad 8.108 | 1260 pasos/s
+00:57:07 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (2408448 pasos)
+00:57:34 INFO    locomocion.entrenamiento: pasos 2449408 | recompensa 27.89 | duración 500 | seguir_velocidad 8.768 | 1263 pasos/s
+00:58:20 INFO    locomocion.entrenamiento: pasos 2490368 | recompensa 25.51 | duración 466 | seguir_velocidad 8.058 | 1254 pasos/s
+00:59:11 INFO    locomocion.entrenamiento: pasos 2531328 | recompensa 24.58 | duración 461 | seguir_velocidad 7.966 | 1243 pasos/s
+00:59:59 INFO    locomocion.entrenamiento: pasos 2572288 | recompensa 26.96 | duración 500 | seguir_velocidad 8.867 | 1234 pasos/s
+01:00:41 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (2609152 pasos)
+01:00:45 INFO    locomocion.entrenamiento: pasos 2613248 | recompensa 24.10 | duración 470 | seguir_velocidad 8.298 | 1227 pasos/s
+01:01:37 INFO    locomocion.entrenamiento: pasos 2654208 | recompensa 27.46 | duración 500 | seguir_velocidad 8.935 | 1216 pasos/s
+01:02:02 INFO    locomocion.entrenamiento: pasos 2695168 | recompensa 24.85 | duración 500 | seguir_velocidad 9.017 | 1221 pasos/s
+01:02:33 INFO    locomocion.entrenamiento: pasos 2736128 | recompensa 24.92 | duración 443 | seguir_velocidad 7.804 | 1222 pasos/s
+01:03:16 INFO    locomocion.entrenamiento: pasos 2777088 | recompensa 28.86 | duración 500 | seguir_velocidad 8.946 | 1217 pasos/s
+01:03:57 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (2809856 pasos)
+01:04:05 INFO    locomocion.entrenamiento: pasos 2818048 | recompensa 28.28 | duración 500 | seguir_velocidad 8.982 | 1209 pasos/s
+01:04:48 INFO    locomocion.entrenamiento: pasos 2859008 | recompensa 29.02 | duración 500 | seguir_velocidad 8.994 | 1205 pasos/s
+01:05:45 INFO    locomocion.entrenamiento: pasos 2899968 | recompensa 27.26 | duración 500 | seguir_velocidad 9.028 | 1193 pasos/s
+01:06:47 INFO    locomocion.entrenamiento: pasos 2940928 | recompensa 30.65 | duración 500 | seguir_velocidad 8.938 | 1180 pasos/s
+01:07:42 INFO    locomocion.entrenamiento: pasos 2981888 | recompensa 30.71 | duración 500 | seguir_velocidad 9.014 | 1170 pasos/s
+01:08:16 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (3010560 pasos)
+01:08:32 INFO    locomocion.entrenamiento: pasos 3022848 | recompensa 24.74 | duración 452 | seguir_velocidad 8.051 | 1164 pasos/s
+01:09:53 INFO    locomocion.entrenamiento: pasos 3063808 | recompensa 28.17 | duración 500 | seguir_velocidad 8.959 | 1144 pasos/s
+01:11:08 INFO    locomocion.entrenamiento: pasos 3104768 | recompensa 29.25 | duración 500 | seguir_velocidad 8.843 | 1128 pasos/s
+01:11:52 INFO    locomocion.entrenamiento: pasos 3145728 | recompensa 30.71 | duración 500 | seguir_velocidad 8.880 | 1125 pasos/s
+01:12:29 INFO    locomocion.entrenamiento: pasos 3186688 | recompensa 30.54 | duración 500 | seguir_velocidad 8.931 | 1124 pasos/s
+01:12:51 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (3211264 pasos)
+01:13:03 INFO    locomocion.entrenamiento: pasos 3227648 | recompensa 29.06 | duración 500 | seguir_velocidad 8.967 | 1125 pasos/s
+01:13:38 INFO    locomocion.entrenamiento: pasos 3268608 | recompensa 29.88 | duración 500 | seguir_velocidad 9.047 | 1126 pasos/s
+01:14:11 INFO    locomocion.entrenamiento: pasos 3309568 | recompensa 30.50 | duración 500 | seguir_velocidad 9.124 | 1127 pasos/s
+01:14:44 INFO    locomocion.entrenamiento: pasos 3350528 | recompensa 31.56 | duración 500 | seguir_velocidad 9.066 | 1128 pasos/s
+01:15:17 INFO    locomocion.entrenamiento: pasos 3391488 | recompensa 29.96 | duración 500 | seguir_velocidad 9.143 | 1129 pasos/s
+01:15:36 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (3411968 pasos)
+01:15:53 INFO    locomocion.entrenamiento: pasos 3432448 | recompensa 30.15 | duración 500 | seguir_velocidad 9.039 | 1130 pasos/s
+01:16:27 INFO    locomocion.entrenamiento: pasos 3473408 | recompensa 30.24 | duración 500 | seguir_velocidad 9.173 | 1130 pasos/s
+01:17:01 INFO    locomocion.entrenamiento: pasos 3514368 | recompensa 30.60 | duración 500 | seguir_velocidad 9.021 | 1131 pasos/s
+01:17:41 INFO    locomocion.entrenamiento: pasos 3555328 | recompensa 28.14 | duración 500 | seguir_velocidad 9.071 | 1130 pasos/s
+01:18:17 INFO    locomocion.entrenamiento: pasos 3596288 | recompensa 29.91 | duración 500 | seguir_velocidad 9.041 | 1130 pasos/s
+01:18:37 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (3612672 pasos)
+01:19:01 INFO    locomocion.entrenamiento: pasos 3637248 | recompensa 27.85 | duración 500 | seguir_velocidad 8.959 | 1127 pasos/s
+01:19:45 INFO    locomocion.entrenamiento: pasos 3678208 | recompensa 31.22 | duración 500 | seguir_velocidad 9.018 | 1125 pasos/s
+01:20:38 INFO    locomocion.entrenamiento: pasos 3719168 | recompensa 28.79 | duración 500 | seguir_velocidad 9.279 | 1119 pasos/s
+01:21:33 INFO    locomocion.entrenamiento: pasos 3760128 | recompensa 32.22 | duración 500 | seguir_velocidad 9.177 | 1113 pasos/s
+01:22:14 INFO    locomocion.entrenamiento: pasos 3801088 | recompensa 32.75 | duración 500 | seguir_velocidad 9.239 | 1112 pasos/s
+01:22:27 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (3813376 pasos)
+01:22:56 INFO    locomocion.entrenamiento: pasos 3842048 | recompensa 31.96 | duración 500 | seguir_velocidad 9.108 | 1110 pasos/s
+01:23:37 INFO    locomocion.entrenamiento: pasos 3883008 | recompensa 28.62 | duración 500 | seguir_velocidad 9.025 | 1109 pasos/s
+01:24:20 INFO    locomocion.entrenamiento: pasos 3923968 | recompensa 30.26 | duración 500 | seguir_velocidad 9.159 | 1107 pasos/s
+01:25:01 INFO    locomocion.entrenamiento: pasos 3964928 | recompensa 29.24 | duración 470 | seguir_velocidad 8.469 | 1106 pasos/s
+01:25:44 INFO    locomocion.entrenamiento: pasos 4005888 | recompensa 31.76 | duración 500 | seguir_velocidad 9.139 | 1104 pasos/s
+01:25:55 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (4014080 pasos)
+01:26:30 INFO    locomocion.entrenamiento: pasos 4046848 | recompensa 33.19 | duración 500 | seguir_velocidad 9.254 | 1101 pasos/s
+01:27:21 INFO    locomocion.entrenamiento: pasos 4087808 | recompensa 30.65 | duración 500 | seguir_velocidad 9.293 | 1097 pasos/s
+01:28:11 INFO    locomocion.entrenamiento: pasos 4128768 | recompensa 31.65 | duración 500 | seguir_velocidad 9.276 | 1093 pasos/s
+01:29:04 INFO    locomocion.entrenamiento: pasos 4169728 | recompensa 31.69 | duración 500 | seguir_velocidad 9.180 | 1089 pasos/s
+01:29:40 INFO    locomocion.entrenamiento: pasos 4210688 | recompensa 32.51 | duración 500 | seguir_velocidad 9.075 | 1089 pasos/s
+01:29:44 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (4214784 pasos)
+01:30:13 INFO    locomocion.entrenamiento: pasos 4251648 | recompensa 30.65 | duración 500 | seguir_velocidad 9.324 | 1091 pasos/s
+01:31:07 INFO    locomocion.entrenamiento: pasos 4292608 | recompensa 32.08 | duración 500 | seguir_velocidad 9.351 | 1086 pasos/s
+01:31:50 INFO    locomocion.entrenamiento: pasos 4333568 | recompensa 32.18 | duración 500 | seguir_velocidad 9.268 | 1085 pasos/s
+01:32:33 INFO    locomocion.entrenamiento: pasos 4374528 | recompensa 31.66 | duración 500 | seguir_velocidad 9.157 | 1083 pasos/s
+01:33:16 INFO    locomocion.entrenamiento: pasos 4415488 | recompensa 33.95 | duración 500 | seguir_velocidad 9.375 | 1082 pasos/s
+01:33:17 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (4415488 pasos)
+01:34:08 INFO    locomocion.entrenamiento: pasos 4456448 | recompensa 29.66 | duración 500 | seguir_velocidad 9.400 | 1078 pasos/s
+01:34:37 INFO    locomocion.entrenamiento: pasos 4497408 | recompensa 32.26 | duración 500 | seguir_velocidad 9.381 | 1080 pasos/s
+01:35:01 INFO    locomocion.entrenamiento: pasos 4538368 | recompensa 33.14 | duración 500 | seguir_velocidad 9.388 | 1084 pasos/s
+01:35:25 INFO    locomocion.entrenamiento: pasos 4579328 | recompensa 34.70 | duración 500 | seguir_velocidad 9.369 | 1088 pasos/s
+01:35:47 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (4616192 pasos)
+01:35:49 INFO    locomocion.entrenamiento: pasos 4620288 | recompensa 29.79 | duración 500 | seguir_velocidad 9.441 | 1091 pasos/s
+01:36:24 INFO    locomocion.entrenamiento: pasos 4661248 | recompensa 32.41 | duración 500 | seguir_velocidad 9.381 | 1092 pasos/s
+01:37:20 INFO    locomocion.entrenamiento: pasos 4702208 | recompensa 32.35 | duración 500 | seguir_velocidad 9.488 | 1087 pasos/s
+01:38:09 INFO    locomocion.entrenamiento: pasos 4743168 | recompensa 33.75 | duración 500 | seguir_velocidad 9.327 | 1084 pasos/s
+01:38:59 INFO    locomocion.entrenamiento: pasos 4784128 | recompensa 33.40 | duración 500 | seguir_velocidad 9.499 | 1081 pasos/s
+01:39:38 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (4816896 pasos)
+01:39:47 INFO    locomocion.entrenamiento: pasos 4825088 | recompensa 35.30 | duración 500 | seguir_velocidad 9.446 | 1079 pasos/s
+01:40:48 INFO    locomocion.entrenamiento: pasos 4866048 | recompensa 33.69 | duración 500 | seguir_velocidad 9.489 | 1073 pasos/s
+01:41:26 INFO    locomocion.entrenamiento: pasos 4907008 | recompensa 32.28 | duración 500 | seguir_velocidad 9.519 | 1073 pasos/s
+01:41:54 INFO    locomocion.entrenamiento: pasos 4947968 | recompensa 35.64 | duración 500 | seguir_velocidad 9.454 | 1076 pasos/s
+01:42:22 INFO    locomocion.entrenamiento: pasos 4988928 | recompensa 33.85 | duración 500 | seguir_velocidad 9.489 | 1078 pasos/s
+01:42:47 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (5017600 pasos)
+01:42:58 INFO    locomocion.entrenamiento: pasos 5029888 | recompensa 34.45 | duración 500 | seguir_velocidad 9.449 | 1079 pasos/s
+01:43:56 INFO    locomocion.entrenamiento: pasos 5070848 | recompensa 29.75 | duración 470 | seguir_velocidad 8.868 | 1074 pasos/s
+01:44:24 INFO    locomocion.entrenamiento: pasos 5111808 | recompensa 35.55 | duración 500 | seguir_velocidad 9.471 | 1076 pasos/s
+01:44:51 INFO    locomocion.entrenamiento: pasos 5152768 | recompensa 34.13 | duración 500 | seguir_velocidad 9.399 | 1079 pasos/s
+01:45:22 INFO    locomocion.entrenamiento: pasos 5193728 | recompensa 32.17 | duración 500 | seguir_velocidad 9.357 | 1080 pasos/s
+01:45:44 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (5218304 pasos)
+01:45:54 INFO    locomocion.entrenamiento: pasos 5234688 | recompensa 34.96 | duración 500 | seguir_velocidad 9.382 | 1082 pasos/s
+01:46:22 INFO    locomocion.entrenamiento: pasos 5275648 | recompensa 35.94 | duración 500 | seguir_velocidad 9.287 | 1084 pasos/s
+01:46:54 INFO    locomocion.entrenamiento: pasos 5316608 | recompensa 32.05 | duración 482 | seguir_velocidad 9.084 | 1085 pasos/s
+01:47:24 INFO    locomocion.entrenamiento: pasos 5357568 | recompensa 34.83 | duración 500 | seguir_velocidad 9.339 | 1087 pasos/s
+01:47:59 INFO    locomocion.entrenamiento: pasos 5398528 | recompensa 35.85 | duración 500 | seguir_velocidad 9.279 | 1087 pasos/s
+01:48:15 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (5419008 pasos)
+01:48:30 INFO    locomocion.entrenamiento: pasos 5439488 | recompensa 34.49 | duración 500 | seguir_velocidad 9.448 | 1089 pasos/s
+01:49:04 INFO    locomocion.entrenamiento: pasos 5480448 | recompensa 34.20 | duración 500 | seguir_velocidad 9.473 | 1090 pasos/s
+01:49:32 INFO    locomocion.entrenamiento: pasos 5521408 | recompensa 36.36 | duración 500 | seguir_velocidad 9.447 | 1092 pasos/s
+01:49:57 INFO    locomocion.entrenamiento: pasos 5562368 | recompensa 36.62 | duración 500 | seguir_velocidad 9.421 | 1094 pasos/s
+01:50:24 INFO    locomocion.entrenamiento: pasos 5603328 | recompensa 33.35 | duración 500 | seguir_velocidad 9.401 | 1097 pasos/s
+01:50:37 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (5619712 pasos)
+01:50:52 INFO    locomocion.entrenamiento: pasos 5644288 | recompensa 29.31 | duración 461 | seguir_velocidad 8.687 | 1099 pasos/s
+01:51:22 INFO    locomocion.entrenamiento: pasos 5685248 | recompensa 33.60 | duración 500 | seguir_velocidad 9.493 | 1100 pasos/s
+01:51:56 INFO    locomocion.entrenamiento: pasos 5726208 | recompensa 33.07 | duración 500 | seguir_velocidad 9.492 | 1101 pasos/s
+01:52:47 INFO    locomocion.entrenamiento: pasos 5767168 | recompensa 34.73 | duración 500 | seguir_velocidad 9.502 | 1098 pasos/s
+01:53:17 INFO    locomocion.entrenamiento: pasos 5808128 | recompensa 35.61 | duración 500 | seguir_velocidad 9.329 | 1100 pasos/s
+01:53:32 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (5820416 pasos)
+01:53:54 INFO    locomocion.entrenamiento: pasos 5849088 | recompensa 34.17 | duración 500 | seguir_velocidad 9.383 | 1100 pasos/s
+01:54:19 INFO    locomocion.entrenamiento: pasos 5890048 | recompensa 35.05 | duración 500 | seguir_velocidad 9.455 | 1102 pasos/s
+01:54:49 INFO    locomocion.entrenamiento: pasos 5931008 | recompensa 35.09 | duración 500 | seguir_velocidad 9.444 | 1104 pasos/s
+01:55:14 INFO    locomocion.entrenamiento: pasos 5971968 | recompensa 34.93 | duración 500 | seguir_velocidad 9.465 | 1106 pasos/s
+01:55:39 INFO    locomocion.entrenamiento: pasos 6012928 | recompensa 34.33 | duración 500 | seguir_velocidad 9.450 | 1109 pasos/s
+01:55:44 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (6021120 pasos)
+01:56:03 INFO    locomocion.entrenamiento: pasos 6053888 | recompensa 35.01 | duración 500 | seguir_velocidad 9.534 | 1111 pasos/s
+01:56:28 INFO    locomocion.entrenamiento: pasos 6094848 | recompensa 34.62 | duración 500 | seguir_velocidad 9.600 | 1113 pasos/s
+01:56:53 INFO    locomocion.entrenamiento: pasos 6135808 | recompensa 36.56 | duración 500 | seguir_velocidad 9.508 | 1116 pasos/s
+01:57:18 INFO    locomocion.entrenamiento: pasos 6176768 | recompensa 31.91 | duración 466 | seguir_velocidad 8.787 | 1118 pasos/s
+01:57:44 INFO    locomocion.entrenamiento: pasos 6217728 | recompensa 35.91 | duración 500 | seguir_velocidad 9.557 | 1120 pasos/s
+01:57:47 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (6221824 pasos)
+01:58:10 INFO    locomocion.entrenamiento: pasos 6258688 | recompensa 35.21 | duración 500 | seguir_velocidad 9.454 | 1123 pasos/s
+01:58:46 INFO    locomocion.entrenamiento: pasos 6299648 | recompensa 35.31 | duración 500 | seguir_velocidad 9.487 | 1123 pasos/s
+01:59:11 INFO    locomocion.entrenamiento: pasos 6340608 | recompensa 34.98 | duración 500 | seguir_velocidad 9.421 | 1125 pasos/s
+01:59:36 INFO    locomocion.entrenamiento: pasos 6381568 | recompensa 35.35 | duración 500 | seguir_velocidad 9.406 | 1127 pasos/s
+02:00:01 INFO    locomocion.entrenamiento: pasos 6422528 | recompensa 36.14 | duración 500 | seguir_velocidad 9.394 | 1130 pasos/s
+02:00:01 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (6422528 pasos)
+02:00:26 INFO    locomocion.entrenamiento: pasos 6463488 | recompensa 34.11 | duración 500 | seguir_velocidad 9.456 | 1132 pasos/s
+02:00:52 INFO    locomocion.entrenamiento: pasos 6504448 | recompensa 35.92 | duración 500 | seguir_velocidad 9.541 | 1134 pasos/s
+02:01:23 INFO    locomocion.entrenamiento: pasos 6545408 | recompensa 35.86 | duración 500 | seguir_velocidad 9.384 | 1135 pasos/s
+02:01:53 INFO    locomocion.entrenamiento: pasos 6586368 | recompensa 34.19 | duración 500 | seguir_velocidad 9.494 | 1136 pasos/s
+02:02:17 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (6623232 pasos)
+02:02:19 INFO    locomocion.entrenamiento: pasos 6627328 | recompensa 35.28 | duración 500 | seguir_velocidad 9.361 | 1138 pasos/s
+02:02:45 INFO    locomocion.entrenamiento: pasos 6668288 | recompensa 33.24 | duración 500 | seguir_velocidad 9.512 | 1140 pasos/s
+02:03:10 INFO    locomocion.entrenamiento: pasos 6709248 | recompensa 33.05 | duración 500 | seguir_velocidad 9.492 | 1142 pasos/s
+02:03:36 INFO    locomocion.entrenamiento: pasos 6750208 | recompensa 35.83 | duración 500 | seguir_velocidad 9.332 | 1144 pasos/s
+02:04:03 INFO    locomocion.entrenamiento: pasos 6791168 | recompensa 37.13 | duración 500 | seguir_velocidad 9.415 | 1146 pasos/s
+02:04:24 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (6823936 pasos)
+02:04:29 INFO    locomocion.entrenamiento: pasos 6832128 | recompensa 37.70 | duración 500 | seguir_velocidad 9.493 | 1147 pasos/s
+02:04:55 INFO    locomocion.entrenamiento: pasos 6873088 | recompensa 34.20 | duración 500 | seguir_velocidad 9.454 | 1149 pasos/s
+02:05:25 INFO    locomocion.entrenamiento: pasos 6914048 | recompensa 37.17 | duración 500 | seguir_velocidad 9.504 | 1150 pasos/s
+02:05:58 INFO    locomocion.entrenamiento: pasos 6955008 | recompensa 33.16 | duración 500 | seguir_velocidad 9.490 | 1151 pasos/s
+02:06:26 INFO    locomocion.entrenamiento: pasos 6995968 | recompensa 32.35 | duración 500 | seguir_velocidad 9.538 | 1152 pasos/s
+02:06:44 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (7024640 pasos)
+02:06:52 INFO    locomocion.entrenamiento: pasos 7036928 | recompensa 36.36 | duración 500 | seguir_velocidad 9.528 | 1154 pasos/s
+02:07:17 INFO    locomocion.entrenamiento: pasos 7077888 | recompensa 36.07 | duración 500 | seguir_velocidad 9.460 | 1156 pasos/s
+02:07:43 INFO    locomocion.entrenamiento: pasos 7118848 | recompensa 31.12 | duración 500 | seguir_velocidad 9.628 | 1158 pasos/s
+02:08:08 INFO    locomocion.entrenamiento: pasos 7159808 | recompensa 33.09 | duración 500 | seguir_velocidad 9.438 | 1160 pasos/s
+02:08:33 INFO    locomocion.entrenamiento: pasos 7200768 | recompensa 34.80 | duración 500 | seguir_velocidad 9.599 | 1162 pasos/s
+02:08:50 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (7225344 pasos)
+02:08:59 INFO    locomocion.entrenamiento: pasos 7241728 | recompensa 36.24 | duración 500 | seguir_velocidad 9.451 | 1163 pasos/s
+02:09:25 INFO    locomocion.entrenamiento: pasos 7282688 | recompensa 32.28 | duración 471 | seguir_velocidad 8.964 | 1165 pasos/s
+02:09:53 INFO    locomocion.entrenamiento: pasos 7323648 | recompensa 35.46 | duración 500 | seguir_velocidad 9.554 | 1167 pasos/s
+02:10:21 INFO    locomocion.entrenamiento: pasos 7364608 | recompensa 34.94 | duración 500 | seguir_velocidad 9.478 | 1168 pasos/s
+02:10:48 INFO    locomocion.entrenamiento: pasos 7405568 | recompensa 37.57 | duración 500 | seguir_velocidad 9.432 | 1169 pasos/s
+02:11:03 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (7426048 pasos)
+02:11:19 INFO    locomocion.entrenamiento: pasos 7446528 | recompensa 37.15 | duración 500 | seguir_velocidad 9.494 | 1170 pasos/s
+02:11:46 INFO    locomocion.entrenamiento: pasos 7487488 | recompensa 37.27 | duración 500 | seguir_velocidad 9.403 | 1172 pasos/s
+02:12:13 INFO    locomocion.entrenamiento: pasos 7528448 | recompensa 37.93 | duración 500 | seguir_velocidad 9.441 | 1173 pasos/s
+02:12:40 INFO    locomocion.entrenamiento: pasos 7569408 | recompensa 36.09 | duración 500 | seguir_velocidad 9.447 | 1174 pasos/s
+02:13:12 INFO    locomocion.entrenamiento: pasos 7610368 | recompensa 37.33 | duración 500 | seguir_velocidad 9.282 | 1175 pasos/s
+02:13:29 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (7626752 pasos)
+02:13:57 INFO    locomocion.entrenamiento: pasos 7651328 | recompensa 36.37 | duración 500 | seguir_velocidad 9.275 | 1173 pasos/s
+02:14:51 INFO    locomocion.entrenamiento: pasos 7692288 | recompensa 36.73 | duración 500 | seguir_velocidad 9.486 | 1170 pasos/s
+02:15:17 INFO    locomocion.entrenamiento: pasos 7733248 | recompensa 34.82 | duración 500 | seguir_velocidad 9.582 | 1171 pasos/s
+02:15:43 INFO    locomocion.entrenamiento: pasos 7774208 | recompensa 35.67 | duración 500 | seguir_velocidad 9.477 | 1173 pasos/s
+02:16:08 INFO    locomocion.entrenamiento: pasos 7815168 | recompensa 36.14 | duración 500 | seguir_velocidad 9.483 | 1175 pasos/s
+02:16:17 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (7827456 pasos)
+02:16:34 INFO    locomocion.entrenamiento: pasos 7856128 | recompensa 37.67 | duración 500 | seguir_velocidad 9.589 | 1176 pasos/s
+02:17:01 INFO    locomocion.entrenamiento: pasos 7897088 | recompensa 35.67 | duración 500 | seguir_velocidad 9.497 | 1178 pasos/s
+02:17:27 INFO    locomocion.entrenamiento: pasos 7938048 | recompensa 35.12 | duración 500 | seguir_velocidad 9.489 | 1179 pasos/s
+02:17:52 INFO    locomocion.entrenamiento: pasos 7979008 | recompensa 36.09 | duración 500 | seguir_velocidad 9.522 | 1181 pasos/s
+02:18:17 INFO    locomocion.entrenamiento: pasos 8019968 | recompensa 37.12 | duración 500 | seguir_velocidad 9.246 | 1182 pasos/s
+02:18:24 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (8028160 pasos)
+02:18:43 INFO    locomocion.entrenamiento: pasos 8060928 | recompensa 34.40 | duración 500 | seguir_velocidad 9.543 | 1184 pasos/s
+02:19:08 INFO    locomocion.entrenamiento: pasos 8101888 | recompensa 33.08 | duración 449 | seguir_velocidad 8.371 | 1186 pasos/s
+02:19:34 INFO    locomocion.entrenamiento: pasos 8142848 | recompensa 37.01 | duración 500 | seguir_velocidad 9.481 | 1187 pasos/s
+02:19:58 INFO    locomocion.entrenamiento: pasos 8183808 | recompensa 33.12 | duración 500 | seguir_velocidad 9.443 | 1189 pasos/s
+02:20:23 INFO    locomocion.entrenamiento: pasos 8224768 | recompensa 34.62 | duración 500 | seguir_velocidad 9.477 | 1191 pasos/s
+02:20:27 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (8228864 pasos)
+02:20:49 INFO    locomocion.entrenamiento: pasos 8265728 | recompensa 34.92 | duración 500 | seguir_velocidad 9.544 | 1192 pasos/s
+02:21:14 INFO    locomocion.entrenamiento: pasos 8306688 | recompensa 33.68 | duración 500 | seguir_velocidad 9.531 | 1194 pasos/s
+02:21:39 INFO    locomocion.entrenamiento: pasos 8347648 | recompensa 35.94 | duración 500 | seguir_velocidad 9.511 | 1195 pasos/s
+02:22:18 INFO    locomocion.entrenamiento: pasos 8388608 | recompensa 34.56 | duración 500 | seguir_velocidad 9.413 | 1194 pasos/s
+02:22:52 INFO    locomocion.entrenamiento: pasos 8429568 | recompensa 34.37 | duración 500 | seguir_velocidad 9.509 | 1194 pasos/s
+02:22:53 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (8429568 pasos)
+02:23:17 INFO    locomocion.entrenamiento: pasos 8470528 | recompensa 34.82 | duración 500 | seguir_velocidad 9.455 | 1196 pasos/s
+02:23:42 INFO    locomocion.entrenamiento: pasos 8511488 | recompensa 35.08 | duración 500 | seguir_velocidad 9.635 | 1197 pasos/s
+02:24:22 INFO    locomocion.entrenamiento: pasos 8552448 | recompensa 36.01 | duración 500 | seguir_velocidad 9.524 | 1197 pasos/s
+02:25:10 INFO    locomocion.entrenamiento: pasos 8593408 | recompensa 35.43 | duración 500 | seguir_velocidad 9.383 | 1194 pasos/s
+02:25:55 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (8630272 pasos)
+02:25:59 INFO    locomocion.entrenamiento: pasos 8634368 | recompensa 35.97 | duración 500 | seguir_velocidad 9.401 | 1192 pasos/s
+02:26:34 INFO    locomocion.entrenamiento: pasos 8675328 | recompensa 36.03 | duración 500 | seguir_velocidad 9.365 | 1192 pasos/s
+02:26:59 INFO    locomocion.entrenamiento: pasos 8716288 | recompensa 35.22 | duración 500 | seguir_velocidad 9.401 | 1193 pasos/s
+02:27:26 INFO    locomocion.entrenamiento: pasos 8757248 | recompensa 36.52 | duración 500 | seguir_velocidad 9.638 | 1195 pasos/s
+02:27:51 INFO    locomocion.entrenamiento: pasos 8798208 | recompensa 34.91 | duración 500 | seguir_velocidad 9.501 | 1196 pasos/s
+02:28:11 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (8830976 pasos)
+02:28:16 INFO    locomocion.entrenamiento: pasos 8839168 | recompensa 32.92 | duración 456 | seguir_velocidad 8.580 | 1198 pasos/s
+02:28:41 INFO    locomocion.entrenamiento: pasos 8880128 | recompensa 32.61 | duración 500 | seguir_velocidad 9.591 | 1199 pasos/s
+02:29:07 INFO    locomocion.entrenamiento: pasos 8921088 | recompensa 33.30 | duración 500 | seguir_velocidad 9.679 | 1200 pasos/s
+02:29:33 INFO    locomocion.entrenamiento: pasos 8962048 | recompensa 34.38 | duración 500 | seguir_velocidad 9.503 | 1202 pasos/s
+02:30:00 INFO    locomocion.entrenamiento: pasos 9003008 | recompensa 33.11 | duración 500 | seguir_velocidad 9.660 | 1203 pasos/s
+02:30:18 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (9031680 pasos)
+02:30:25 INFO    locomocion.entrenamiento: pasos 9043968 | recompensa 35.18 | duración 500 | seguir_velocidad 9.608 | 1204 pasos/s
+02:30:51 INFO    locomocion.entrenamiento: pasos 9084928 | recompensa 36.54 | duración 500 | seguir_velocidad 9.592 | 1205 pasos/s
+02:31:17 INFO    locomocion.entrenamiento: pasos 9125888 | recompensa 34.87 | duración 500 | seguir_velocidad 9.532 | 1207 pasos/s
+02:31:42 INFO    locomocion.entrenamiento: pasos 9166848 | recompensa 35.11 | duración 500 | seguir_velocidad 9.615 | 1208 pasos/s
+02:32:07 INFO    locomocion.entrenamiento: pasos 9207808 | recompensa 31.00 | duración 500 | seguir_velocidad 9.694 | 1210 pasos/s
+02:32:24 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (9232384 pasos)
+02:32:33 INFO    locomocion.entrenamiento: pasos 9248768 | recompensa 36.23 | duración 500 | seguir_velocidad 9.610 | 1211 pasos/s
+02:32:59 INFO    locomocion.entrenamiento: pasos 9289728 | recompensa 36.48 | duración 500 | seguir_velocidad 9.453 | 1212 pasos/s
+02:33:27 INFO    locomocion.entrenamiento: pasos 9330688 | recompensa 33.16 | duración 500 | seguir_velocidad 9.535 | 1213 pasos/s
+02:34:02 INFO    locomocion.entrenamiento: pasos 9371648 | recompensa 35.10 | duración 500 | seguir_velocidad 9.385 | 1213 pasos/s
+02:34:26 INFO    locomocion.entrenamiento: pasos 9412608 | recompensa 34.57 | duración 500 | seguir_velocidad 9.495 | 1214 pasos/s
+02:34:50 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (9433088 pasos)
+02:35:09 INFO    locomocion.entrenamiento: pasos 9453568 | recompensa 37.71 | duración 500 | seguir_velocidad 9.460 | 1213 pasos/s
+02:35:34 INFO    locomocion.entrenamiento: pasos 9494528 | recompensa 36.37 | duración 500 | seguir_velocidad 9.599 | 1214 pasos/s
+02:35:59 INFO    locomocion.entrenamiento: pasos 9535488 | recompensa 35.76 | duración 500 | seguir_velocidad 9.688 | 1216 pasos/s
+02:36:25 INFO    locomocion.entrenamiento: pasos 9576448 | recompensa 35.79 | duración 500 | seguir_velocidad 9.518 | 1217 pasos/s
+02:36:50 INFO    locomocion.entrenamiento: pasos 9617408 | recompensa 35.62 | duración 500 | seguir_velocidad 9.596 | 1218 pasos/s
+02:37:01 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (9633792 pasos)
+02:37:16 INFO    locomocion.entrenamiento: pasos 9658368 | recompensa 35.14 | duración 500 | seguir_velocidad 9.603 | 1219 pasos/s
+02:37:42 INFO    locomocion.entrenamiento: pasos 9699328 | recompensa 32.44 | duración 500 | seguir_velocidad 9.637 | 1220 pasos/s
+02:38:09 INFO    locomocion.entrenamiento: pasos 9740288 | recompensa 38.04 | duración 500 | seguir_velocidad 9.496 | 1221 pasos/s
+02:38:35 INFO    locomocion.entrenamiento: pasos 9781248 | recompensa 37.85 | duración 500 | seguir_velocidad 9.543 | 1223 pasos/s
+02:39:00 INFO    locomocion.entrenamiento: pasos 9822208 | recompensa 34.17 | duración 500 | seguir_velocidad 9.597 | 1224 pasos/s
+02:39:08 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (9834496 pasos)
+02:39:26 INFO    locomocion.entrenamiento: pasos 9863168 | recompensa 36.21 | duración 500 | seguir_velocidad 9.576 | 1225 pasos/s
+02:39:52 INFO    locomocion.entrenamiento: pasos 9904128 | recompensa 34.05 | duración 500 | seguir_velocidad 9.598 | 1226 pasos/s
+02:40:21 INFO    locomocion.entrenamiento: pasos 9945088 | recompensa 36.79 | duración 500 | seguir_velocidad 9.526 | 1227 pasos/s
+02:40:46 INFO    locomocion.entrenamiento: pasos 9986048 | recompensa 35.42 | duración 500 | seguir_velocidad 9.450 | 1228 pasos/s
+02:40:56 INFO    locomocion.entrenamiento: guardado en trabajo_nb54/largo (10002432 pasos)

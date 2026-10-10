@@ -1,13 +1,17 @@
 # Progreso
 
-## ▶ PARA RETOMAR (2026-10-09) · NB54 A MEDIAS
-- Prácticas de MuJoCo en NB00→NB53: ✅ COMPLETAS (ver PLAN_PRACTICAS_MUJOCO.md).
-- **NB54 · Entorno de locomoción profesional 3D: EN CURSO, SIN VERIFICAR.** Guardado tal cual se paró:
-  build_parts/nb54.py, build_parts/nb54_locomocion/ (fuente del paquete), build_parts/nb54_sincronizar.sh,
-  paquetes/ (paquete instalable `locomocion`, CLI `python -m locomocion -v entrenar`), notebooks/NB54_*.ipynb,
-  notebooks/modelos/zancudo3d_andar/ (modelo provisional). El entrenamiento LARGO (trabajo_nb54/largo) se
-  interrumpió: hay que relanzarlo. Falta: tests pytest, entrenamiento largo, ejecutar NB54 (EXIT 0) y revisar cifras.
-  Dile a Claude: **«sigamos con el NB54»**.
+## ▶ PARA RETOMAR (2026-10-10) · NB54 ✅
+- **NB54 · Entorno de locomoción profesional 3D ✅ (2026-10-10, EXIT 0)**: paquete instalable `paquetes/locomocion`
+  (fuente en build_parts/nb54_locomocion/, 22 tests pytest en verde), CLI argparse, logging, recompensa modular.
+  Entrenamiento corto en vivo (400k, ~5 min): aguanta pero no se mueve (trampa de quedarse quieto).
+  Entrenamiento largo con la CLI: **10.002.432 pasos en 2,4 h** (se cortó a 528k y se reanudó con `--seguir`
+  desde 401.408; arreglado que `segundos` volvía a 0 al reanudar). Resultado: obedece vx/vy/giro y combinadas
+  (0,2→0,30, 0,4→0,49, −0,2→−0,26, ±0,15 lateral→±0,21, giro ±0,4→±0,37, [0,3,0,0,3]→0,40/0,28); se pasa de
+  velocidad (campana σ 0,25 barata); a 0,6 m/s cae a veces (7,3 s). Marcha alternada al compás del reloj (0,8 s),
+  apoyo doble, agachada. Giro el último en aprenderse (a 4M aún no giraba). Modelo en notebooks/modelos/zancudo3d_andar/,
+  GIF assets/nb54_zancudo3d_anda.gif.
+- **Siguiente: NB55 · Robustez** (aleatorización de dominio, empujones, retrasos, currículo, barridos; Py: wrappers,
+  callbacks). Dile a Claude: **«sigamos con robótica»**.
 
 ## ▶ PARA RETOMAR (2026-10-08) · PRÁCTICAS EN MUJOCO EN CADA NOTEBOOK
 - Petición de Gregori (2026-10-07): **cada notebook, desde el NB00, cierra con «🛠 Práctica en MuJoCo»** a su
